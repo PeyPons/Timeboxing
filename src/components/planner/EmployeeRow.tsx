@@ -39,7 +39,12 @@ export function EmployeeRow({ employee, weeks, onCellClick }: EmployeeRowProps) 
       <div className="flex flex-1 gap-2">
         {weeks.map((week) => {
           const weekStartStr = formatDateToISO(week.weekStart);
-          const load = getEmployeeLoadForWeek(employee.id, weekStartStr);
+          const load = getEmployeeLoadForWeek(
+            employee.id, 
+            weekStartStr, 
+            week.effectiveStart, 
+            week.effectiveEnd
+          );
           
           return (
             <div key={weekStartStr} className="flex-1 min-w-[80px]">

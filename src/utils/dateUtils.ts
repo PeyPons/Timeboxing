@@ -15,49 +15,50 @@ export function getWeekEnd(weekStart: Date): Date {
   return d;
 }
 
-export function formatWeekLabel(weekStart: Date): string {
+export function formatWeekLabelForMonth(weekStart: Date, month: number, year: number): string {
   const weekEnd = getWeekEnd(weekStart);
-  const startDay = weekStart.getDate();
-  const endDay = weekEnd.getDate();
-  const startMonth = weekStart.toLocaleDateString('es-ES', { month: 'short' });
-  const endMonth = weekEnd.toLocaleDateString('es-ES', { month: 'short' });
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0);
   
-  if (weekStart.getMonth() === weekEnd.getMonth()) {
-    return `${startDay}-${endDay} ${startMonth}`;
-  }
-  return `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
+  // Clamp dates to the current month
+  const displayStart = weekStart < monthStart ? monthStart : weekStart;
+  const displayEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
+  
+  const startDay = displayStart.getDate();
+  const endDay = displayEnd.getDate();
+  
+  return `${startDay}-${endDay}`;
 }
 
-export function getWeeksForMonth(date: Date, extraWeeks: number = 2): WeekData[] {
+export function getWeeksForMonth(date: Date): WeekData[] {
   const weeks: WeekData[] = [];
-  const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const firstDayOfMonth = new Date(year, month, 1);
+  const lastDayOfMonth = new Date(year, month + 1, 0);
+  
+  // Start from the week that contains the first day of the month
   let weekStart = getWeekStart(firstDayOfMonth);
   
-  // Go back one week to show context
-  weekStart.setDate(weekStart.getDate() - 7);
-  
-  // Calculate how many weeks to show
-  const lastDayOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  const lastWeekStart = getWeekStart(lastDayOfMonth);
-  
-  while (weekStart <= lastWeekStart || weeks.length < 6) {
-    weeks.push({
-      weekStart: new Date(weekStart),
-      weekEnd: getWeekEnd(weekStart),
-      weekLabel: formatWeekLabel(weekStart),
-    });
-    weekStart.setDate(weekStart.getDate() + 7);
+  while (weekStart <= lastDayOfMonth) {
+    const weekEnd = getWeekEnd(weekStart);
     
-    if (weeks.length >= 8) break; // Safety limit
-  }
-  
-  // Add extra future weeks
-  for (let i = 0; i < extraWeeks; i++) {
+    // Calculate which days of this week fall within the month
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+    
+    const effectiveStart = weekStart < monthStart ? monthStart : weekStart;
+    const effectiveEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
+    
     weeks.push({
       weekStart: new Date(weekStart),
-      weekEnd: getWeekEnd(weekStart),
-      weekLabel: formatWeekLabel(weekStart),
+      weekEnd: new Date(weekEnd),
+      weekLabel: formatWeekLabelForMonth(weekStart, month, year),
+      // Store the effective range within the month for capacity calculations
+      effectiveStart: new Date(effectiveStart),
+      effectiveEnd: new Date(effectiveEnd),
     });
+    
     weekStart.setDate(weekStart.getDate() + 7);
   }
   
@@ -76,4 +77,48 @@ export function isCurrentWeek(weekStart: Date): boolean {
 
 export function getMonthName(date: Date): string {
   return date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+}
+
+// Get the working days within a specific date range for an employee's schedule
+export function getWorkingDaysInRange(
+  startDate: Date, 
+  endDate: Date, 
+  workSchedule: { monday: number; tuesday: number; wednesday: number; thursday: number; friday: number; saturday: number; sunday: number }
+): { totalHours: number; days: number } {
+  const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+  let totalHours = 0;
+  let days = 0;
+  
+  const current = new Date(startDate);
+  current.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  
+  while (current <= end) {
+    const dayOfWeek = current.getDay();
+    const dayKey = dayKeys[dayOfWeek];
+    const hoursForDay = workSchedule[dayKey];
+    
+    if (hoursForDay > 0) {
+      totalHours += hoursForDay;
+      days++;
+    }
+    
+    current.setDate(current.getDate() + 1);
+  }
+  
+  return { totalHours, days };
+}
+
+// Calculate total working hours in a month for an employee
+export function getMonthlyCapacity(
+  year: number,
+  month: number,
+  workSchedule: { monday: number; tuesday: number; wednesday: number; thursday: number; friday: number; saturday: number; sunday: number }
+): number {
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  
+  const { totalHours } = getWorkingDaysInRange(firstDay, lastDay, workSchedule);
+  return totalHours;
 }

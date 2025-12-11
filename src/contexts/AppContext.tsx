@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { Employee, Client, Project, Allocation, LoadStatus } from '@/types';
+import { Employee, Client, Project, Allocation, LoadStatus, WorkSchedule } from '@/types';
 import { mockEmployees, mockClients, mockProjects, mockAllocations } from '@/data/mockData';
+import { getWorkingDaysInRange, getMonthlyCapacity } from '@/utils/dateUtils';
 
 interface AppContextType {
   employees: Employee[];
@@ -8,12 +9,18 @@ interface AppContextType {
   projects: Project[];
   allocations: Allocation[];
   updateEmployee: (employee: Employee) => void;
+  addClient: (client: Omit<Client, 'id'>) => void;
   updateClient: (client: Client) => void;
+  deleteClient: (id: string) => void;
+  addProject: (project: Omit<Project, 'id'>) => void;
+  updateProject: (project: Project) => void;
+  deleteProject: (id: string) => void;
   addAllocation: (allocation: Omit<Allocation, 'id'>) => void;
   updateAllocation: (allocation: Allocation) => void;
   deleteAllocation: (id: string) => void;
   getEmployeeAllocationsForWeek: (employeeId: string, weekStart: string) => Allocation[];
-  getEmployeeLoadForWeek: (employeeId: string, weekStart: string) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
+  getEmployeeLoadForWeek: (employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
+  getEmployeeMonthlyLoad: (employeeId: string, year: number, month: number) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
   getClientHoursForMonth: (clientId: string, month: Date) => { used: number; budget: number; percentage: number };
   getProjectById: (id: string) => Project | undefined;
   getClientById: (id: string) => Client | undefined;
@@ -24,15 +31,47 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [employees, setEmployees] = useState<Employee[]>(mockEmployees);
   const [clients, setClients] = useState<Client[]>(mockClients);
-  const [projects] = useState<Project[]>(mockProjects);
+  const [projects, setProjects] = useState<Project[]>(mockProjects);
   const [allocations, setAllocations] = useState<Allocation[]>(mockAllocations);
 
   const updateEmployee = useCallback((employee: Employee) => {
     setEmployees(prev => prev.map(e => e.id === employee.id ? employee : e));
   }, []);
 
+  const addClient = useCallback((client: Omit<Client, 'id'>) => {
+    const newClient: Client = {
+      ...client,
+      id: `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setClients(prev => [...prev, newClient]);
+  }, []);
+
   const updateClient = useCallback((client: Client) => {
     setClients(prev => prev.map(c => c.id === client.id ? client : c));
+  }, []);
+
+  const deleteClient = useCallback((id: string) => {
+    setClients(prev => prev.filter(c => c.id !== id));
+    // Also delete related projects
+    setProjects(prev => prev.filter(p => p.clientId !== id));
+  }, []);
+
+  const addProject = useCallback((project: Omit<Project, 'id'>) => {
+    const newProject: Project = {
+      ...project,
+      id: `project-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setProjects(prev => [...prev, newProject]);
+  }, []);
+
+  const updateProject = useCallback((project: Project) => {
+    setProjects(prev => prev.map(p => p.id === project.id ? project : p));
+  }, []);
+
+  const deleteProject = useCallback((id: string) => {
+    setProjects(prev => prev.filter(p => p.id !== id));
+    // Also delete related allocations
+    setAllocations(prev => prev.filter(a => a.projectId !== id));
   }, []);
 
   const addAllocation = useCallback((allocation: Omit<Allocation, 'id'>) => {
@@ -55,7 +94,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
   }, [allocations]);
 
-  const getEmployeeLoadForWeek = useCallback((employeeId: string, weekStart: string): { hours: number; capacity: number; status: LoadStatus; percentage: number } => {
+  // Calculate capacity for a specific week portion within the month
+  const getEmployeeLoadForWeek = useCallback((
+    employeeId: string, 
+    weekStart: string, 
+    effectiveStart?: Date, 
+    effectiveEnd?: Date
+  ): { hours: number; capacity: number; status: LoadStatus; percentage: number } => {
     const employee = employees.find(e => e.id === employeeId);
     if (!employee) return { hours: 0, capacity: 0, status: 'empty', percentage: 0 };
 
@@ -64,7 +109,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
     
     const totalHours = employeeAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-    const capacity = employee.defaultWeeklyCapacity;
+    
+    // Calculate capacity based on effective date range (partial week)
+    let capacity: number;
+    if (effectiveStart && effectiveEnd) {
+      const { totalHours: capacityHours } = getWorkingDaysInRange(effectiveStart, effectiveEnd, employee.workSchedule);
+      capacity = capacityHours;
+    } else {
+      capacity = employee.defaultWeeklyCapacity;
+    }
+    
+    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : 0;
+
+    let status: LoadStatus = 'empty';
+    if (totalHours === 0) {
+      status = 'empty';
+    } else if (percentage <= 85) {
+      status = 'healthy';
+    } else if (percentage <= 100) {
+      status = 'warning';
+    } else {
+      status = 'overload';
+    }
+
+    return { hours: totalHours, capacity, status, percentage };
+  }, [employees, allocations]);
+
+  // Calculate monthly load for an employee
+  const getEmployeeMonthlyLoad = useCallback((
+    employeeId: string, 
+    year: number, 
+    month: number
+  ): { hours: number; capacity: number; status: LoadStatus; percentage: number } => {
+    const employee = employees.find(e => e.id === employeeId);
+    if (!employee) return { hours: 0, capacity: 0, status: 'empty', percentage: 0 };
+
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+
+    // Get all allocations for this employee in this month
+    const monthAllocations = allocations.filter(a => {
+      if (a.employeeId !== employeeId) return false;
+      const weekStart = new Date(a.weekStartDate);
+      return weekStart >= monthStart && weekStart <= monthEnd;
+    });
+
+    const totalHours = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+    const capacity = getMonthlyCapacity(year, month, employee.workSchedule);
     const percentage = capacity > 0 ? (totalHours / capacity) * 100 : 0;
 
     let status: LoadStatus = 'empty';
@@ -117,20 +208,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     projects,
     allocations,
     updateEmployee,
+    addClient,
     updateClient,
+    deleteClient,
+    addProject,
+    updateProject,
+    deleteProject,
     addAllocation,
     updateAllocation,
     deleteAllocation,
     getEmployeeAllocationsForWeek,
     getEmployeeLoadForWeek,
+    getEmployeeMonthlyLoad,
     getClientHoursForMonth,
     getProjectById,
     getClientById,
   }), [
     employees, clients, projects, allocations,
-    updateEmployee, updateClient, addAllocation, updateAllocation, deleteAllocation,
-    getEmployeeAllocationsForWeek, getEmployeeLoadForWeek, getClientHoursForMonth,
-    getProjectById, getClientById
+    updateEmployee, addClient, updateClient, deleteClient,
+    addProject, updateProject, deleteProject,
+    addAllocation, updateAllocation, deleteAllocation,
+    getEmployeeAllocationsForWeek, getEmployeeLoadForWeek, getEmployeeMonthlyLoad,
+    getClientHoursForMonth, getProjectById, getClientById
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
