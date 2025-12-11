@@ -47,4 +47,6 @@ export interface WeekData {
   weekStart: Date;
   weekEnd: Date;
   weekLabel: string;
+  effectiveStart?: Date;
+  effectiveEnd?: Date;
 }
