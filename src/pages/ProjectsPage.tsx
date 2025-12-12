@@ -7,11 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Layers, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Layers, Plus, Pencil, Trash2, Clock } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 export default function ProjectsPage() {
-  const { projects, clients, addProject, updateProject, deleteProject } = useApp();
+  const { projects, clients, getProjectHoursForMonth, addProject, updateProject, deleteProject } = useApp();
   const [isAdding, setIsAdding] = useState(false);
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState<string | null>(null);
@@ -20,7 +21,10 @@ export default function ProjectsPage() {
     name: '',
     clientId: '',
     status: 'active' as const,
+    budgetHours: 20,
   });
+
+  const currentMonth = new Date();
 
   const getClientForProject = (clientId: string) => {
     return clients.find(c => c.id === clientId);
@@ -36,7 +40,7 @@ export default function ProjectsPage() {
       return;
     }
     addProject(newProject);
-    setNewProject({ name: '', clientId: '', status: 'active' });
+    setNewProject({ name: '', clientId: '', status: 'active', budgetHours: 20 });
     setIsAdding(false);
     toast({ title: "Proyecto creado", description: `${newProject.name} ha sido añadido` });
   };
@@ -67,7 +71,7 @@ export default function ProjectsPage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Proyectos</h1>
             <p className="text-muted-foreground">
-              Todos los proyectos activos de la agencia
+              Gestiona proyectos y sus horas mensuales
             </p>
           </div>
         </div>
@@ -116,6 +120,15 @@ export default function ProjectsPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Horas mensuales</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={newProject.budgetHours}
+                  onChange={(e) => setNewProject({ ...newProject, budgetHours: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsAdding(false)}>Cancelar</Button>
@@ -128,8 +141,10 @@ export default function ProjectsPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {projects.map((project) => {
           const client = getClientForProject(project.clientId);
+          const projectHours = getProjectHoursForMonth(project.id, currentMonth);
           const isEditing = editingProject === project.id;
           const isDeleting = deletingProject === project.id;
+          const percentage = projectHours.budget > 0 ? (projectHours.used / projectHours.budget) * 100 : 0;
           
           return (
             <Card key={project.id} className="transition-all hover:shadow-lg animate-fade-in">
@@ -192,6 +207,15 @@ export default function ProjectsPage() {
                             </Select>
                           </div>
                           <div className="space-y-2">
+                            <Label>Horas mensuales</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={project.budgetHours}
+                              onChange={(e) => updateProject({ ...project, budgetHours: parseFloat(e.target.value) || 0 })}
+                            />
+                          </div>
+                          <div className="space-y-2">
                             <Label>Estado</Label>
                             <Select 
                               value={project.status} 
@@ -225,7 +249,7 @@ export default function ProjectsPage() {
                           <DialogTitle>¿Eliminar proyecto?</DialogTitle>
                         </DialogHeader>
                         <p className="text-muted-foreground">
-                          Esta acción eliminará <strong>{project.name}</strong> y todas sus asignaciones.
+                          Esta acción eliminará <strong>{project.name}</strong> y todas sus horas asignadas.
                         </p>
                         <DialogFooter>
                           <Button variant="outline" onClick={() => setDeletingProject(null)}>Cancelar</Button>
@@ -236,10 +260,38 @@ export default function ProjectsPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">
                   Cliente: <span className="font-medium text-foreground">{client?.name}</span>
                 </p>
+                
+                {/* Hours Progress */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      <span>Horas</span>
+                    </div>
+                    <span className={cn(
+                      "font-bold",
+                      percentage > 100 && "text-destructive",
+                      percentage > 85 && percentage <= 100 && "text-warning"
+                    )}>
+                      {projectHours.used}h / {projectHours.budget}h
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div 
+                      className={cn(
+                        "h-full transition-all",
+                        percentage > 100 && "bg-destructive",
+                        percentage > 85 && percentage <= 100 && "bg-warning",
+                        percentage <= 85 && "bg-primary"
+                      )}
+                      style={{ width: `${Math.min(percentage, 100)}%` }}
+                    />
+                  </div>
+                </div>
               </CardContent>
             </Card>
           );
