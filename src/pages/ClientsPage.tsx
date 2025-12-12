@@ -19,7 +19,6 @@ export default function ClientsPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [newClient, setNewClient] = useState({
     name: '',
-    monthlyBudgetHours: 40,
     color: colorOptions[0],
   });
 
@@ -29,7 +28,7 @@ export default function ClientsPage() {
       return;
     }
     addClient(newClient);
-    setNewClient({ name: '', monthlyBudgetHours: 40, color: colorOptions[0] });
+    setNewClient({ name: '', color: colorOptions[0] });
     setIsAdding(false);
     toast({ title: "Cliente creado", description: `${newClient.name} ha sido añadido` });
   };
@@ -44,7 +43,7 @@ export default function ClientsPage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
             <p className="text-muted-foreground">
-              Controla los presupuestos y proyectos de cada cliente
+              Horas totales calculadas desde los proyectos
             </p>
           </div>
         </div>
@@ -67,15 +66,6 @@ export default function ClientsPage() {
                   value={newClient.name}
                   onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
                   placeholder="Nombre del cliente"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Presupuesto mensual (horas)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={newClient.monthlyBudgetHours}
-                  onChange={(e) => setNewClient({ ...newClient, monthlyBudgetHours: parseFloat(e.target.value) || 0 })}
                 />
               </div>
               <div className="space-y-2">

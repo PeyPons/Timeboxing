@@ -22,13 +22,13 @@ const colorOptions = [
 ];
 
 export function ClientCard({ client }: ClientCardProps) {
-  const { getClientHoursForMonth, projects, updateClient, deleteClient } = useApp();
+  const { getClientTotalHoursForMonth, projects, getProjectHoursForMonth, updateClient, deleteClient } = useApp();
   const [isEditing, setIsEditing] = useState(false);
   const [editedClient, setEditedClient] = useState(client);
   const [isDeleting, setIsDeleting] = useState(false);
   
   const currentMonth = new Date();
-  const { used, budget, percentage } = getClientHoursForMonth(client.id, currentMonth);
+  const { used, budget, percentage } = getClientTotalHoursForMonth(client.id, currentMonth);
   
   const clientProjects = projects.filter(p => p.clientId === client.id && p.status === 'active');
   
@@ -104,15 +104,6 @@ export function ClientCard({ client }: ClientCardProps) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Presupuesto mensual (horas)</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      value={editedClient.monthlyBudgetHours}
-                      onChange={(e) => setEditedClient({ ...editedClient, monthlyBudgetHours: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div className="space-y-2">
                     <Label>Color</Label>
                     <div className="flex flex-wrap gap-2">
                       {colorOptions.map((color) => (
@@ -164,7 +155,7 @@ export function ClientCard({ client }: ClientCardProps) {
         {/* Budget Progress */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Presupuesto mensual</span>
+            <span className="text-muted-foreground">Total horas</span>
             <span className={cn(
               "font-bold",
               isOverBudget && "text-destructive",
@@ -187,20 +178,35 @@ export function ClientCard({ client }: ClientCardProps) {
           </p>
         </div>
 
-        {/* Projects List */}
-        <div className="space-y-1.5">
-          {clientProjects.map((project) => (
-            <div 
-              key={project.id}
-              className="flex items-center gap-2 text-sm py-1"
-            >
+        {/* Projects List with Hours */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase">Proyectos</p>
+          {clientProjects.map((project) => {
+            const projectHours = getProjectHoursForMonth(project.id, currentMonth);
+            const projectPercentage = projectHours.budget > 0 ? (projectHours.used / projectHours.budget) * 100 : 0;
+            
+            return (
               <div 
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: client.color }}
-              />
-              <span className="text-muted-foreground">{project.name}</span>
-            </div>
-          ))}
+                key={project.id}
+                className="flex items-center justify-between gap-2 text-sm py-1.5 px-2 rounded-md bg-muted/30"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div 
+                    className="h-2 w-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: client.color }}
+                  />
+                  <span className="truncate">{project.name}</span>
+                </div>
+                <span className={cn(
+                  "text-xs font-medium flex-shrink-0",
+                  projectPercentage > 100 && "text-destructive",
+                  projectPercentage > 85 && projectPercentage <= 100 && "text-warning"
+                )}>
+                  {projectHours.used}h / {projectHours.budget}h
+                </span>
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>

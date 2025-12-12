@@ -1,12 +1,12 @@
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { BarChart3, Users, Briefcase, Clock, AlertTriangle, TrendingUp, FolderOpen } from 'lucide-react';
+import { BarChart3, Users, Clock, AlertTriangle, TrendingUp, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
 
 export default function ReportsPage() {
-  const { employees, clients, projects, allocations, getClientHoursForMonth, getProjectHoursForMonth } = useApp();
+  const { employees, clients, projects, allocations, getClientTotalHoursForMonth, getProjectHoursForMonth } = useApp();
   
   const currentMonth = new Date();
   const year = currentMonth.getFullYear();
@@ -27,9 +27,9 @@ export default function ReportsPage() {
   const totalAllocatedHours = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
   const utilizationRate = totalCapacity > 0 ? (totalAllocatedHours / totalCapacity) * 100 : 0;
   
-  // Clients over budget
+  // Clients data
   const clientsData = clients.map(c => {
-    const hours = getClientHoursForMonth(c.id, currentMonth);
+    const hours = getClientTotalHoursForMonth(c.id, currentMonth);
     return { ...c, ...hours };
   }).sort((a, b) => b.percentage - a.percentage);
 
@@ -48,9 +48,15 @@ export default function ReportsPage() {
   const activeProjects = projects.filter(p => p.status === 'active');
   const projectData = activeProjects.map(p => {
     const client = clients.find(c => c.id === p.clientId);
-    const projectAllocations = monthAllocations.filter(a => a.projectId === p.id);
-    const hours = projectAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-    return { ...p, clientName: client?.name, clientColor: client?.color, hours };
+    const projectHours = getProjectHoursForMonth(p.id, currentMonth);
+    return { 
+      ...p, 
+      clientName: client?.name, 
+      clientColor: client?.color, 
+      hours: projectHours.used,
+      budget: projectHours.budget,
+      percentage: projectHours.percentage
+    };
   }).sort((a, b) => b.hours - a.hours);
 
   const stats = [
@@ -71,14 +77,14 @@ export default function ReportsPage() {
     {
       title: 'Horas asignadas',
       value: `${totalAllocatedHours}h`,
-      subtitle: `de ${totalCapacity}h`,
+      subtitle: `de ${totalCapacity}h capacidad`,
       icon: Clock,
       color: 'text-warning',
       bgColor: 'bg-warning/10',
     },
     {
-      title: 'Clientes excedidos',
-      value: clientsOverBudget.length,
+      title: 'Proyectos excedidos',
+      value: projectData.filter(p => p.percentage > 100).length,
       icon: AlertTriangle,
       color: 'text-destructive',
       bgColor: 'bg-destructive/10',
@@ -170,11 +176,11 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        {/* Client Hours */}
+        {/* Client Total Hours */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Briefcase className="h-5 w-5 text-primary" />
+              <Users className="h-5 w-5 text-primary" />
               Horas por cliente
             </CardTitle>
           </CardHeader>
@@ -226,19 +232,40 @@ export default function ReportsPage() {
               {projectData.map((project) => (
                 <div 
                   key={project.id} 
-                  className="flex items-center justify-between p-3 rounded-lg border bg-card"
+                  className="p-3 rounded-lg border bg-card space-y-2"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div 
-                      className="h-3 w-3 rounded-full flex-shrink-0" 
-                      style={{ backgroundColor: project.clientColor || '#888' }}
-                    />
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm truncate">{project.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{project.clientName}</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div 
+                        className="h-3 w-3 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: project.clientColor || '#888' }}
+                      />
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">{project.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{project.clientName}</p>
+                      </div>
                     </div>
                   </div>
-                  <span className="font-bold text-sm flex-shrink-0 ml-2">{project.hours}h</span>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className={cn(
+                      "font-bold",
+                      project.percentage > 100 && "text-destructive",
+                      project.percentage > 85 && project.percentage <= 100 && "text-warning"
+                    )}>
+                      {project.hours}h / {project.budget}h
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div 
+                      className={cn(
+                        "h-full transition-all",
+                        project.percentage > 100 && "bg-destructive",
+                        project.percentage > 85 && project.percentage <= 100 && "bg-warning",
+                        project.percentage <= 85 && "bg-primary"
+                      )}
+                      style={{ width: `${Math.min(project.percentage, 100)}%` }}
+                    />
+                  </div>
                 </div>
               ))}
             </div>

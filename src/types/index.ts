@@ -20,7 +20,6 @@ export interface Employee {
 export interface Client {
   id: string;
   name: string;
-  monthlyBudgetHours: number;
   color: string;
 }
 
@@ -29,6 +28,7 @@ export interface Project {
   clientId: string;
   name: string;
   status: 'active' | 'archived';
+  budgetHours: number; // Monthly budget for this project
 }
 
 export interface Allocation {

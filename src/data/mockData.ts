@@ -103,23 +103,23 @@ export const mockEmployees: Employee[] = [
 ];
 
 export const mockClients: Client[] = [
-  { id: 'c1', name: 'VGC', monthlyBudgetHours: 80, color: '#0d9488' },
-  { id: 'c2', name: 'Audi', monthlyBudgetHours: 60, color: '#dc2626' },
-  { id: 'c3', name: 'TechStartup', monthlyBudgetHours: 40, color: '#7c3aed' },
-  { id: 'c4', name: 'E-Commerce Plus', monthlyBudgetHours: 50, color: '#ea580c' },
-  { id: 'c5', name: 'Local Business', monthlyBudgetHours: 20, color: '#0284c7' },
-  { id: 'c6', name: 'FinanceApp', monthlyBudgetHours: 35, color: '#16a34a' },
+  { id: 'c1', name: 'VGC', color: '#0d9488' },
+  { id: 'c2', name: 'Audi', color: '#dc2626' },
+  { id: 'c3', name: 'TechStartup', color: '#7c3aed' },
+  { id: 'c4', name: 'E-Commerce Plus', color: '#ea580c' },
+  { id: 'c5', name: 'Local Business', color: '#0284c7' },
+  { id: 'c6', name: 'FinanceApp', color: '#16a34a' },
 ];
 
 export const mockProjects: Project[] = [
-  { id: 'p1', clientId: 'c1', name: 'VGC - SEO Técnico', status: 'active' },
-  { id: 'p2', clientId: 'c1', name: 'VGC - Contenidos', status: 'active' },
-  { id: 'p3', clientId: 'c2', name: 'Audi - Link Building', status: 'active' },
-  { id: 'p4', clientId: 'c2', name: 'Audi - Auditoría SEO', status: 'active' },
-  { id: 'p5', clientId: 'c3', name: 'TechStartup - SEO Full', status: 'active' },
-  { id: 'p6', clientId: 'c4', name: 'E-Commerce - Fichas Producto', status: 'active' },
-  { id: 'p7', clientId: 'c5', name: 'Local - SEO Local', status: 'active' },
-  { id: 'p8', clientId: 'c6', name: 'FinanceApp - Blog SEO', status: 'active' },
+  { id: 'p1', clientId: 'c1', name: 'VGC - SEO Técnico', status: 'active', budgetHours: 40 },
+  { id: 'p2', clientId: 'c1', name: 'VGC - Contenidos', status: 'active', budgetHours: 40 },
+  { id: 'p3', clientId: 'c2', name: 'Audi - Link Building', status: 'active', budgetHours: 35 },
+  { id: 'p4', clientId: 'c2', name: 'Audi - Auditoría SEO', status: 'active', budgetHours: 25 },
+  { id: 'p5', clientId: 'c3', name: 'TechStartup - SEO Full', status: 'active', budgetHours: 40 },
+  { id: 'p6', clientId: 'c4', name: 'E-Commerce - Fichas Producto', status: 'active', budgetHours: 50 },
+  { id: 'p7', clientId: 'c5', name: 'Local - SEO Local', status: 'active', budgetHours: 20 },
+  { id: 'p8', clientId: 'c6', name: 'FinanceApp - Blog SEO', status: 'active', budgetHours: 35 },
 ];
 
 // Generate some mock allocations for the current month
@@ -144,7 +144,7 @@ export const mockAllocations: Allocation[] = [
   { id: 'a1', employeeId: '1', projectId: 'p1', weekStartDate: weeks[1], hoursAssigned: 15, status: 'planned', description: 'Análisis técnico VGC' },
   { id: 'a2', employeeId: '1', projectId: 'p5', weekStartDate: weeks[1], hoursAssigned: 12, status: 'planned', description: 'Setup TechStartup' },
   { id: 'a3', employeeId: '1', projectId: 'p1', weekStartDate: weeks[2], hoursAssigned: 20, status: 'planned', description: 'Implementación cambios' },
-  { id: 'a4', employeeId: '1', projectId: 'p7', weekStartDate: weeks[2], hoursAssigned: 15, status: 'planned', description: 'SEO Local setup' }, // Overload!
+  { id: 'a4', employeeId: '1', projectId: 'p7', weekStartDate: weeks[2], hoursAssigned: 15, status: 'planned', description: 'SEO Local setup' },
   
   // Raúl (38h capacity)
   { id: 'a5', employeeId: '2', projectId: 'p2', weekStartDate: weeks[1], hoursAssigned: 20, status: 'planned', description: 'Creación contenidos VGC' },
@@ -155,7 +155,7 @@ export const mockAllocations: Allocation[] = [
   { id: 'a8', employeeId: '3', projectId: 'p3', weekStartDate: weeks[1], hoursAssigned: 30, status: 'planned', description: 'Link Building Audi' },
   { id: 'a9', employeeId: '3', projectId: 'p5', weekStartDate: weeks[1], hoursAssigned: 8, status: 'planned', description: 'Links TechStartup' },
   { id: 'a10', employeeId: '3', projectId: 'p3', weekStartDate: weeks[2], hoursAssigned: 35, status: 'planned', description: 'Outreach Audi' },
-  { id: 'a11', employeeId: '3', projectId: 'p1', weekStartDate: weeks[2], hoursAssigned: 10, status: 'planned', description: 'Links VGC' }, // Overload!
+  { id: 'a11', employeeId: '3', projectId: 'p1', weekStartDate: weeks[2], hoursAssigned: 10, status: 'planned', description: 'Links VGC' },
   
   // Carlos (40h capacity)
   { id: 'a12', employeeId: '4', projectId: 'p1', weekStartDate: weeks[1], hoursAssigned: 25, status: 'planned', description: 'Auditoría técnica VGC' },
