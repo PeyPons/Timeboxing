@@ -22,6 +22,7 @@ interface AppContextType {
   getEmployeeLoadForWeek: (employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
   getEmployeeMonthlyLoad: (employeeId: string, year: number, month: number) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
   getClientHoursForMonth: (clientId: string, month: Date) => { used: number; budget: number; percentage: number };
+  getProjectHoursForMonth: (projectId: string, month: Date) => { used: number; budget: number; available: number; percentage: number };
   getProjectById: (id: string) => Project | undefined;
   getClientById: (id: string) => Client | undefined;
 }
@@ -194,6 +195,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { used: usedHours, budget: client.monthlyBudgetHours, percentage };
   }, [clients, projects, allocations]);
 
+  const getProjectHoursForMonth = useCallback((projectId: string, month: Date): { used: number; budget: number; available: number; percentage: number } => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return { used: 0, budget: 0, available: 0, percentage: 0 };
+
+    const client = clients.find(c => c.id === project.clientId);
+    if (!client) return { used: 0, budget: 0, available: 0, percentage: 0 };
+
+    // Get all hours for this specific project in this month
+    const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+
+    const projectAllocations = allocations.filter(a => {
+      if (a.projectId !== projectId) return false;
+      const weekStart = new Date(a.weekStartDate);
+      return weekStart >= monthStart && weekStart <= monthEnd;
+    });
+
+    const usedHours = projectAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+    
+    // Get client's total budget and total used across all projects
+    const clientProjects = projects.filter(p => p.clientId === project.clientId);
+    const clientAllocations = allocations.filter(a => {
+      if (!clientProjects.some(p => p.id === a.projectId)) return false;
+      const weekStart = new Date(a.weekStartDate);
+      return weekStart >= monthStart && weekStart <= monthEnd;
+    });
+    const totalClientUsed = clientAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+    const available = Math.max(0, client.monthlyBudgetHours - totalClientUsed);
+    
+    const percentage = client.monthlyBudgetHours > 0 ? (totalClientUsed / client.monthlyBudgetHours) * 100 : 0;
+
+    return { used: usedHours, budget: client.monthlyBudgetHours, available, percentage };
+  }, [clients, projects, allocations]);
+
   const getProjectById = useCallback((id: string) => {
     return projects.find(p => p.id === id);
   }, [projects]);
@@ -221,6 +256,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getEmployeeLoadForWeek,
     getEmployeeMonthlyLoad,
     getClientHoursForMonth,
+    getProjectHoursForMonth,
     getProjectById,
     getClientById,
   }), [
@@ -229,7 +265,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addProject, updateProject, deleteProject,
     addAllocation, updateAllocation, deleteAllocation,
     getEmployeeAllocationsForWeek, getEmployeeLoadForWeek, getEmployeeMonthlyLoad,
-    getClientHoursForMonth, getProjectById, getClientById
+    getClientHoursForMonth, getProjectHoursForMonth, getProjectById, getClientById
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
