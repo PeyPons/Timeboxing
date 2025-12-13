@@ -50,3 +50,12 @@ export interface WeekData {
   effectiveStart?: Date;
   effectiveEnd?: Date;
 }
+
+export interface Absence {
+  id: string;
+  employeeId: string;
+  startDate: string; // ISO date
+  endDate: string;   // ISO date
+  type: 'vacation' | 'sick' | 'personal' | 'other';
+  description?: string;
+}
