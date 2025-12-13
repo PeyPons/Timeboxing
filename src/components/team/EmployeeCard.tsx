@@ -6,17 +6,21 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
 import { ScheduleEditor } from './ScheduleEditor';
 import { AbsenceManager } from './AbsenceManager';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Pencil, Clock } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Pencil, Clock, Trash2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface EmployeeCardProps {
   employee: Employee;
 }
 
 export function EmployeeCard({ employee }: EmployeeCardProps) {
-  const { updateEmployee } = useApp();
+  const { updateEmployee, deleteEmployee, toggleEmployeeActive } = useApp();
   const [isEditing, setIsEditing] = useState(false);
   const [editedEmployee, setEditedEmployee] = useState(employee);
 
@@ -38,77 +42,129 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
   };
 
   return (
-    <Card className="overflow-hidden transition-all hover:shadow-lg animate-fade-in">
+    <Card className={cn(
+      "overflow-hidden transition-all hover:shadow-lg animate-fade-in",
+      !employee.isActive && "opacity-60"
+    )}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <Avatar className="h-12 w-12 border-2 border-primary/20">
-              <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+            <Avatar className={cn(
+              "h-12 w-12 border-2",
+              employee.isActive ? "border-primary/20" : "border-muted"
+            )}>
+              <AvatarFallback className={cn(
+                "font-semibold",
+                employee.isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+              )}>
                 {initials}
               </AvatarFallback>
             </Avatar>
             <div>
-              <h3 className="font-semibold text-foreground">{employee.name}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-foreground">{employee.name}</h3>
+                {!employee.isActive && (
+                  <Badge variant="secondary" className="text-xs">Inactivo</Badge>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">{employee.role}</p>
             </div>
           </div>
-          <Dialog open={isEditing} onOpenChange={setIsEditing}>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Pencil className="h-4 w-4" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
-              <DialogHeader>
-                <DialogTitle>Editar perfil de {employee.name}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-6 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Nombre</Label>
-                    <Input
-                      value={editedEmployee.name}
-                      onChange={(e) => setEditedEmployee({ ...editedEmployee, name: e.target.value })}
+          <div className="flex items-center gap-1">
+            <Dialog open={isEditing} onOpenChange={setIsEditing}>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Editar perfil de {employee.name}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-6 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Nombre</Label>
+                      <Input
+                        value={editedEmployee.name}
+                        onChange={(e) => setEditedEmployee({ ...editedEmployee, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Rol</Label>
+                      <Input
+                        value={editedEmployee.role}
+                        onChange={(e) => setEditedEmployee({ ...editedEmployee, role: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      Horario semanal
+                    </Label>
+                    <ScheduleEditor
+                      schedule={editedEmployee.workSchedule}
+                      onChange={(schedule) => setEditedEmployee({ 
+                        ...editedEmployee, 
+                        workSchedule: schedule,
+                        defaultWeeklyCapacity: Object.values(schedule).reduce((a, b) => a + b, 0)
+                      })}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Rol</Label>
-                    <Input
-                      value={editedEmployee.role}
-                      onChange={(e) => setEditedEmployee({ ...editedEmployee, role: e.target.value })}
-                    />
+
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={handleCancel}>
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleSave}>
+                      Guardar cambios
+                    </Button>
                   </div>
                 </div>
-
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2">
-                    <Clock className="h-4 w-4" />
-                    Horario semanal
-                  </Label>
-                  <ScheduleEditor
-                    schedule={editedEmployee.workSchedule}
-                    onChange={(schedule) => setEditedEmployee({ 
-                      ...editedEmployee, 
-                      workSchedule: schedule,
-                      defaultWeeklyCapacity: Object.values(schedule).reduce((a, b) => a + b, 0)
-                    })}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={handleCancel}>
-                    Cancelar
-                  </Button>
-                  <Button onClick={handleSave}>
-                    Guardar cambios
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Eliminar empleado?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Se eliminará a {employee.name} y todas sus asignaciones. Esta acción no se puede deshacer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={() => deleteEmployee(employee.id)}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Eliminar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
+        {/* Active/Inactive Toggle */}
+        <div className="flex items-center justify-between mb-4 p-2 rounded-lg bg-muted/50">
+          <Label htmlFor={`active-${employee.id}`} className="text-sm cursor-pointer">
+            Estado activo
+          </Label>
+          <Switch
+            id={`active-${employee.id}`}
+            checked={employee.isActive}
+            onCheckedChange={() => toggleEmployeeActive(employee.id)}
+          />
+        </div>
+
         <div className="grid grid-cols-7 gap-1">
           {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const).map((day, i) => {
             const hours = employee.workSchedule[day];
@@ -116,12 +172,16 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
             return (
               <div 
                 key={day}
-                className={`flex flex-col items-center rounded-md p-1.5 text-center ${
+                className={cn(
+                  "flex flex-col items-center rounded-md p-1.5 text-center",
                   hours > 0 ? 'bg-primary/10' : 'bg-muted/50'
-                }`}
+                )}
               >
                 <span className="text-xs text-muted-foreground">{dayLabels[i]}</span>
-                <span className={`text-sm font-medium ${hours > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
+                <span className={cn(
+                  "text-sm font-medium",
+                  hours > 0 ? 'text-primary' : 'text-muted-foreground'
+                )}>
                   {hours}h
                 </span>
               </div>
@@ -134,9 +194,11 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
           <span className="font-bold text-primary">{employee.defaultWeeklyCapacity}h</span>
         </div>
         
-        <div className="mt-4 border-t pt-4">
-          <AbsenceManager employee={employee} />
-        </div>
+        {employee.isActive && (
+          <div className="mt-4 border-t pt-4">
+            <AbsenceManager employee={employee} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Trash2, AlertCircle, Pencil, ArrowRight, Clock } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, Pencil, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth } from '@/utils/dateUtils';
 
@@ -157,7 +157,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 <SelectContent>
                   {projects.filter(p => p.status === 'active').map((project) => {
                     const client = getClientById(project.clientId);
-                    const projectHours = getProjectAvailableHours(project.id);
                     return (
                       <SelectItem key={project.id} value={project.id}>
                         <div className="flex items-center justify-between gap-4 w-full">
@@ -216,9 +215,9 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {weeks.map((week) => (
+                    {weeks.map((week, index) => (
                       <SelectItem key={week.weekStart.toISOString()} value={week.weekStart.toISOString().split('T')[0]}>
-                        {week.weekLabel}
+                        Semana {index + 1} ({week.weekLabel})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -280,7 +279,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
           {load.status === 'overload' && (
             <p className="mt-2 flex items-center gap-1 text-xs text-destructive">
               <AlertCircle className="h-3 w-3" />
-              Sobrecarga de {load.hours - load.capacity}h
+              {load.capacity === 0 
+                ? `Sin capacidad disponible (${load.hours}h asignadas)`
+                : `Sobrecarga de ${load.hours - load.capacity}h`
+              }
             </p>
           )}
         </div>

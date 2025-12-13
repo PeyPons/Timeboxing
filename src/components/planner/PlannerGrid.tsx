@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { EmployeeRow } from './EmployeeRow';
 import { AllocationSheet } from './AllocationSheet';
-import { getWeeksForMonth, getMonthName, isCurrentWeek, getMonthlyCapacity } from '@/utils/dateUtils';
+import { getWeeksForMonth, getMonthName, isCurrentWeek } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, CalendarDays, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,9 @@ export function PlannerGrid() {
   const weeks = getWeeksForMonth(currentMonth);
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
+
+  // Filter only active employees
+  const activeEmployees = employees.filter(e => e.isActive);
 
   const handlePrevMonth = () => {
     setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -105,6 +108,9 @@ export function PlannerGrid() {
                     isCurrentWeek(week.weekStart) && "font-semibold text-primary"
                   )}
                 >
+                  <span className="block text-[10px] sm:text-xs font-semibold text-primary mb-0.5">
+                    Semana {index + 1}
+                  </span>
                   <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
                     {week.weekLabel}
                     {isPartialWeek && (
@@ -125,7 +131,7 @@ export function PlannerGrid() {
 
         {/* Employee Rows */}
         <div className="divide-y divide-border/50 min-w-[600px]">
-          {employees.map((employee) => {
+          {activeEmployees.map((employee) => {
             const monthlyLoad = getEmployeeMonthlyLoad(employee.id, year, month);
             
             return (
@@ -160,6 +166,12 @@ export function PlannerGrid() {
             );
           })}
         </div>
+
+        {activeEmployees.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground">
+            No hay empleados activos para mostrar
+          </div>
+        )}
       </div>
 
       {/* Allocation Sheet */}
