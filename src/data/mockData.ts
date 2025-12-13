@@ -7,6 +7,7 @@ export const mockEmployees: Employee[] = [
     role: 'SEO Specialist',
     avatarUrl: '',
     defaultWeeklyCapacity: 30,
+    isActive: true,
     workSchedule: {
       monday: 6, tuesday: 6, wednesday: 6, thursday: 6, friday: 6,
       saturday: 0, sunday: 0
@@ -18,6 +19,7 @@ export const mockEmployees: Employee[] = [
     role: 'Content Manager',
     avatarUrl: '',
     defaultWeeklyCapacity: 38,
+    isActive: true,
     workSchedule: {
       monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 6,
       saturday: 0, sunday: 0
@@ -29,6 +31,7 @@ export const mockEmployees: Employee[] = [
     role: 'Link Builder',
     avatarUrl: '',
     defaultWeeklyCapacity: 40,
+    isActive: true,
     workSchedule: {
       monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8,
       saturday: 0, sunday: 0
@@ -40,6 +43,7 @@ export const mockEmployees: Employee[] = [
     role: 'Technical SEO',
     avatarUrl: '',
     defaultWeeklyCapacity: 40,
+    isActive: true,
     workSchedule: {
       monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8,
       saturday: 0, sunday: 0
@@ -51,6 +55,7 @@ export const mockEmployees: Employee[] = [
     role: 'Account Manager',
     avatarUrl: '',
     defaultWeeklyCapacity: 35,
+    isActive: true,
     workSchedule: {
       monday: 7, tuesday: 7, wednesday: 7, thursday: 7, friday: 7,
       saturday: 0, sunday: 0
@@ -62,6 +67,7 @@ export const mockEmployees: Employee[] = [
     role: 'SEO Analyst',
     avatarUrl: '',
     defaultWeeklyCapacity: 40,
+    isActive: true,
     workSchedule: {
       monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8,
       saturday: 0, sunday: 0
@@ -73,6 +79,7 @@ export const mockEmployees: Employee[] = [
     role: 'Content Writer',
     avatarUrl: '',
     defaultWeeklyCapacity: 32,
+    isActive: true,
     workSchedule: {
       monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 0,
       saturday: 0, sunday: 0
@@ -84,6 +91,7 @@ export const mockEmployees: Employee[] = [
     role: 'SEO Director',
     avatarUrl: '',
     defaultWeeklyCapacity: 40,
+    isActive: true,
     workSchedule: {
       monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8,
       saturday: 0, sunday: 0
@@ -95,6 +103,7 @@ export const mockEmployees: Employee[] = [
     role: 'Junior SEO',
     avatarUrl: '',
     defaultWeeklyCapacity: 40,
+    isActive: false,
     workSchedule: {
       monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8,
       saturday: 0, sunday: 0
@@ -182,7 +191,7 @@ export const mockAllocations: Allocation[] = [
   { id: 'a25', employeeId: '8', projectId: 'p3', weekStartDate: weeks[1], hoursAssigned: 8, status: 'planned', description: 'Estrategia Audi' },
   { id: 'a26', employeeId: '8', projectId: 'p5', weekStartDate: weeks[1], hoursAssigned: 10, status: 'planned', description: 'Onboarding TechStartup' },
   
-  // Sofía (40h - Junior)
+  // Sofía (40h - Junior - INACTIVE)
   { id: 'a27', employeeId: '9', projectId: 'p7', weekStartDate: weeks[1], hoursAssigned: 20, status: 'planned', description: 'Investigación Local' },
   { id: 'a28', employeeId: '9', projectId: 'p6', weekStartDate: weeks[1], hoursAssigned: 15, status: 'planned', description: 'Apoyo E-Commerce' },
   { id: 'a29', employeeId: '9', projectId: 'p7', weekStartDate: weeks[2], hoursAssigned: 25, status: 'planned', description: 'Implementación Local' },

@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { Employee, Client, Project, Allocation, LoadStatus, WorkSchedule, Absence } from '@/types';
+import { Employee, Client, Project, Allocation, LoadStatus, WorkSchedule, Absence, TeamEvent } from '@/types';
 import { mockEmployees, mockClients, mockProjects, mockAllocations } from '@/data/mockData';
 import { mockAbsences } from '@/data/mockAbsences';
+import { mockTeamEvents } from '@/data/mockTeamEvents';
 import { getWorkingDaysInRange, getMonthlyCapacity } from '@/utils/dateUtils';
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
+import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 
 interface AppContextType {
   employees: Employee[];
@@ -11,7 +13,10 @@ interface AppContextType {
   projects: Project[];
   allocations: Allocation[];
   absences: Absence[];
+  teamEvents: TeamEvent[];
   updateEmployee: (employee: Employee) => void;
+  deleteEmployee: (id: string) => void;
+  toggleEmployeeActive: (id: string) => void;
   addClient: (client: Omit<Client, 'id'>) => void;
   updateClient: (client: Client) => void;
   deleteClient: (id: string) => void;
@@ -23,6 +28,9 @@ interface AppContextType {
   deleteAllocation: (id: string) => void;
   addAbsence: (absence: Omit<Absence, 'id'>) => void;
   deleteAbsence: (id: string) => void;
+  addTeamEvent: (event: Omit<TeamEvent, 'id'>) => void;
+  updateTeamEvent: (event: TeamEvent) => void;
+  deleteTeamEvent: (id: string) => void;
   getEmployeeAllocationsForWeek: (employeeId: string, weekStart: string) => Allocation[];
   getEmployeeLoadForWeek: (employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
   getEmployeeMonthlyLoad: (employeeId: string, year: number, month: number) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
@@ -40,9 +48,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(mockProjects);
   const [allocations, setAllocations] = useState<Allocation[]>(mockAllocations);
   const [absences, setAbsences] = useState<Absence[]>(mockAbsences);
+  const [teamEvents, setTeamEvents] = useState<TeamEvent[]>(mockTeamEvents);
 
   const updateEmployee = useCallback((employee: Employee) => {
     setEmployees(prev => prev.map(e => e.id === employee.id ? employee : e));
+  }, []);
+
+  const deleteEmployee = useCallback((id: string) => {
+    setEmployees(prev => prev.filter(e => e.id !== id));
+    setAllocations(prev => prev.filter(a => a.employeeId !== id));
+    setAbsences(prev => prev.filter(a => a.employeeId !== id));
+  }, []);
+
+  const toggleEmployeeActive = useCallback((id: string) => {
+    setEmployees(prev => prev.map(e => 
+      e.id === id ? { ...e, isActive: !e.isActive } : e
+    ));
   }, []);
 
   const addClient = useCallback((client: Omit<Client, 'id'>) => {
@@ -107,6 +128,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAbsences(prev => prev.filter(a => a.id !== id));
   }, []);
 
+  const addTeamEvent = useCallback((event: Omit<TeamEvent, 'id'>) => {
+    const newEvent: TeamEvent = {
+      ...event,
+      id: `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setTeamEvents(prev => [...prev, newEvent]);
+  }, []);
+
+  const updateTeamEvent = useCallback((event: TeamEvent) => {
+    setTeamEvents(prev => prev.map(e => e.id === event.id ? event : e));
+  }, []);
+
+  const deleteTeamEvent = useCallback((id: string) => {
+    setTeamEvents(prev => prev.filter(e => e.id !== id));
+  }, []);
+
   const getEmployeeAllocationsForWeek = useCallback((employeeId: string, weekStart: string) => {
     return allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
   }, [allocations]);
@@ -146,11 +183,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const absenceHours = getAbsenceHoursInRange(rangeStart, rangeEnd, employeeAbsences, employee.workSchedule);
     capacity = Math.max(0, capacity - absenceHours);
     
-    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : (totalHours > 0 ? 100 : 0);
+    // Subtract team event hours from capacity
+    const eventHours = getTeamEventHoursInRange(rangeStart, rangeEnd, employeeId, teamEvents, employee.workSchedule);
+    capacity = Math.max(0, capacity - eventHours);
+    
+    // Fix: when capacity is 0 but there are hours, it's overload
+    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : (totalHours > 0 ? 999 : 0);
 
     let status: LoadStatus = 'empty';
     if (totalHours === 0) {
       status = 'empty';
+    } else if (capacity === 0 && totalHours > 0) {
+      // If no capacity but has hours assigned = overload
+      status = 'overload';
     } else if (percentage <= 85) {
       status = 'healthy';
     } else if (percentage <= 100) {
@@ -160,7 +205,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     return { hours: totalHours, capacity, status, percentage };
-  }, [employees, allocations, absences]);
+  }, [employees, allocations, absences, teamEvents]);
 
   const getEmployeeMonthlyLoad = useCallback((
     employeeId: string, 
@@ -187,11 +232,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const absenceHours = getAbsenceHoursInRange(monthStart, monthEnd, employeeAbsences, employee.workSchedule);
     capacity = Math.max(0, capacity - absenceHours);
     
-    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : (totalHours > 0 ? 100 : 0);
+    // Subtract team event hours from monthly capacity
+    const eventHours = getTeamEventHoursInRange(monthStart, monthEnd, employeeId, teamEvents, employee.workSchedule);
+    capacity = Math.max(0, capacity - eventHours);
+    
+    // Fix: when capacity is 0 but there are hours, it's overload
+    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : (totalHours > 0 ? 999 : 0);
 
     let status: LoadStatus = 'empty';
     if (totalHours === 0) {
       status = 'empty';
+    } else if (capacity === 0 && totalHours > 0) {
+      // If no capacity but has hours assigned = overload
+      status = 'overload';
     } else if (percentage <= 85) {
       status = 'healthy';
     } else if (percentage <= 100) {
@@ -201,7 +254,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     return { hours: totalHours, capacity, status, percentage };
-  }, [employees, allocations, absences]);
+  }, [employees, allocations, absences, teamEvents]);
 
   // Get hours for a specific project in a month
   const getProjectHoursForMonth = useCallback((projectId: string, month: Date): { used: number; budget: number; available: number; percentage: number } => {
@@ -265,7 +318,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     projects,
     allocations,
     absences,
+    teamEvents,
     updateEmployee,
+    deleteEmployee,
+    toggleEmployeeActive,
     addClient,
     updateClient,
     deleteClient,
@@ -277,6 +333,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteAllocation,
     addAbsence,
     deleteAbsence,
+    addTeamEvent,
+    updateTeamEvent,
+    deleteTeamEvent,
     getEmployeeAllocationsForWeek,
     getEmployeeLoadForWeek,
     getEmployeeMonthlyLoad,
@@ -285,11 +344,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getProjectById,
     getClientById,
   }), [
-    employees, clients, projects, allocations, absences,
-    updateEmployee, addClient, updateClient, deleteClient,
+    employees, clients, projects, allocations, absences, teamEvents,
+    updateEmployee, deleteEmployee, toggleEmployeeActive,
+    addClient, updateClient, deleteClient,
     addProject, updateProject, deleteProject,
     addAllocation, updateAllocation, deleteAllocation,
     addAbsence, deleteAbsence,
+    addTeamEvent, updateTeamEvent, deleteTeamEvent,
     getEmployeeAllocationsForWeek, getEmployeeLoadForWeek, getEmployeeMonthlyLoad,
     getProjectHoursForMonth, getClientTotalHoursForMonth, getProjectById, getClientById
   ]);

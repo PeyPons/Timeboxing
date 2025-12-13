@@ -15,6 +15,16 @@ export interface Employee {
   role: string;
   defaultWeeklyCapacity: number;
   workSchedule: WorkSchedule;
+  isActive: boolean;
+}
+
+export interface TeamEvent {
+  id: string;
+  name: string;
+  date: string; // ISO date
+  hoursReduction: number;
+  affectedEmployeeIds: string[] | 'all';
+  description?: string;
 }
 
 export interface Client {
