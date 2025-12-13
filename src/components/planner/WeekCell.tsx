@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { LoadStatus } from '@/types';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Palmtree } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface WeekCellProps {
@@ -9,10 +9,23 @@ interface WeekCellProps {
   status: LoadStatus;
   percentage: number;
   isCurrentWeek?: boolean;
+  hasAbsence?: boolean;
+  absenceHours?: number;
+  baseCapacity?: number;
   onClick?: () => void;
 }
 
-export function WeekCell({ hours, capacity, status, percentage, isCurrentWeek, onClick }: WeekCellProps) {
+export function WeekCell({ 
+  hours, 
+  capacity, 
+  status, 
+  percentage, 
+  isCurrentWeek, 
+  hasAbsence,
+  absenceHours = 0,
+  baseCapacity,
+  onClick 
+}: WeekCellProps) {
   const statusClasses = {
     empty: 'bg-muted/30 border-muted hover:bg-muted/50',
     healthy: 'bg-success/10 border-success/30 hover:bg-success/20',
@@ -36,11 +49,16 @@ export function WeekCell({ hours, capacity, status, percentage, isCurrentWeek, o
             "relative flex h-16 w-full flex-col items-center justify-center rounded-lg border-2 transition-all duration-200",
             "hover:shadow-md cursor-pointer",
             statusClasses[status],
-            isCurrentWeek && "ring-2 ring-primary ring-offset-2"
+            isCurrentWeek && "ring-2 ring-primary ring-offset-2",
+            hasAbsence && "border-dashed"
           )}
         >
           {status === 'overload' && (
             <AlertTriangle className="absolute right-1.5 top-1.5 h-4 w-4 text-destructive" />
+          )}
+          
+          {hasAbsence && status !== 'overload' && (
+            <Palmtree className="absolute right-1.5 top-1.5 h-4 w-4 text-warning" />
           )}
           
           {hours > 0 ? (
@@ -62,6 +80,11 @@ export function WeekCell({ hours, capacity, status, percentage, isCurrentWeek, o
           <p className="font-medium">
             {hours}h asignadas / {capacity}h capacidad
           </p>
+          {hasAbsence && baseCapacity !== undefined && (
+            <p className="text-xs text-warning">
+              🏖️ Capacidad base: {baseCapacity}h - {absenceHours}h ausencia
+            </p>
+          )}
           <p className={cn("text-xs", textClasses[status])}>
             {percentage.toFixed(0)}% de carga
             {status === 'overload' && ' ⚠️ Sobrecarga'}

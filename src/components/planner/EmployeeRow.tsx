@@ -2,7 +2,8 @@ import { Employee, WeekData } from '@/types';
 import { useApp } from '@/contexts/AppContext';
 import { WeekCell } from './WeekCell';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { formatDateToISO, isCurrentWeek } from '@/utils/dateUtils';
+import { formatDateToISO, isCurrentWeek, getWorkingDaysInRange } from '@/utils/dateUtils';
+import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 
 interface EmployeeRowProps {
   employee: Employee;
@@ -11,7 +12,9 @@ interface EmployeeRowProps {
 }
 
 export function EmployeeRow({ employee, weeks, onCellClick }: EmployeeRowProps) {
-  const { getEmployeeLoadForWeek } = useApp();
+  const { getEmployeeLoadForWeek, absences } = useApp();
+  
+  const employeeAbsences = absences.filter(a => a.employeeId === employee.id);
 
   const initials = employee.name
     .split(' ')
@@ -49,6 +52,18 @@ export function EmployeeRow({ employee, weeks, onCellClick }: EmployeeRowProps) 
             week.effectiveEnd
           );
           
+          // Calculate absence info for this week
+          const rangeStart = week.effectiveStart || week.weekStart;
+          const weekEndDate = new Date(week.weekStart);
+          weekEndDate.setDate(weekEndDate.getDate() + 6);
+          const rangeEnd = week.effectiveEnd || weekEndDate;
+          
+          const absenceHours = getAbsenceHoursInRange(rangeStart, rangeEnd, employeeAbsences, employee.workSchedule);
+          const hasAbsence = absenceHours > 0;
+          
+          // Calculate base capacity (without absences)
+          const { totalHours: baseCapacity } = getWorkingDaysInRange(rangeStart, rangeEnd, employee.workSchedule);
+          
           return (
             <div key={weekStartStr} className="flex-1 min-w-[60px] sm:min-w-[80px]">
               <WeekCell
@@ -57,6 +72,9 @@ export function EmployeeRow({ employee, weeks, onCellClick }: EmployeeRowProps) 
                 status={load.status}
                 percentage={load.percentage}
                 isCurrentWeek={isCurrentWeek(week.weekStart)}
+                hasAbsence={hasAbsence}
+                absenceHours={absenceHours}
+                baseCapacity={baseCapacity}
                 onClick={() => onCellClick(employee.id, weekStartStr)}
               />
             </div>
