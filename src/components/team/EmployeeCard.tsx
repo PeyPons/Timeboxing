@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScheduleEditor } from './ScheduleEditor';
+import { AbsenceManager } from './AbsenceManager';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Pencil, Clock, User } from 'lucide-react';
+import { Pencil, Clock } from 'lucide-react';
 
 interface EmployeeCardProps {
   employee: Employee;
@@ -131,6 +132,10 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
           <Clock className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm text-muted-foreground">Capacidad semanal:</span>
           <span className="font-bold text-primary">{employee.defaultWeeklyCapacity}h</span>
+        </div>
+        
+        <div className="mt-4 border-t pt-4">
+          <AbsenceManager employee={employee} />
         </div>
       </CardContent>
     </Card>

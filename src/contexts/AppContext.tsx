@@ -1,13 +1,16 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { Employee, Client, Project, Allocation, LoadStatus, WorkSchedule } from '@/types';
+import { Employee, Client, Project, Allocation, LoadStatus, WorkSchedule, Absence } from '@/types';
 import { mockEmployees, mockClients, mockProjects, mockAllocations } from '@/data/mockData';
+import { mockAbsences } from '@/data/mockAbsences';
 import { getWorkingDaysInRange, getMonthlyCapacity } from '@/utils/dateUtils';
+import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 
 interface AppContextType {
   employees: Employee[];
   clients: Client[];
   projects: Project[];
   allocations: Allocation[];
+  absences: Absence[];
   updateEmployee: (employee: Employee) => void;
   addClient: (client: Omit<Client, 'id'>) => void;
   updateClient: (client: Client) => void;
@@ -18,6 +21,8 @@ interface AppContextType {
   addAllocation: (allocation: Omit<Allocation, 'id'>) => void;
   updateAllocation: (allocation: Allocation) => void;
   deleteAllocation: (id: string) => void;
+  addAbsence: (absence: Omit<Absence, 'id'>) => void;
+  deleteAbsence: (id: string) => void;
   getEmployeeAllocationsForWeek: (employeeId: string, weekStart: string) => Allocation[];
   getEmployeeLoadForWeek: (employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
   getEmployeeMonthlyLoad: (employeeId: string, year: number, month: number) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
@@ -34,6 +39,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [clients, setClients] = useState<Client[]>(mockClients);
   const [projects, setProjects] = useState<Project[]>(mockProjects);
   const [allocations, setAllocations] = useState<Allocation[]>(mockAllocations);
+  const [absences, setAbsences] = useState<Absence[]>(mockAbsences);
 
   const updateEmployee = useCallback((employee: Employee) => {
     setEmployees(prev => prev.map(e => e.id === employee.id ? employee : e));
@@ -89,6 +95,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAllocations(prev => prev.filter(a => a.id !== id));
   }, []);
 
+  const addAbsence = useCallback((absence: Omit<Absence, 'id'>) => {
+    const newAbsence: Absence = {
+      ...absence,
+      id: `absence-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setAbsences(prev => [...prev, newAbsence]);
+  }, []);
+
+  const deleteAbsence = useCallback((id: string) => {
+    setAbsences(prev => prev.filter(a => a.id !== id));
+  }, []);
+
   const getEmployeeAllocationsForWeek = useCallback((employeeId: string, weekStart: string) => {
     return allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
   }, [allocations]);
@@ -109,6 +127,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const totalHours = employeeAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
     
     let capacity: number;
+    const weekStartDate = new Date(weekStart);
+    const weekEndDate = new Date(weekStart);
+    weekEndDate.setDate(weekEndDate.getDate() + 6);
+    
+    const rangeStart = effectiveStart || weekStartDate;
+    const rangeEnd = effectiveEnd || weekEndDate;
+    
     if (effectiveStart && effectiveEnd) {
       const { totalHours: capacityHours } = getWorkingDaysInRange(effectiveStart, effectiveEnd, employee.workSchedule);
       capacity = capacityHours;
@@ -116,7 +141,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       capacity = employee.defaultWeeklyCapacity;
     }
     
-    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : 0;
+    // Subtract absence hours from capacity
+    const employeeAbsences = absences.filter(a => a.employeeId === employeeId);
+    const absenceHours = getAbsenceHoursInRange(rangeStart, rangeEnd, employeeAbsences, employee.workSchedule);
+    capacity = Math.max(0, capacity - absenceHours);
+    
+    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : (totalHours > 0 ? 100 : 0);
 
     let status: LoadStatus = 'empty';
     if (totalHours === 0) {
@@ -130,7 +160,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     return { hours: totalHours, capacity, status, percentage };
-  }, [employees, allocations]);
+  }, [employees, allocations, absences]);
 
   const getEmployeeMonthlyLoad = useCallback((
     employeeId: string, 
@@ -150,8 +180,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     const totalHours = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-    const capacity = getMonthlyCapacity(year, month, employee.workSchedule);
-    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : 0;
+    let capacity = getMonthlyCapacity(year, month, employee.workSchedule);
+    
+    // Subtract absence hours from monthly capacity
+    const employeeAbsences = absences.filter(a => a.employeeId === employeeId);
+    const absenceHours = getAbsenceHoursInRange(monthStart, monthEnd, employeeAbsences, employee.workSchedule);
+    capacity = Math.max(0, capacity - absenceHours);
+    
+    const percentage = capacity > 0 ? (totalHours / capacity) * 100 : (totalHours > 0 ? 100 : 0);
 
     let status: LoadStatus = 'empty';
     if (totalHours === 0) {
@@ -165,7 +201,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     return { hours: totalHours, capacity, status, percentage };
-  }, [employees, allocations]);
+  }, [employees, allocations, absences]);
 
   // Get hours for a specific project in a month
   const getProjectHoursForMonth = useCallback((projectId: string, month: Date): { used: number; budget: number; available: number; percentage: number } => {
@@ -228,6 +264,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     clients,
     projects,
     allocations,
+    absences,
     updateEmployee,
     addClient,
     updateClient,
@@ -238,6 +275,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addAllocation,
     updateAllocation,
     deleteAllocation,
+    addAbsence,
+    deleteAbsence,
     getEmployeeAllocationsForWeek,
     getEmployeeLoadForWeek,
     getEmployeeMonthlyLoad,
@@ -246,10 +285,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getProjectById,
     getClientById,
   }), [
-    employees, clients, projects, allocations,
+    employees, clients, projects, allocations, absences,
     updateEmployee, addClient, updateClient, deleteClient,
     addProject, updateProject, deleteProject,
     addAllocation, updateAllocation, deleteAllocation,
+    addAbsence, deleteAbsence,
     getEmployeeAllocationsForWeek, getEmployeeLoadForWeek, getEmployeeMonthlyLoad,
     getProjectHoursForMonth, getClientTotalHoursForMonth, getProjectById, getClientById
   ]);
