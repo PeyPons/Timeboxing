@@ -51,12 +51,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
 
-  // ✅ ESTADO PARA EDICIÓN INLINE
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineNameValue, setInlineNameValue] = useState('');
   const inlineInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados Editar Full
   const [editProjectId, setEditProjectId] = useState('');
   const [editTaskName, setEditTaskName] = useState('');
   const [editHours, setEditHours] = useState('');
@@ -79,7 +77,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     if (open) setViewDate(new Date(weekStart));
   }, [open, weekStart]);
 
-  // Focus automático al input inline
   useEffect(() => {
     if (inlineEditingId && inlineInputRef.current) {
         inlineInputRef.current.focus();
@@ -90,8 +87,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
 
   const handlePrevMonth = () => setViewDate(prev => subMonths(prev, 1));
   const handleNextMonth = () => setViewDate(prev => addMonths(prev, 1));
-
-  // --- LÓGICA DE FORMULARIO ---
 
   const startAdd = (initialWeekStr: string) => {
     setEditingAllocation(null);
@@ -137,13 +132,11 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     setIsFormOpen(true);
   };
 
-  // ✅ INICIAR EDICIÓN INLINE
   const startInlineEdit = (allocation: Allocation) => {
     setInlineEditingId(allocation.id);
     setInlineNameValue(allocation.taskName || '');
   };
 
-  // ✅ GUARDAR EDICIÓN INLINE
   const saveInlineEdit = (allocation: Allocation) => {
     if (inlineNameValue.trim() !== allocation.taskName) {
         updateAllocation({
@@ -154,7 +147,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     setInlineEditingId(null);
   };
 
-  // ✅ MOVER TAREA A OTRA SEMANA
   const moveTaskToWeek = (allocation: Allocation, targetWeekDate: string) => {
     updateAllocation({
         ...allocation,
@@ -247,7 +239,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
             </div>
           </SheetHeader>
 
-          {/* ✅ GRID DE 5 COLUMNAS Y FUENTE MÁS GRANDE */}
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 pb-20">
             {weeks.map((week, index) => {
                 const weekStr = week.weekStart.toISOString().split('T')[0];
@@ -316,7 +307,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                                     
                                                     <div className="flex-1 min-w-0" onDoubleClick={() => startInlineEdit(alloc)}>
                                                         <div className="flex justify-between items-center gap-2">
-                                                            {/* ✅ LÓGICA DE EDICIÓN INLINE */}
                                                             {inlineEditingId === alloc.id ? (
                                                                 <Input 
                                                                     ref={inlineInputRef}
@@ -343,7 +333,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                                         )}
                                                     </div>
 
-                                                    {/* ✅ MENÚ CONTEXTUAL: EDITAR Y MOVER */}
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
                                                             <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 text-slate-400 hover:text-indigo-600">
@@ -381,7 +370,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
         </SheetContent>
       </Sheet>
 
-      {/* DIÁLOGO AÑADIR/EDITAR (Mantenido igual, solo necesitas asegurarte de tener la parte de abajo de tu archivo original) */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
           <DialogHeader className="p-6 pb-2">
@@ -460,7 +448,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
                     {newTasks.map((task) => (
                         <div key={task.id} className="flex gap-2 items-start animate-in fade-in slide-in-from-top-1 duration-200">
-                            {/* ... (BUSCADOR PROYECTO MANTENIDO IGUAL QUE ANTES) ... */}
                             <div className="flex-1 min-w-0">
                                 <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
                                     <PopoverTrigger asChild>
