@@ -1,6 +1,6 @@
 import { Allocation, LoadStatus } from '@/types';
 import { cn } from '@/lib/utils';
-import { TrendingUp, TrendingDown, AlertCircle, Palmtree, CalendarOff } from 'lucide-react';
+import { TrendingUp, TrendingDown, AlertCircle, AlertTriangle } from 'lucide-react';
 
 interface WeekCellProps {
   allocations: Allocation[];
@@ -10,7 +10,6 @@ interface WeekCellProps {
   percentage: number;
   isCurrentWeek: boolean;
   baseCapacity: number;
-  // ✅ Recibimos el breakdown
   breakdown: { reason: string; hours: number; type: 'absence' | 'event' }[];
   onClick: () => void;
 }
@@ -33,7 +32,10 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
   }
 
   const hasActivity = allocations.length > 0;
-  const isOverload = status === 'overload';
+  const isOverload = hours > capacity;
+  // ✅ Detectamos si falta por asignar (incluso si hay actividad)
+  const isUnderload = hours < capacity && capacity > 0; 
+  
   const hasReductions = breakdown && breakdown.length > 0;
 
   return (
@@ -43,10 +45,11 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
       !hasActivity && !hasReductions && "opacity-60 hover:opacity-100"
     )}>
       {/* Semáforo */}
-      <div className={cn("absolute top-1 right-1 w-2 h-2 rounded-full",
+      <div className={cn("absolute top-1 right-1 w-2 h-2 rounded-full transition-colors",
           status === 'overload' ? "bg-red-500" :
-          status === 'warning' ? "bg-amber-400" :
-          status === 'healthy' ? "bg-green-400" : "bg-slate-200"
+          status === 'warning' ? "bg-amber-400" : // Warning suele ser "casi lleno"
+          isUnderload ? "bg-amber-200" : // Un ámbar más suave para "falta rellenar"
+          "bg-slate-200" // Lleno o vacío sin capacidad
       )} />
 
       {/* --- SECCIÓN TRABAJO (ARRIBA) --- */}
@@ -81,7 +84,7 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
         </div>
       )}
 
-      {/* --- SECCIÓN EVENTOS Y AUSENCIAS (CENTRO/ABAJO) --- */}
+      {/* --- SECCIÓN REDUCCIONES (CENTRO/ABAJO) --- */}
       {hasReductions && (
         <div className="mt-2 space-y-1">
             {breakdown.map((item, idx) => (
@@ -89,9 +92,8 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
                     "flex justify-between items-center text-[9px] px-1.5 py-0.5 rounded border",
                     item.type === 'absence' ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200"
                 )}>
-                    <span className="flex items-center gap-1 truncate max-w-[80px]" title={item.reason}>
-                        {item.type === 'absence' ? <Palmtree className="h-3 w-3" /> : <CalendarOff className="h-3 w-3" />}
-                        <span className="truncate">{item.reason.replace('Ausencia: ', '').replace('Evento: ', '')}</span>
+                    <span className="truncate max-w-[80px]" title={item.reason}>
+                        {item.reason.replace('Ausencia: ', '').replace('Evento: ', '')}
                     </span>
                     <span className="font-mono font-bold whitespace-nowrap">-{item.hours}h</span>
                 </div>
@@ -99,13 +101,18 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
         </div>
       )}
 
-      {/* --- FOOTER (TOTALES) --- */}
+      {/* --- FOOTER (TOTALES CON ALERTAS DE COLOR) --- */}
       <div className="mt-auto pt-2 border-t flex justify-end">
          <div className={cn(
-             "text-xs font-bold flex items-center gap-1",
-             isOverload ? "text-red-600" : "text-slate-600"
+             "text-xs font-bold flex items-center gap-1.5 transition-colors duration-300",
+             isOverload ? "text-red-600" : 
+             isUnderload ? "text-amber-600" : // ✅ AVISO NARANJA SI FALTAN HORAS
+             "text-slate-400" // GRIS SI ESTÁ PERFECTO (O CERO/CERO)
          )}>
-             {isOverload && <AlertCircle className="h-3 w-3" />}
+             {isOverload && <AlertCircle className="h-3.5 w-3.5" />}
+             {/* ✅ Icono sutil si falta carga para llamar la atención */}
+             {isUnderload && <AlertTriangle className="h-3 w-3 opacity-80" />} 
+             
              {hours}/{capacity}h
          </div>
       </div>
