@@ -4,17 +4,18 @@ import { EmployeeRow } from './EmployeeRow';
 import { AllocationSheet } from './AllocationSheet';
 import { getWeeksForMonth, getMonthName, isCurrentWeek } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, CalendarDays, Info, Filter, Sparkles, User, Loader2, RefreshCw } from 'lucide-react'; // ✅ Loader2 y RefreshCw añadidos
+import { ChevronLeft, ChevronRight, CalendarDays, Info, Filter, Sparkles, User, Loader2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
+import { format, max, min, startOfMonth, endOfMonth } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 export function PlannerGrid() {
   const { employees, getEmployeeMonthlyLoad } = useApp();
   
-  // --- PERSISTENCIA DE ESTADO ---
   const [currentMonth, setCurrentMonth] = useState(() => {
     const saved = localStorage.getItem('planner_date');
     return saved ? new Date(saved) : new Date();
@@ -29,12 +30,9 @@ export function PlannerGrid() {
   });
 
   const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: string } | null>(null);
-
-  // --- ESTADOS PARA MINGUITO (INSIGHTS) ---
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [insights, setInsights] = useState<{ type: 'warning' | 'success' | 'info', text: string }[] | null>(null);
 
-  // --- EFECTOS DE PERSISTENCIA ---
   useEffect(() => {
     localStorage.setItem('planner_date', currentMonth.toISOString());
   }, [currentMonth]);
@@ -47,12 +45,14 @@ export function PlannerGrid() {
     localStorage.setItem('planner_only_me', String(showOnlyMe));
   }, [showOnlyMe]);
 
-
   const weeks = getWeeksForMonth(currentMonth);
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
+  
+  // Límites del mes actual para "recortar" visualmente
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
 
-  // --- LÓGICA DE FILTRADO ---
   const teams = useMemo(() => {
     const roles = new Set(employees.map(e => e.role || 'Sin Equipo'));
     return Array.from(roles);
@@ -61,7 +61,7 @@ export function PlannerGrid() {
   const filteredEmployees = employees.filter(e => {
     if (!e.isActive) return false;
     if (showOnlyMe) {
-        return e.name.toLowerCase().includes("alex"); // Simulación usuario actual
+        return e.name.toLowerCase().includes("alex");
     }
     if (selectedTeam !== 'all' && e.role !== selectedTeam) return false;
     return true;
@@ -72,50 +72,34 @@ export function PlannerGrid() {
   const handleToday = () => setCurrentMonth(new Date());
   const handleCellClick = (employeeId: string, weekStart: string) => setSelectedCell({ employeeId, weekStart });
 
-  // --- FUNCIÓN SIMULADA DE ANÁLISIS ---
   const handleAnalyze = () => {
     setIsAnalyzing(true);
     setInsights(null);
-
-    // Simulamos un retardo de red/procesamiento de 1.5s
     setTimeout(() => {
-        // Aquí iría la llamada real a Gemini en el futuro
-        // Por ahora generamos insights basados en datos reales simples
         const newInsights: { type: 'warning' | 'success' | 'info', text: string }[] = [];
-        
-        // 1. Detectar sobrecargas reales
         const overloadedEmployees = filteredEmployees.filter(e => {
             const load = getEmployeeMonthlyLoad(e.id, year, month);
             return load.status === 'overload';
         });
-
         if (overloadedEmployees.length > 0) {
             newInsights.push({
                 type: 'warning',
-                text: `⚠️ Detectada sobrecarga en: ${overloadedEmployees.map(e => e.name).join(', ')}. Revisa sus asignaciones.`
+                text: `⚠️ Detectada sobrecarga en: ${overloadedEmployees.map(e => e.name).join(', ')}.`
             });
         }
-
-        // 2. Detectar huecos (gente con < 50% de carga)
         const freeEmployees = filteredEmployees.filter(e => {
             const load = getEmployeeMonthlyLoad(e.id, year, month);
             return load.percentage < 50;
         });
-
         if (freeEmployees.length > 0) {
             newInsights.push({
                 type: 'success',
-                text: `✅ Capacidad disponible: ${freeEmployees.length} personas tienen baja carga este mes. Buen momento para asignar backlog.`
+                text: `✅ Capacidad disponible: ${freeEmployees.length} personas tienen baja carga.`
             });
         }
-
         if (newInsights.length === 0) {
-            newInsights.push({
-                type: 'info',
-                text: "👍 Todo parece equilibrado. No se detectan anomalías graves en la planificación."
-            });
+            newInsights.push({ type: 'info', text: "👍 Todo parece equilibrado." });
         }
-
         setInsights(newInsights);
         setIsAnalyzing(false);
     }, 1500);
@@ -125,10 +109,7 @@ export function PlannerGrid() {
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 rounded-lg border shadow-sm overflow-hidden">
-      {/* --- CABECERA DE CONTROLES --- */}
       <div className="flex flex-col gap-4 border-b bg-card px-4 py-3 z-20 relative">
-        
-        {/* Fila Superior: Título y Navegación */}
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold capitalize text-foreground flex items-center gap-2">
@@ -144,7 +125,6 @@ export function PlannerGrid() {
             </div>
             </div>
 
-            {/* Minguito IA Trigger */}
             <Popover>
                 <PopoverTrigger asChild>
                     <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 h-9 shadow-sm">
@@ -157,51 +137,25 @@ export function PlannerGrid() {
                         <div className="bg-white dark:bg-indigo-950 p-1 rounded-full"><Sparkles className="h-4 w-4 text-indigo-600" /></div>
                         <span className="font-semibold text-sm">Minguito sugiere:</span>
                     </div>
-                    
                     <div className="p-4">
-                        {/* ESTADO 1: INICIAL (SIN ANÁLISIS) */}
                         {!isAnalyzing && !insights && (
                             <div className="flex flex-col items-center gap-3 py-2 text-center">
-                                <p className="text-sm text-muted-foreground">
-                                    Analiza la carga de trabajo actual para detectar cuellos de botella y oportunidades.
-                                </p>
-                                <Button onClick={handleAnalyze} size="sm" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white">
-                                    <Sparkles className="h-3.5 w-3.5 mr-2" />
-                                    Analizar Carga
-                                </Button>
+                                <p className="text-sm text-muted-foreground">Analiza la carga de trabajo actual.</p>
+                                <Button onClick={handleAnalyze} size="sm" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"><Sparkles className="h-3.5 w-3.5 mr-2" /> Analizar Carga</Button>
                             </div>
                         )}
-
-                        {/* ESTADO 2: CARGANDO */}
                         {isAnalyzing && (
                             <div className="flex flex-col items-center justify-center py-6 gap-3 text-center">
                                 <Loader2 className="h-8 w-8 text-indigo-600 animate-spin" />
-                                <span className="text-sm text-muted-foreground animate-pulse">Minguito está pensando...</span>
+                                <span className="text-sm text-muted-foreground animate-pulse">Analizando...</span>
                             </div>
                         )}
-
-                        {/* ESTADO 3: RESULTADOS */}
                         {insights && (
                             <div className="space-y-3 animate-in fade-in zoom-in-95 duration-200">
                                 {insights.map((insight, i) => (
-                                    <div key={i} className={cn(
-                                        "border rounded p-2 text-xs",
-                                        insight.type === 'warning' ? "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200" :
-                                        insight.type === 'success' ? "bg-green-50 border-green-200 text-green-800 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200" :
-                                        "bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-200"
-                                    )}>
-                                        {insight.text}
-                                    </div>
+                                    <div key={i} className={cn("border rounded p-2 text-xs", insight.type === 'warning' ? "bg-amber-50 border-amber-200 text-amber-800" : insight.type === 'success' ? "bg-green-50 border-green-200 text-green-800" : "bg-blue-50 border-blue-200 text-blue-800")}>{insight.text}</div>
                                 ))}
-                                <Button 
-                                    onClick={handleAnalyze} 
-                                    size="sm" 
-                                    variant="outline" 
-                                    className="w-full text-xs mt-2 h-7"
-                                >
-                                    <RefreshCw className="h-3 w-3 mr-2" />
-                                    Re-analizar
-                                </Button>
+                                <Button onClick={handleAnalyze} size="sm" variant="outline" className="w-full text-xs mt-2 h-7"><RefreshCw className="h-3 w-3 mr-2" /> Re-analizar</Button>
                             </div>
                         )}
                     </div>
@@ -209,35 +163,17 @@ export function PlannerGrid() {
             </Popover>
         </div>
 
-        {/* Fila Inferior: Filtros y Leyenda (Mantenido igual) */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
                 <div className="flex items-center gap-2">
                     <Filter className="h-4 w-4 text-muted-foreground" />
                     <Select value={selectedTeam} onValueChange={setSelectedTeam}>
-                        <SelectTrigger className="h-8 w-[140px] text-xs">
-                            <SelectValue placeholder="Todos los equipos" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Todos los equipos</SelectItem>
-                            {teams.map(team => (
-                                <SelectItem key={team} value={team}>{team}</SelectItem>
-                            ))}
-                        </SelectContent>
+                        <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue placeholder="Todos los equipos" /></SelectTrigger>
+                        <SelectContent><SelectItem value="all">Todos los equipos</SelectItem>{teams.map(team => (<SelectItem key={team} value={team}>{team}</SelectItem>))}</SelectContent>
                     </Select>
                 </div>
-
-                <Button 
-                    variant={showOnlyMe ? "secondary" : "outline"} 
-                    size="sm" 
-                    onClick={() => setShowOnlyMe(!showOnlyMe)}
-                    className={cn("h-8 text-xs gap-2 transition-colors", showOnlyMe ? "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200" : "")}
-                >
-                    <User className="h-3.5 w-3.5" />
-                    Solo Yo
-                </Button>
+                <Button variant={showOnlyMe ? "secondary" : "outline"} size="sm" onClick={() => setShowOnlyMe(!showOnlyMe)} className={cn("h-8 text-xs gap-2 transition-colors", showOnlyMe ? "bg-indigo-100 text-indigo-700 border-indigo-200" : "")}><User className="h-3.5 w-3.5" /> Solo Yo</Button>
             </div>
-
             <div className="flex items-center gap-3 text-xs flex-shrink-0">
                 <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-green-500" /> <span className="text-muted-foreground">85-95% (Ideal)</span></div>
                 <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-yellow-500" /> <span className="text-muted-foreground">Ajustado</span></div>
@@ -246,30 +182,28 @@ export function PlannerGrid() {
         </div>
       </div>
 
-      {/* --- GRID (Mantenido igual) --- */}
       <div className="flex-1 overflow-auto custom-scrollbar bg-slate-50/50 dark:bg-slate-900/50">
         <div style={{ minWidth: '1000px' }}>
-            
             <div className="grid sticky top-0 z-10 bg-white dark:bg-slate-950 border-b shadow-sm" style={{ gridTemplateColumns: gridTemplate }}>
-                <div className="px-4 py-3 font-bold text-sm text-slate-700 dark:text-slate-200 border-r flex items-center bg-slate-50 dark:bg-slate-900">
-                    Equipo ({filteredEmployees.length})
-                </div>
+                <div className="px-4 py-3 font-bold text-sm text-slate-700 dark:text-slate-200 border-r flex items-center bg-slate-50 dark:bg-slate-900">Equipo ({filteredEmployees.length})</div>
                 {weeks.map((week, index) => {
-                    const isPartial = week.effectiveStart && week.effectiveEnd && (week.effectiveStart.getTime() !== week.weekStart.getTime() || week.effectiveEnd.getTime() !== week.weekEnd.getTime());
+                    // ✅ LÓGICA DE RECORTE VISUAL: Mostramos la fecha real recortada por el mes
+                    const visualStart = max([week.weekStart, monthStart]);
+                    const visualEnd = min([week.weekEnd, monthEnd]);
+                    
                     return (
                         <div key={week.weekStart.toISOString()} className={cn("text-center px-1 py-2 border-r last:border-r-0 flex flex-col justify-center", isCurrentWeek(week.weekStart) ? "bg-indigo-50/50 dark:bg-indigo-950/30" : "")}>
                             <span className={cn("text-xs font-bold uppercase tracking-wider", isCurrentWeek(week.weekStart) ? "text-indigo-600" : "text-slate-500")}>
                                 Semana {index + 1}
                             </span>
+                            {/* ✅ FECHAS EXACTAS DEL MES: "1 Ene - 4 Ene" en lugar de "29 Dic - 4 Ene" */}
                             <span className="text-[10px] text-slate-400 font-medium">
-                                {week.weekLabel} {isPartial && '*'}
+                                {format(visualStart, 'd MMM', { locale: es })} - {format(visualEnd, 'd MMM', { locale: es })}
                             </span>
                         </div>
                     );
                 })}
-                <div className="px-2 py-3 font-bold text-xs text-center text-slate-700 border-l bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
-                    TOTAL MES
-                </div>
+                <div className="px-2 py-3 font-bold text-xs text-center text-slate-700 border-l bg-slate-50 dark:bg-slate-900 flex items-center justify-center">TOTAL MES</div>
             </div>
 
             <div>
@@ -278,15 +212,8 @@ export function PlannerGrid() {
                     return (
                         <div key={employee.id} className="grid border-b hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors group bg-white dark:bg-slate-950" style={{ gridTemplateColumns: gridTemplate }}>
                             <EmployeeRow employee={employee} weeks={weeks} onCellClick={handleCellClick} />
-                            
                             <div className="flex items-center justify-center border-l p-2 bg-slate-50/30 dark:bg-slate-900/30">
-                                <div className={cn(
-                                    "flex flex-col items-center justify-center w-16 h-12 rounded-lg border-2",
-                                    monthlyLoad.status === 'overload' ? "bg-red-50 border-red-200 text-red-700" :
-                                    monthlyLoad.status === 'warning' ? "bg-yellow-50 border-yellow-200 text-yellow-700" :
-                                    monthlyLoad.status === 'healthy' ? "bg-green-50 border-green-200 text-green-700" :
-                                    "bg-slate-50 border-slate-200 text-slate-400"
-                                )}>
+                                <div className={cn("flex flex-col items-center justify-center w-16 h-12 rounded-lg border-2", monthlyLoad.status === 'overload' ? "bg-red-50 border-red-200 text-red-700" : monthlyLoad.status === 'warning' ? "bg-yellow-50 border-yellow-200 text-yellow-700" : monthlyLoad.status === 'healthy' ? "bg-green-50 border-green-200 text-green-700" : "bg-slate-50 border-slate-200 text-slate-400")}>
                                     <span className="text-sm font-bold leading-none">{monthlyLoad.hours}h</span>
                                     <span className="text-[10px] opacity-70">/ {monthlyLoad.capacity}h</span>
                                 </div>
@@ -294,28 +221,12 @@ export function PlannerGrid() {
                         </div>
                     );
                 })}
-                
-                {filteredEmployees.length === 0 && (
-                    <div className="p-12 text-center text-muted-foreground flex flex-col items-center gap-2">
-                        <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center">
-                            <Filter className="h-6 w-6 text-slate-300" />
-                        </div>
-                        <p>No se encontraron empleados con los filtros actuales.</p>
-                        <Button variant="link" onClick={() => { setSelectedTeam('all'); setShowOnlyMe(false); }}>Limpiar filtros</Button>
-                    </div>
-                )}
+                {filteredEmployees.length === 0 && <div className="p-12 text-center text-muted-foreground">No se encontraron empleados.</div>}
             </div>
         </div>
       </div>
 
-      {selectedCell && (
-        <AllocationSheet 
-            open={!!selectedCell} 
-            onOpenChange={(open) => !open && setSelectedCell(null)} 
-            employeeId={selectedCell.employeeId} 
-            weekStart={selectedCell.weekStart} 
-        />
-      )}
+      {selectedCell && <AllocationSheet open={!!selectedCell} onOpenChange={(open) => !open && setSelectedCell(null)} employeeId={selectedCell.employeeId} weekStart={selectedCell.weekStart} />}
     </div>
   );
 }
