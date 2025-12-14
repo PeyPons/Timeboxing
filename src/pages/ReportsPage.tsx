@@ -58,10 +58,7 @@ export default function ReportsPage() {
   }, 0), [activeEmployees, year, month]);
 
   const monthStats = useMemo(() => {
-    // Planificado: Suma de lo estimado
     const planned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-    
-    // ✅ Ejecutado (Real): Suma de horas REALES imputadas
     const completed = monthAllocations
         .filter(a => a.status === 'completed')
         .reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0);
@@ -70,7 +67,6 @@ export default function ReportsPage() {
   }, [monthAllocations]);
 
   const utilizationRate = totalCapacity > 0 ? (monthStats.planned / totalCapacity) * 100 : 0;
-  // Ejecución sobre Planificado
   const executionRate = monthStats.planned > 0 ? (monthStats.completed / monthStats.planned) * 100 : 0;
 
   const employeeData = useMemo(() => {
@@ -78,7 +74,6 @@ export default function ReportsPage() {
       const capacity = getMonthlyCapacity(year, month, e.workSchedule);
       const empAllocations = monthAllocations.filter(a => a.employeeId === e.id);
       
-      // ✅ CÁLCULO INTELIGENTE POR EMPLEADO
       const plannedHours = empAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
       const completedHours = empAllocations
         .filter(a => a.status === 'completed')
@@ -101,7 +96,6 @@ export default function ReportsPage() {
         const client = clients.find(c => c.id === p.clientId);
         const projAllocations = monthAllocations.filter(a => a.projectId === p.id);
         
-        // Planificado vs Real
         const planned = projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
         const real = projAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0);
 
@@ -138,7 +132,7 @@ export default function ReportsPage() {
       bgColor: 'bg-blue-50',
     },
     {
-      title: 'Real Ejecutado',
+      title: 'Computado',
       value: `${monthStats.completed}h`,
       subtitle: `Coste real`,
       icon: CheckCircle2,
@@ -236,7 +230,7 @@ export default function ReportsPage() {
             <Card className="col-span-4">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /> Eficiencia</CardTitle>
-                <CardDescription>Comparativa entre horas disponibles, planificadas y reales.</CardDescription>
+                <CardDescription>Comparativa entre horas disponibles, planificadas y computadas.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-8">
                 <div className="space-y-2">
@@ -249,7 +243,7 @@ export default function ReportsPage() {
                 
                 <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                        <span className="font-medium text-emerald-700">Coste Real (Ejecutado vs Planificado)</span>
+                        <span className="font-medium text-emerald-700">Coste Real (Computado vs Planificado)</span>
                         <span className="text-emerald-700 font-bold">{executionRate.toFixed(1)}%</span>
                     </div>
                     <Progress value={executionRate} className="h-3 bg-emerald-100 [&>div]:bg-emerald-500" />
@@ -266,7 +260,7 @@ export default function ReportsPage() {
                     </div>
                     <div>
                         <div className="text-2xl font-bold text-emerald-600">{monthStats.completed}h</div>
-                        <div className="text-xs text-muted-foreground uppercase tracking-wider">Real</div>
+                        <div className="text-xs text-muted-foreground uppercase tracking-wider">Computado</div>
                     </div>
                 </div>
               </CardContent>
@@ -288,7 +282,7 @@ export default function ReportsPage() {
                                 <p className="text-sm font-medium leading-none truncate">{p.name}</p>
                                 <p className="text-xs text-muted-foreground truncate">{p.clientName}</p>
                             </div>
-                            <div className="font-bold text-sm tabular-nums">{p.hoursReal > 0 ? p.hoursReal : p.hoursPlanned}h</div>
+                            <div className="font-bold text-sm tabular-nums">{p.hoursPlanned}h</div>
                         </div>
                     ))}
                     {projectData.length === 0 && <p className="text-sm text-muted-foreground text-center">Sin actividad registrada.</p>}
@@ -302,7 +296,7 @@ export default function ReportsPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Carga de Trabajo Real</CardTitle>
-                    <CardDescription>Comparativa de horas planificadas vs horas reales imputadas.</CardDescription>
+                    <CardDescription>Comparativa de horas planificadas vs horas computadas reales.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-6">
@@ -326,7 +320,7 @@ export default function ReportsPage() {
                                             {emp.percentage.toFixed(0)}% Planificado
                                         </span>
                                         <span className="text-emerald-600 text-[10px]">
-                                            {emp.completedHours > 0 && `Real: ${emp.completedHours}h`}
+                                            {emp.completedHours > 0 && `Comp: ${emp.completedHours}h`}
                                         </span>
                                     </div>
                                     <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -384,7 +378,7 @@ export default function ReportsPage() {
                                     <span className="text-muted-foreground">Presupuesto: {p.budget}h</span>
                                     {p.hoursReal > 0 && (
                                         <span className="flex items-center gap-1 text-emerald-600 font-medium">
-                                            <CheckCircle2 className="h-3 w-3" /> Real: {p.hoursReal}h
+                                            <CheckCircle2 className="h-3 w-3" /> Comp: {p.hoursReal}h
                                         </span>
                                     )}
                                 </div>
@@ -398,3 +392,5 @@ export default function ReportsPage() {
     </div>
   );
 }
+
+const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
