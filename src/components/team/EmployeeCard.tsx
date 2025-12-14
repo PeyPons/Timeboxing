@@ -1,19 +1,14 @@
-import { useState } from 'react';
-import { Employee } from '@/types';
-import { useApp } from '@/contexts/AppContext';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
+import { useState, useEffect } from 'react';
+import { Employee, WorkSchedule } from '@/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { ScheduleEditor } from './ScheduleEditor';
-import { AbsenceManager } from './AbsenceManager';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Pencil, Clock, Trash2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Trash2, User } from 'lucide-react';
+import { useApp } from '@/contexts/AppContext';
+import { toast } from '@/hooks/use-toast';
 
 interface EmployeeCardProps {
   employee: Employee;
@@ -21,184 +16,102 @@ interface EmployeeCardProps {
 
 export function EmployeeCard({ employee }: EmployeeCardProps) {
   const { updateEmployee, deleteEmployee, toggleEmployeeActive } = useApp();
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedEmployee, setEditedEmployee] = useState(employee);
+  // Estado local para edición fluida
+  const [schedule, setSchedule] = useState<WorkSchedule>(employee.workSchedule);
 
-  const initials = employee.name
-    .split(' ')
-    .map(n => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  // Sincronizar si cambia desde fuera
+  useEffect(() => {
+    setSchedule(employee.workSchedule);
+  }, [employee.workSchedule]);
 
-  const handleSave = () => {
-    updateEmployee(editedEmployee);
-    setIsEditing(false);
+  const handleScheduleChange = (day: keyof WorkSchedule, value: string) => {
+    const numValue = Number(value);
+    setSchedule(prev => ({
+      ...prev,
+      [day]: isNaN(numValue) ? 0 : numValue
+    }));
   };
 
-  const handleCancel = () => {
-    setEditedEmployee(employee);
-    setIsEditing(false);
+  // ESTA ES LA CLAVE: Guardar en base de datos al salir del input (onBlur)
+  const saveSchedule = async () => {
+    // Calculamos nueva capacidad total sumando los días
+    const newCapacity = Object.values(schedule).reduce((a, b) => a + b, 0);
+    
+    await updateEmployee({
+      ...employee,
+      workSchedule: schedule,
+      defaultWeeklyCapacity: newCapacity
+    });
+    toast({ title: "Horario actualizado" });
   };
+
+  const days: { key: keyof WorkSchedule; label: string }[] = [
+    { key: 'monday', label: 'L' },
+    { key: 'tuesday', label: 'M' },
+    { key: 'wednesday', label: 'X' },
+    { key: 'thursday', label: 'J' },
+    { key: 'friday', label: 'V' },
+  ];
 
   return (
-    <Card className={cn(
-      "overflow-hidden transition-all hover:shadow-lg animate-fade-in",
-      !employee.isActive && "opacity-60"
-    )}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <Avatar className={cn(
-              "h-12 w-12 border-2",
-              employee.isActive ? "border-primary/20" : "border-muted"
-            )}>
-              <AvatarFallback className={cn(
-                "font-semibold",
-                employee.isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-              )}>
-                {initials}
+    <Card className={`transition-all hover:shadow-md ${!employee.isActive ? 'opacity-60 bg-muted/50' : ''}`}>
+      <CardHeader className="pb-2">
+        <div className="flex justify-between items-start">
+          <div className="flex gap-3 items-center">
+            <Avatar>
+              <AvatarImage src={employee.avatarUrl} />
+              <AvatarFallback className="bg-primary/10 text-primary">
+                {employee.name.substring(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-foreground">{employee.name}</h3>
-                {!employee.isActive && (
-                  <Badge variant="secondary" className="text-xs">Inactivo</Badge>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">{employee.role}</p>
+              <CardTitle className="text-lg font-bold">{employee.name}</CardTitle>
+              <p className="text-sm text-muted-foreground">{employee.role || "Sin cargo"}</p>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Dialog open={isEditing} onOpenChange={setIsEditing}>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <Pencil className="h-4 w-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
-                  <DialogTitle>Editar perfil de {employee.name}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-6 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Nombre</Label>
-                      <Input
-                        value={editedEmployee.name}
-                        onChange={(e) => setEditedEmployee({ ...editedEmployee, name: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Rol</Label>
-                      <Input
-                        value={editedEmployee.role}
-                        onChange={(e) => setEditedEmployee({ ...editedEmployee, role: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      Horario semanal
-                    </Label>
-                    <ScheduleEditor
-                      schedule={editedEmployee.workSchedule}
-                      onChange={(schedule) => setEditedEmployee({ 
-                        ...editedEmployee, 
-                        workSchedule: schedule,
-                        defaultWeeklyCapacity: Object.values(schedule).reduce((a, b) => a + b, 0)
-                      })}
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={handleCancel}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={handleSave}>
-                      Guardar cambios
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>¿Eliminar empleado?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Se eliminará a {employee.name} y todas sus asignaciones. Esta acción no se puede deshacer.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction 
-                    onClick={() => deleteEmployee(employee.id)}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    Eliminar
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {/* Active/Inactive Toggle */}
-        <div className="flex items-center justify-between mb-4 p-2 rounded-lg bg-muted/50">
-          <Label htmlFor={`active-${employee.id}`} className="text-sm cursor-pointer">
-            Estado activo
-          </Label>
-          <Switch
-            id={`active-${employee.id}`}
-            checked={employee.isActive}
-            onCheckedChange={() => toggleEmployeeActive(employee.id)}
+          <Switch 
+            checked={employee.isActive} 
+            onCheckedChange={() => toggleEmployeeActive(employee.id)} 
           />
         </div>
-
-        <div className="grid grid-cols-7 gap-1">
-          {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const).map((day, i) => {
-            const hours = employee.workSchedule[day];
-            const dayLabels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-            return (
-              <div 
-                key={day}
-                className={cn(
-                  "flex flex-col items-center rounded-md p-1.5 text-center",
-                  hours > 0 ? 'bg-primary/10' : 'bg-muted/50'
-                )}
-              >
-                <span className="text-xs text-muted-foreground">{dayLabels[i]}</span>
-                <span className={cn(
-                  "text-sm font-medium",
-                  hours > 0 ? 'text-primary' : 'text-muted-foreground'
-                )}>
-                  {hours}h
-                </span>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Edición de Horario Diario */}
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">Horario Semanal (Horas)</Label>
+          <div className="grid grid-cols-5 gap-2">
+            {days.map((day) => (
+              <div key={day.key} className="text-center space-y-1">
+                <span className="text-[10px] font-bold text-muted-foreground">{day.label}</span>
+                <Input 
+                  type="number" 
+                  min="0" 
+                  max="24"
+                  className="h-8 text-center px-1"
+                  value={schedule[day.key]}
+                  onChange={(e) => handleScheduleChange(day.key, e.target.value)}
+                  onBlur={saveSchedule} // <--- ¡AQUÍ SE GUARDA!
+                />
               </div>
-            );
-          })}
-        </div>
-        <div className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-accent/50 py-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Capacidad semanal:</span>
-          <span className="font-bold text-primary">{employee.defaultWeeklyCapacity}h</span>
-        </div>
-        
-        {employee.isActive && (
-          <div className="mt-4 border-t pt-4">
-            <AbsenceManager employee={employee} />
+            ))}
           </div>
-        )}
+        </div>
+
+        <div className="flex justify-between items-center pt-2 border-t mt-2">
+          <div className="text-xs text-muted-foreground">
+            Total: <span className="font-bold text-foreground">
+              {Object.values(schedule).reduce((a, b) => a + b, 0)}h
+            </span> / sem
+          </div>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8 p-0"
+            onClick={() => deleteEmployee(employee.id)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
