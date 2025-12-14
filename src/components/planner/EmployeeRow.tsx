@@ -20,7 +20,7 @@ export function EmployeeRow({ employee, weeks, onCellClick, currentMonth }: Empl
 
   return (
     <>
-      <div className="p-3 border-r flex items-center gap-3 overflow-hidden">
+      <div className="p-3 border-r flex items-center gap-3 overflow-hidden bg-white dark:bg-slate-950 z-10 sticky left-0">
         <Avatar className="h-9 w-9 border-2 border-white shadow-sm flex-shrink-0">
           <AvatarImage src={employee.avatarUrl} />
           <AvatarFallback className="bg-indigo-100 text-indigo-700 text-xs font-bold">{initials}</AvatarFallback>
@@ -33,11 +33,11 @@ export function EmployeeRow({ employee, weeks, onCellClick, currentMonth }: Empl
 
       {weeks.map((week) => {
         const weekStartStr = formatDateToISO(week.weekStart);
-        // ✅ USAR LLAVE DE ALMACENAMIENTO AJUSTADA AL MES
         const storageKey = getStorageKey(week.weekStart, currentMonth);
         
         const cellAllocations = getEmployeeAllocationsForWeek(employee.id, storageKey);
         
+        // Obtenemos la carga y el DESGLOSE (breakdown)
         const load = getEmployeeLoadForWeek(
           employee.id, 
           storageKey, 
@@ -47,9 +47,6 @@ export function EmployeeRow({ employee, weeks, onCellClick, currentMonth }: Empl
         
         const rangeStart = week.effectiveStart || week.weekStart;
         const rangeEnd = week.effectiveEnd || new Date(week.weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
-        
-        const absenceHours = getAbsenceHoursInRange(rangeStart, rangeEnd, employeeAbsences, employee.workSchedule);
-        const hasAbsence = absenceHours > 0;
         
         const { totalHours: baseCapacity } = getWorkingDaysInRange(rangeStart, rangeEnd, employee.workSchedule);
         
@@ -62,9 +59,8 @@ export function EmployeeRow({ employee, weeks, onCellClick, currentMonth }: Empl
               status={load.status}
               percentage={load.percentage}
               isCurrentWeek={isCurrentWeek(week.weekStart)}
-              hasAbsence={hasAbsence}
-              absenceHours={absenceHours}
               baseCapacity={baseCapacity}
+              breakdown={load.breakdown} // ✅ PASAMOS EL DESGLOSE DE EVENTOS/AUSENCIAS
               onClick={() => onCellClick(employee.id, weekStartStr)}
             />
           </div>
