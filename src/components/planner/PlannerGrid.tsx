@@ -2,19 +2,18 @@ import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { EmployeeRow } from './EmployeeRow';
 import { AllocationSheet } from './AllocationSheet';
-import { getWeeksForMonth, getMonthName, isCurrentWeek, getStorageKey } from '@/utils/dateUtils'; // Asegúrate de tener getStorageKey importado
+import { getWeeksForMonth, getMonthName, isCurrentWeek, getStorageKey } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, CalendarDays, Filter, Sparkles, User, Loader2, RefreshCw, Briefcase } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, Filter, Sparkles, User, Loader2, RefreshCw, Briefcase, Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
 import { format, max, min, startOfMonth, endOfMonth, parseISO, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export function PlannerGrid() {
-  // ✅ Importamos projects y allocations para los filtros
   const { employees, getEmployeeMonthlyLoad, projects, allocations } = useApp();
   
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -22,11 +21,15 @@ export function PlannerGrid() {
     return saved ? new Date(saved) : new Date();
   });
 
-  // ✅ NUEVOS ESTADOS DE FILTRO
+  // Filtros
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('all');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
-  
   const [showOnlyMe, setShowOnlyMe] = useState(() => localStorage.getItem('planner_only_me') === 'true');
+  
+  // Estados para los Combobox (Buscadores)
+  const [openEmployeeCombo, setOpenEmployeeCombo] = useState(false);
+  const [openProjectCombo, setOpenProjectCombo] = useState(false);
+
   const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: string } | null>(null);
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -41,20 +44,15 @@ export function PlannerGrid() {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
-  // ✅ LÓGICA DE FILTRADO AVANZADA
+  // Lógica de Filtrado
   const filteredEmployees = useMemo(() => {
     return employees.filter(e => {
         if (!e.isActive) return false;
         
-        // 1. Filtro "Solo Yo" (Prioridad alta o combinable)
         if (showOnlyMe && !e.name.toLowerCase().includes("alex")) return false;
-
-        // 2. Filtro por Empleado Específico
         if (selectedEmployeeId !== 'all' && e.id !== selectedEmployeeId) return false;
 
-        // 3. Filtro por Proyecto (El más interesante)
         if (selectedProjectId !== 'all') {
-            // Buscamos si este empleado tiene asignaciones en este proyecto DENTRO del mes actual
             const hasAllocationInProject = allocations.some(a => {
                 const allocDate = parseISO(a.weekStartDate);
                 return a.projectId === selectedProjectId && 
@@ -103,15 +101,26 @@ export function PlannerGrid() {
 
   const gridTemplate = `250px repeat(${weeks.length}, minmax(0, 1fr)) 100px`;
 
-  // Ordenar proyectos alfabéticamente para el select
+  // Listas ordenadas para los combobox
   const sortedProjects = useMemo(() => [...projects].sort((a,b) => a.name.localeCompare(b.name)), [projects]);
   const sortedEmployees = useMemo(() => [...employees].filter(e=>e.isActive).sort((a,b) => a.name.localeCompare(b.name)), [employees]);
+
+  // Helpers para mostrar el nombre seleccionado en el botón del combobox
+  const getSelectedEmployeeName = () => {
+      if (selectedEmployeeId === 'all') return "Todos los empleados";
+      return employees.find(e => e.id === selectedEmployeeId)?.name || "Seleccionar...";
+  };
+
+  const getSelectedProjectName = () => {
+      if (selectedProjectId === 'all') return "Todos los proyectos";
+      return projects.find(p => p.id === selectedProjectId)?.name || "Seleccionar...";
+  };
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 rounded-lg border shadow-sm overflow-hidden">
       <div className="flex flex-col gap-4 border-b bg-card px-4 py-3 z-20 relative">
         
-        {/* Cabecera Superior: Título y Navegación Mes */}
+        {/* Cabecera Superior */}
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
                 <h2 className="text-xl font-bold capitalize text-foreground flex items-center gap-2">{getMonthName(currentMonth)} <Badge variant="outline" className="text-xs font-normal hidden sm:flex">{year}</Badge></h2>
@@ -122,7 +131,6 @@ export function PlannerGrid() {
                 </div>
             </div>
             
-            {/* Botón IA */}
             <Popover>
                 <PopoverTrigger asChild>
                     <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 h-9 shadow-sm"><Sparkles className="h-4 w-4" /><span className="hidden sm:inline">Insights IA</span></Button>
@@ -142,34 +150,75 @@ export function PlannerGrid() {
             </Popover>
         </div>
 
-        {/* Cabecera Inferior: Filtros */}
+        {/* Cabecera Inferior: Filtros (AHORA CON COMBOBOX) */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                {/* 1. Filtro Empleado */}
-                <div className="flex items-center gap-2 w-[180px]">
-                    <User className="h-4 w-4 text-muted-foreground" />
-                    <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
-                        <SelectTrigger className="h-8 text-xs w-full bg-white"><SelectValue placeholder="Todos los empleados" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Todos los empleados</SelectItem>
-                            {sortedEmployees.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
+                
+                {/* 1. COMBOBOX EMPLEADO */}
+                <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" aria-expanded={openEmployeeCombo} className="h-8 w-[200px] justify-between text-xs bg-white">
+                            <span className="flex items-center gap-2 truncate">
+                                <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                {getSelectedEmployeeName()}
+                            </span>
+                            <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[200px] p-0">
+                        <Command>
+                            <CommandInput placeholder="Buscar empleado..." className="h-8 text-xs" />
+                            <CommandList>
+                                <CommandEmpty>No encontrado.</CommandEmpty>
+                                <CommandGroup>
+                                    <CommandItem value="all" onSelect={() => { setSelectedEmployeeId('all'); setOpenEmployeeCombo(false); }} className="text-xs">
+                                        <Check className={cn("mr-2 h-3 w-3", selectedEmployeeId === 'all' ? "opacity-100" : "opacity-0")} />
+                                        Todos los empleados
+                                    </CommandItem>
+                                    {sortedEmployees.map((employee) => (
+                                        <CommandItem key={employee.id} value={employee.name} onSelect={() => { setSelectedEmployeeId(employee.id); setOpenEmployeeCombo(false); }} className="text-xs">
+                                            <Check className={cn("mr-2 h-3 w-3", selectedEmployeeId === employee.id ? "opacity-100" : "opacity-0")} />
+                                            {employee.name}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            </CommandList>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
 
-                {/* 2. Filtro Proyecto */}
-                <div className="flex items-center gap-2 w-[180px]">
-                    <Briefcase className="h-4 w-4 text-muted-foreground" />
-                    <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                        <SelectTrigger className="h-8 text-xs w-full bg-white"><SelectValue placeholder="Todos los proyectos" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Todos los proyectos</SelectItem>
-                            {sortedProjects.filter(p => p.status === 'active').map(p => (
-                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
+                {/* 2. COMBOBOX PROYECTO */}
+                <Popover open={openProjectCombo} onOpenChange={setOpenProjectCombo}>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" aria-expanded={openProjectCombo} className="h-8 w-[200px] justify-between text-xs bg-white">
+                            <span className="flex items-center gap-2 truncate">
+                                <Briefcase className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                {getSelectedProjectName()}
+                            </span>
+                            <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[250px] p-0">
+                        <Command>
+                            <CommandInput placeholder="Buscar proyecto..." className="h-8 text-xs" />
+                            <CommandList>
+                                <CommandEmpty>No encontrado.</CommandEmpty>
+                                <CommandGroup>
+                                    <CommandItem value="all" onSelect={() => { setSelectedProjectId('all'); setOpenProjectCombo(false); }} className="text-xs">
+                                        <Check className={cn("mr-2 h-3 w-3", selectedProjectId === 'all' ? "opacity-100" : "opacity-0")} />
+                                        Todos los proyectos
+                                    </CommandItem>
+                                    {sortedProjects.filter(p => p.status === 'active').map((project) => (
+                                        <CommandItem key={project.id} value={project.name} onSelect={() => { setSelectedProjectId(project.id); setOpenProjectCombo(false); }} className="text-xs">
+                                            <Check className={cn("mr-2 h-3 w-3", selectedProjectId === project.id ? "opacity-100" : "opacity-0")} />
+                                            {project.name}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            </CommandList>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
 
                 {/* 3. Botón Solo Yo */}
                 <Button variant={showOnlyMe?"secondary":"outline"} size="sm" onClick={()=>setShowOnlyMe(!showOnlyMe)} className={cn("h-8 text-xs gap-2 ml-auto sm:ml-0", showOnlyMe && "bg-indigo-100 text-indigo-700")}>
