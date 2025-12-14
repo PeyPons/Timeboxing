@@ -6,13 +6,14 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Trash2, Trophy, Palmtree, Briefcase } from 'lucide-react';
+import { Trash2, Trophy, Palmtree, Briefcase, ChevronDown } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
 import { ProfessionalGoalsSheet } from './ProfessionalGoalsSheet';
 import { AbsencesSheet } from './AbsencesSheet';
-// ✅ IMPORTAR EL NUEVO COMPONENTE
 import { ProjectsSheet } from './ProjectsSheet'; 
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Badge } from '@/components/ui/badge';
 
 interface EmployeeCardProps {
   employee: Employee;
@@ -24,9 +25,8 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
   const [schedule, setSchedule] = useState<WorkSchedule>(employee.workSchedule);
   const [showGoals, setShowGoals] = useState(false);
   const [showAbsences, setShowAbsences] = useState(false);
-  const [showProjects, setShowProjects] = useState(false); // ✅ ESTADO PARA EL SHEET DE PROYECTOS
+  const [showProjects, setShowProjects] = useState(false); 
 
-  // Obtener conteo de proyectos únicos
   const activeProjectsCount = new Set(
     allocations
       .filter(a => a.employeeId === employee.id)
@@ -115,7 +115,6 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
             </div>
           </div>
 
-          {/* ✅ BOTÓN QUE ABRE EL SHEET DE PROYECTOS (ESTILO UNIFICADO) */}
           <div className="pt-2 border-t">
             <Button 
                 variant="outline" 
@@ -148,7 +147,6 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
 
       {showGoals && <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={employee.id} />}
       {showAbsences && <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={employee.id} />}
-      {/* ✅ RENDERIZAR SHEET PROYECTOS */}
       {showProjects && <ProjectsSheet open={showProjects} onOpenChange={setShowProjects} employeeId={employee.id} />}
     </>
   );
