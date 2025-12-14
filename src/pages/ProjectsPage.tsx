@@ -18,11 +18,12 @@ export default function ProjectsPage() {
   const [deletingProject, setDeletingProject] = useState<string | null>(null);
   
   const [newProject, setNewProject] = useState({
-    name: '',
-    clientId: '',
-    status: 'active' as const,
-    budgetHours: 20,
-  });
+      name: '',
+      clientId: '',
+      status: 'active' as const,
+      budgetHours: 20,
+      minimumHours: 0, // <--- Inicializar
+    });
 
   const currentMonth = new Date();
 
