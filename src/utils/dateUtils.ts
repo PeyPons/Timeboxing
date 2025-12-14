@@ -1,22 +1,23 @@
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, isSameMonth, addDays, format, eachDayOfInterval } from 'date-fns';
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, isSameMonth, addDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { WorkSchedule } from '@/types';
 
-// ✅ CLAVE: Decide con qué fecha se guarda una tarea dependiendo del mes que miras
+// ✅ CLAVE MAESTRA: Decide con qué fecha se guarda una tarea dependiendo del mes que miras.
+// Esto separa "físicamente" los datos de Diciembre y Enero aunque compartan semana.
 export const getStorageKey = (weekStart: Date, viewMonth: Date): string => {
-    // Si la semana empieza en el mismo mes que estamos viendo, usamos su fecha real
+    // 1. Si la semana empieza dentro del mes que estamos viendo, usamos su fecha real.
     if (isSameMonth(weekStart, viewMonth)) {
         return format(weekStart, 'yyyy-MM-dd');
     }
 
-    // Si la semana empieza ANTES del mes que vemos (ej: 29 Dic viendo Enero)
-    // La "caja" para guardar las tareas de Enero será el 1 de Enero
+    // 2. Si la semana empieza ANTES del mes que vemos (ej: 29 Dic viendo Enero),
+    // forzamos que la llave sea el 1er día del mes actual (ej: 2025-01-01).
     const monthStart = startOfMonth(viewMonth);
     if (weekStart < monthStart) {
         return format(monthStart, 'yyyy-MM-dd');
     }
 
-    // Si la semana empieza DESPUÉS (raro en vista mensual estándar), fecha real
+    // 3. Por seguridad, defecto a fecha real
     return format(weekStart, 'yyyy-MM-dd');
 };
 
@@ -24,6 +25,7 @@ export const getWeeksForMonth = (date: Date) => {
   const monthStart = startOfMonth(date);
   const monthEnd = endOfMonth(date);
   
+  // Empezamos la semana el Lunes
   const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
   const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
 
@@ -33,7 +35,7 @@ export const getWeeksForMonth = (date: Date) => {
   while (currentWeekStart <= endDate) {
     const currentWeekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
 
-    // Calculamos límites visuales para que la etiqueta diga "1 Ene" y no "29 Dic"
+    // Calculamos límites visuales para que la etiqueta diga "1 Ene" y no "29 Dic" en la vista
     const effectiveStart = currentWeekStart < monthStart ? monthStart : currentWeekStart;
     const effectiveEnd = currentWeekEnd > monthEnd ? monthEnd : currentWeekEnd;
 
@@ -63,7 +65,7 @@ export const isCurrentWeek = (date: Date) => {
 export const getWorkingDaysInRange = (start: Date, end: Date, schedule: WorkSchedule) => {
     let totalHours = 0;
     let days = 0;
-    let current = start;
+    let current = new Date(start); // Copia para no mutar
     
     // Evitar bucles infinitos por seguridad
     if (current > end) return { totalHours: 0, days: 0 };
@@ -88,6 +90,6 @@ export const getWorkingDaysInRange = (start: Date, end: Date, schedule: WorkSche
 
 export const getMonthlyCapacity = (year: number, month: number, schedule: WorkSchedule) => {
     const start = new Date(year, month, 1);
-    const end = new Date(year, month + 1, 0);
+    const end = new Date(year, month + 1, 0); // Último día del mes
     return getWorkingDaysInRange(start, end, schedule).totalHours;
 };
