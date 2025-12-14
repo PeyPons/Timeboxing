@@ -16,7 +16,7 @@ import { Allocation } from '@/types';
 import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth } from '@/utils/dateUtils';
-import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
+import { format, addMonths, subMonths, isSameMonth, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 interface AllocationSheetProps {
@@ -496,7 +496,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                     <SelectContent>
                                         {weeks.map((w, i) => (
                                             <SelectItem key={w.weekStart.toISOString()} value={w.weekStart.toISOString().split('T')[0]}>
-                                                Sem {i+1} ({format(w.effectiveStart!, 'd MMM', { locale: es })})
+                                                {/* ✅ FECHA CORRECTA EN BULK */}
+                                                Sem {i+1} ({format(w.effectiveStart!, 'd', { locale: es })} - {format(w.effectiveEnd!, 'd MMM', { locale: es })})
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
