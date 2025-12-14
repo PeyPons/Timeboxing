@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { useApp } from '@/contexts/AppContext';
@@ -13,7 +12,6 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CalendarIcon, Plus, Trash2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { TeamEvent } from '@/types';
 
 export function TeamEventManager() {
   const { teamEvents, addTeamEvent, deleteTeamEvent, employees } = useApp();
