@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/ui/switch'; // ✅ Importar Switch
 import { useApp } from '@/contexts/AppContext';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -19,12 +19,13 @@ export function TeamEventManager() {
   const [newEventName, setNewEventName] = useState('');
   const [newEventDate, setNewEventDate] = useState<Date | undefined>(undefined);
   const [hoursReduction, setHoursReduction] = useState('0');
-  const [isFullDay, setIsFullDay] = useState(false);
+  const [isFullDay, setIsFullDay] = useState(false); // ✅ Estado nuevo
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
 
   const handleAddEvent = () => {
     if (!newEventName || !newEventDate) return;
 
+    // Si es día completo, ponemos 8 horas (o podrías poner un número alto como 24 si tu lógica lo soporta)
     const reduction = isFullDay ? 8 : parseFloat(hoursReduction);
 
     addTeamEvent({
@@ -35,19 +36,12 @@ export function TeamEventManager() {
       description: isFullDay ? 'Festivo / Día Completo' : ''
     });
 
+    // Reset
     setNewEventName('');
     setNewEventDate(undefined);
     setHoursReduction('0');
     setIsFullDay(false);
     setSelectedEmployees([]);
-  };
-
-  const toggleEmployeeSelection = (employeeId: string) => {
-    setSelectedEmployees(prev => 
-      prev.includes(employeeId) 
-        ? prev.filter(id => id !== employeeId) 
-        : [...prev, employeeId]
-    );
   };
 
   const toggleSelectAll = () => {
@@ -58,6 +52,10 @@ export function TeamEventManager() {
     }
   };
 
+  const toggleEmployeeSelection = (id: string) => {
+    setSelectedEmployees(prev => prev.includes(id) ? prev.filter(e => e !== id) : [...prev, id]);
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -65,7 +63,7 @@ export function TeamEventManager() {
             <Users className="h-5 w-5 text-indigo-600" />
             Eventos y Festivos
         </CardTitle>
-        <CardDescription>Añade festivos o eventos de equipo que reducen la capacidad laboral.</CardDescription>
+        <CardDescription>Añade festivos o eventos de equipo.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         
@@ -73,7 +71,7 @@ export function TeamEventManager() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label>Nombre del evento</Label>
-                    <Input placeholder="Ej: Navidad, Puente, Formación..." value={newEventName} onChange={(e) => setNewEventName(e.target.value)} />
+                    <Input placeholder="Ej: Navidad, Puente..." value={newEventName} onChange={(e) => setNewEventName(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                     <Label>Fecha</Label>
@@ -92,24 +90,25 @@ export function TeamEventManager() {
             </div>
 
             <div className="flex flex-col md:flex-row gap-6 items-end">
+                {/* ✅ SWITCH DÍA COMPLETO */}
                 <div className="flex items-center space-x-2 border p-2 rounded-md bg-white w-full md:w-auto h-10">
                     <Switch id="full-day" checked={isFullDay} onCheckedChange={setIsFullDay} />
-                    <Label htmlFor="full-day" className="cursor-pointer">Día completo (Festivo)</Label>
+                    <Label htmlFor="full-day" className="cursor-pointer font-medium text-sm">Día completo (Festivo)</Label>
                 </div>
 
                 <div className={cn("space-y-2 flex-1 transition-opacity", isFullDay && "opacity-50 pointer-events-none")}>
-                    <Label>Reducción de horas (si es parcial)</Label>
+                    <Label>Reducción de horas</Label>
                     <Input type="number" value={hoursReduction} onChange={(e) => setHoursReduction(e.target.value)} min={0} />
                 </div>
 
                 <Button onClick={handleAddEvent} disabled={!newEventName || !newEventDate} className="bg-indigo-600 hover:bg-indigo-700 w-full md:w-auto">
-                    <Plus className="h-4 w-4 mr-2" /> Añadir Evento
+                    <Plus className="h-4 w-4 mr-2" /> Añadir
                 </Button>
             </div>
 
             <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                    <Label className="text-xs text-muted-foreground">Afecta a (por defecto a todos):</Label>
+                    <Label className="text-xs text-muted-foreground">Afecta a:</Label>
                     <Button variant="link" size="sm" onClick={toggleSelectAll} className="h-auto p-0 text-xs">
                         {selectedEmployees.length === employees.length ? "Deseleccionar todos" : "Seleccionar todos"}
                     </Button>
@@ -142,7 +141,7 @@ export function TeamEventManager() {
                                 <p className="text-xs text-muted-foreground flex gap-2">
                                     <span>{format(new Date(event.date), "PPP", { locale: es })}</span>
                                     <span>•</span>
-                                    <span>{event.hoursReduction >= 8 ? "Día completo" : `-${event.hoursReduction}h`}</span>
+                                    <span className="font-semibold text-slate-700">{event.hoursReduction >= 8 ? "Día Completo" : `-${event.hoursReduction}h`}</span>
                                 </p>
                             </div>
                         </div>
