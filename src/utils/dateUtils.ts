@@ -3,6 +3,7 @@ import { WeekData } from '@/types';
 export function getWeekStart(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay();
+  // Ajuste para que la semana empiece el Lunes (1) y acabe el Domingo (0)
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
   d.setHours(0, 0, 0, 0);
@@ -12,6 +13,7 @@ export function getWeekStart(date: Date): Date {
 export function getWeekEnd(weekStart: Date): Date {
   const d = new Date(weekStart);
   d.setDate(d.getDate() + 6);
+  d.setHours(23, 59, 59, 999);
   return d;
 }
 
@@ -20,7 +22,7 @@ export function formatWeekLabelForMonth(weekStart: Date, month: number, year: nu
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
   
-  // Clamp dates to the current month
+  // Recortamos visualmente para mostrar solo los días que caen en este mes
   const displayStart = weekStart < monthStart ? monthStart : weekStart;
   const displayEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
   
@@ -37,28 +39,45 @@ export function getWeeksForMonth(date: Date): WeekData[] {
   const firstDayOfMonth = new Date(year, month, 1);
   const lastDayOfMonth = new Date(year, month + 1, 0);
   
-  // Start from the week that contains the first day of the month
+  // Empezamos por la semana que contiene el día 1
   let weekStart = getWeekStart(firstDayOfMonth);
   
   while (weekStart <= lastDayOfMonth) {
     const weekEnd = getWeekEnd(weekStart);
     
-    // Calculate which days of this week fall within the month
+    // Calculamos qué parte de esta semana cae realmente dentro del mes actual
     const monthStart = new Date(year, month, 1);
     const monthEnd = new Date(year, month + 1, 0);
     
     const effectiveStart = weekStart < monthStart ? monthStart : weekStart;
     const effectiveEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
     
-    weeks.push({
-      weekStart: new Date(weekStart),
-      weekEnd: new Date(weekEnd),
-      weekLabel: formatWeekLabelForMonth(weekStart, month, year),
-      // Store the effective range within the month for capacity calculations
-      effectiveStart: new Date(effectiveStart),
-      effectiveEnd: new Date(effectiveEnd),
-    });
+    // --- LÓGICA INTELIGENTE ---
+    // Comprobamos si el trozo de semana dentro del mes tiene algún día laborable (L-V)
+    // Si solo tiene Sábado o Domingo, la ignoramos.
+    let hasWorkingDays = false;
+    const tempDate = new Date(effectiveStart);
+    // Iteramos día a día en el rango efectivo
+    while (tempDate <= effectiveEnd) {
+        const dayOfWeek = tempDate.getDay();
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) { // 1=Lunes ... 5=Viernes
+            hasWorkingDays = true;
+            break;
+        }
+        tempDate.setDate(tempDate.getDate() + 1);
+    }
+
+    if (hasWorkingDays) {
+        weeks.push({
+          weekStart: new Date(weekStart),
+          weekEnd: new Date(weekEnd),
+          weekLabel: formatWeekLabelForMonth(weekStart, month, year),
+          effectiveStart: new Date(effectiveStart),
+          effectiveEnd: new Date(effectiveEnd),
+        });
+    }
     
+    // Saltamos a la siguiente semana
     weekStart.setDate(weekStart.getDate() + 7);
   }
   
@@ -78,14 +97,10 @@ export function isCurrentWeek(weekStart: Date): boolean {
 export function getMonthName(date: Date): string {
   const month = date.toLocaleDateString('es-ES', { month: 'long' });
   const year = date.getFullYear();
-  
-  // Capitalizamos la primera letra del mes
   const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
-  
   return `${capitalizedMonth} - ${year}`;
 }
 
-// Get the working days within a specific date range for an employee's schedule
 export function getWorkingDaysInRange(
   startDate: Date, 
   endDate: Date, 
@@ -116,7 +131,6 @@ export function getWorkingDaysInRange(
   return { totalHours, days };
 }
 
-// Calculate total working hours in a month for an employee
 export function getMonthlyCapacity(
   year: number,
   month: number,
