@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { NavLink } from '@/components/NavLink';
-import { Calendar, Users, Briefcase, BarChart3, Settings, Layers, Menu, X } from 'lucide-react';
+import { Calendar, Users, Briefcase, BarChart3, Settings, Layers, Menu, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 
 const navigation = [
-  { name: 'Planificador', href: '/', icon: Calendar },
+  // NUEVO BOTÓN CON IA
+  { name: 'Inicio IA', href: '/', icon: Sparkles },
+  // BOTÓN DEL PLANIFICADOR
+  { name: 'Planificador', href: '/planner', icon: Calendar },
   { name: 'Equipo', href: '/team', icon: Users },
   { name: 'Clientes', href: '/clients', icon: Briefcase },
   { name: 'Proyectos', href: '/projects', icon: Layers },
@@ -16,7 +19,6 @@ const navigation = [
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
-      {/* Logo */}
       <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary">
           <Calendar className="h-5 w-5 text-sidebar-primary-foreground" />
@@ -27,7 +29,6 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navigation.map((item) => (
           <NavLink
@@ -47,7 +48,6 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </nav>
 
-      {/* Settings */}
       <div className="border-t border-sidebar-border p-3">
         <NavLink
           to="/settings"
@@ -77,7 +77,7 @@ export function Sidebar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
             <Calendar className="h-4 w-4 text-sidebar-primary-foreground" />
           </div>
-          <span className="font-semibold text-sidebar-foreground">ResourceFlow</span>
+          <span className="font-semibold text-sidebar-foreground">Timeboxing</span>
         </div>
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
