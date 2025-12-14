@@ -10,12 +10,13 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
 
 ## ✨ Características principales
 
-* **👥 Gestión de equipo:** Administración de empleados, roles y capacidades semanales.
-* **🗓️ Planificador visual:** Interfaz intuitiva para asignar proyectos y horas a cada miembro del equipo.
-* **🧠 Asignación inteligente:** Cálculos automáticos de carga de trabajo, detectando sobrecargas o disponibilidad en tiempo real.
-* **🏖️ Gestión de ausencias:** Control de vacaciones y bajas que ajusta automáticamente la capacidad disponible del empleado.
-* **📊 Proyectos y clientes:** Base de datos centralizada de clientes y proyectos con control de presupuestos de horas.
-* **⚡ Edición rápida:** Formularios modales optimizados para una gestión ágil sin recargas.
+* **🗓️ Planificador mensual panorámico:** Vista de tablero completo con desglose semanal (4-5 semanas) para una visión estratégica de la carga de trabajo.
+* **🚀 Carga masiva de tareas (*Bulk mode*):** Formulario optimizado para añadir múltiples tareas a la vez, con buscador inteligente de proyectos y replicación rápida.
+* **🗂️ Organización por cliente:** Visualización de tareas agrupadas por cuentas/clientes mediante acordeones y listas de chequeo (*checklist*).
+* **🏆 Proyección profesional:** Módulo dedicado para gestionar OKRs, planes de carrera, formación y seguimiento de objetivos del empleado.
+* **👥 Gestión de equipo:** Administración de empleados con horarios personalizados (jornadas irregulares, reducciones, etc.).
+* **🧠 Asignación inteligente:** Cálculos de capacidad en tiempo real que consideran festivos, vacaciones y la duración real del mes.
+* **🏖️ Gestión de ausencias:** Control de vacaciones y bajas que ajusta automáticamente la disponibilidad en el planificador.
 
 ## 🛠️ Tecnologías
 
@@ -60,6 +61,7 @@ El proyecto requiere las siguientes tablas en Supabase:
 * `allocations`: Asignación de horas (relación empleado-proyecto-semana).
 * `absences`: Registro de vacaciones y ausencias.
 * `team_events`: Eventos globales que reducen la capacidad (ej: festivos).
+* `professional_goals`: Seguimiento de objetivos, formación y OKRs.
 
 ## 🤝 Contribución
 
