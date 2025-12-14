@@ -6,12 +6,10 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Trophy } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
 import { ProfessionalGoalsSheet } from './ProfessionalGoalsSheet';
-import { Trophy } from 'lucide-react';
-const [showGoals, setShowGoals] = useState(false);
 
 interface EmployeeCardProps {
   employee: Employee;
@@ -19,8 +17,14 @@ interface EmployeeCardProps {
 
 export function EmployeeCard({ employee }: EmployeeCardProps) {
   const { updateEmployee, deleteEmployee, toggleEmployeeActive } = useApp();
+  
+  // Estado local para edición fluida de horarios
   const [schedule, setSchedule] = useState<WorkSchedule>(employee.workSchedule);
+  
+  // Estado para controlar el panel de Proyección Profesional
+  const [showGoals, setShowGoals] = useState(false);
 
+  // Sincronizar si cambia desde fuera (ej: recarga de datos)
   useEffect(() => {
     setSchedule(employee.workSchedule);
   }, [employee.workSchedule]);
@@ -33,8 +37,11 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
     }));
   };
 
+  // Guardar en base de datos al salir del input (onBlur)
   const saveSchedule = async () => {
+    // Calculamos nueva capacidad total sumando los días
     const newCapacity = Object.values(schedule).reduce((a, b) => a + b, 0);
+    
     await updateEmployee({
       ...employee,
       workSchedule: schedule,
@@ -52,64 +59,90 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
   ];
 
   return (
-    <Card className={`transition-all hover:shadow-md ${!employee.isActive ? 'opacity-60 bg-muted/50' : ''}`}>
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-start">
-          <div className="flex gap-3 items-center">
-            <Avatar>
-              <AvatarImage src={employee.avatarUrl} />
-              <AvatarFallback className="bg-primary/10 text-primary">
-                {employee.name.substring(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <CardTitle className="text-lg font-bold">{employee.name}</CardTitle>
-              <p className="text-sm text-muted-foreground">{employee.role || "Sin cargo"}</p>
+    <>
+      <Card className={`transition-all hover:shadow-md ${!employee.isActive ? 'opacity-60 bg-muted/50' : ''}`}>
+        <CardHeader className="pb-2">
+          <div className="flex justify-between items-start">
+            <div className="flex gap-3 items-center">
+              <Avatar>
+                <AvatarImage src={employee.avatarUrl} />
+                <AvatarFallback className="bg-primary/10 text-primary">
+                  {employee.name.substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <CardTitle className="text-lg font-bold">{employee.name}</CardTitle>
+                <p className="text-sm text-muted-foreground">{employee.role || "Sin cargo"}</p>
+              </div>
+            </div>
+            <Switch 
+              checked={employee.isActive} 
+              onCheckedChange={() => toggleEmployeeActive(employee.id)} 
+            />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Edición de Horario Diario */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Horario Semanal</Label>
+            <div className="grid grid-cols-5 gap-2">
+              {days.map((day) => (
+                <div key={day.key} className="text-center space-y-1">
+                  <span className="text-[10px] font-bold text-muted-foreground">{day.label}</span>
+                  <Input 
+                    type="number" 
+                    min="0" 
+                    max="24"
+                    className="h-8 text-center px-1"
+                    value={schedule[day.key]}
+                    onChange={(e) => handleScheduleChange(day.key, e.target.value)}
+                    onBlur={saveSchedule}
+                  />
+                </div>
+              ))}
             </div>
           </div>
-          <Switch 
-            checked={employee.isActive} 
-            onCheckedChange={() => toggleEmployeeActive(employee.id)} 
-          />
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">Horario Semanal</Label>
-          <div className="grid grid-cols-5 gap-2">
-            {days.map((day) => (
-              <div key={day.key} className="text-center space-y-1">
-                <span className="text-[10px] font-bold text-muted-foreground">{day.label}</span>
-                <Input 
-                  type="number" 
-                  min="0" 
-                  max="24"
-                  className="h-8 text-center px-1"
-                  value={schedule[day.key]}
-                  onChange={(e) => handleScheduleChange(day.key, e.target.value)}
-                  onBlur={saveSchedule}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
 
-        <div className="flex justify-between items-center pt-2 border-t mt-2">
-          <div className="text-xs text-muted-foreground">
-            Total: <span className="font-bold text-foreground">
-              {Object.values(schedule).reduce((a, b) => a + b, 0)}h
-            </span> / sem
+          <div className="flex justify-between items-center pt-2 border-t mt-2">
+            <div className="text-xs text-muted-foreground">
+              Total: <span className="font-bold text-foreground">
+                {Object.values(schedule).reduce((a, b) => a + b, 0)}h
+              </span> / sem
+            </div>
           </div>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8 p-0"
-            onClick={() => deleteEmployee(employee.id)}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+
+          {/* Botones de Acción (Proyección + Eliminar) */}
+          <div className="flex gap-2 pt-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1 gap-2 text-xs h-8 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border-yellow-200"
+              onClick={() => setShowGoals(true)}
+            >
+              <Trophy className="h-3.5 w-3.5" />
+              Proyección
+            </Button>
+            
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8 p-0"
+              onClick={() => deleteEmployee(employee.id)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Panel de Proyección Profesional (Fuera del DOM de la tarjeta) */}
+      {showGoals && (
+        <ProfessionalGoalsSheet 
+          open={showGoals} 
+          onOpenChange={setShowGoals} 
+          employeeId={employee.id} 
+        />
+      )}
+    </>
   );
 }
