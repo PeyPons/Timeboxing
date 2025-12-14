@@ -50,14 +50,19 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-// ✅ FUNCIÓN CLAVE: Calcula qué % de la semana cae dentro del mes objetivo
+// ✅ CÁLCULO PROPORCIONAL: Determina cuánto de una semana pertenece al mes
 const getWeekProportionInMonth = (weekStartStr: string, monthStart: Date, monthEnd: Date): number => {
     const weekStart = new Date(weekStartStr);
-    const weekEnd = addDays(weekStart, 4); // Lunes a Viernes
+    // Asumimos semana laboral de 5 días (Lunes a Viernes) para el reparto de horas
+    const weekEnd = addDays(weekStart, 4); 
     
+    // Si la semana no toca el mes, 0
     if (weekEnd < monthStart || weekStart > monthEnd) return 0;
+    
+    // Si la semana está totalmente dentro, 1
     if (weekStart >= monthStart && weekEnd <= monthEnd) return 1;
 
+    // Si toca parcialmente, contamos cuántos días laborables caen dentro
     let daysInMonth = 0;
     let current = weekStart;
     for (let i = 0; i < 5; i++) {
@@ -66,6 +71,8 @@ const getWeekProportionInMonth = (weekStartStr: string, monthStart: Date, monthE
         }
         current = addDays(current, 1);
     }
+    
+    // Retornamos la proporción (ej: 2 días = 0.4)
     return daysInMonth / 5;
 };
 
@@ -289,7 +296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       hours_assigned: allocation.hoursAssigned,
       status: allocation.status,
       description: allocation.description,
-      task_name: allocation.taskName // ✅ SE GUARDA EL NOMBRE
+      task_name: allocation.taskName
     }).select().single();
     if (data) {
       setAllocations(prev => [...prev, { ...data, employeeId: data.employee_id, projectId: data.project_id, weekStartDate: data.week_start_date, hoursAssigned: round2(data.hours_assigned), taskName: data.task_name }]);
@@ -402,7 +409,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity, status, percentage };
   }, [employees, allocations, absences, teamEvents]);
 
-  // ✅ PRORRATEO MENSUAL IMPLEMENTADO
+  // ✅ AQUÍ ESTÁ EL CAMBIO CRUCIAL PARA LA INDEPENDENCIA MENSUAL
   const getEmployeeMonthlyLoad = useCallback((employeeId: string, year: number, month: number) => {
     const employee = employees.find(e => e.id === employeeId);
     if (!employee) return { hours: 0, capacity: 0, status: 'empty' as LoadStatus, percentage: 0 };
@@ -410,6 +417,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const monthStart = new Date(year, month, 1);
     const monthEnd = new Date(year, month + 1, 0);
 
+    // 1. Buscamos cualquier asignación que toque el mes
     const relevantAllocations = allocations.filter(a => {
       if (a.employeeId !== employeeId) return false;
       const weekStart = new Date(a.weekStartDate);
@@ -417,6 +425,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return weekStart <= monthEnd && weekEnd >= monthStart;
     });
 
+    // 2. Sumamos SOLO la parte proporcional que cae en este mes
     let totalHours = 0;
     relevantAllocations.forEach(alloc => {
         const proportion = getWeekProportionInMonth(alloc.weekStartDate, monthStart, monthEnd);
@@ -424,6 +433,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     totalHours = round2(totalHours);
 
+    // 3. Resto de cálculos de capacidad (ya correctos)
     let capacity = getMonthlyCapacity(year, month, employee.workSchedule);
     
     const employeeAbsences = absences.filter(a => a.employeeId === employeeId);
@@ -446,6 +456,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity, status, percentage };
   }, [employees, allocations, absences, teamEvents]);
 
+  // ✅ APLICAR PRORRATEO TAMBIÉN A PROYECTOS Y CLIENTES
   const getProjectHoursForMonth = useCallback((projectId: string, month: Date) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return { used: 0, budget: 0, available: 0, percentage: 0 };
