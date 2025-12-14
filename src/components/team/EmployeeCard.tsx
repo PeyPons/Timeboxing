@@ -6,10 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Trash2, Trophy } from 'lucide-react';
+import { Trash2, Trophy, Palmtree } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
 import { ProfessionalGoalsSheet } from './ProfessionalGoalsSheet';
+import { AbsencesSheet } from './AbsencesSheet'; // Importamos el nuevo componente
 
 interface EmployeeCardProps {
   employee: Employee;
@@ -18,13 +19,10 @@ interface EmployeeCardProps {
 export function EmployeeCard({ employee }: EmployeeCardProps) {
   const { updateEmployee, deleteEmployee, toggleEmployeeActive } = useApp();
   
-  // Estado local para edición fluida de horarios
   const [schedule, setSchedule] = useState<WorkSchedule>(employee.workSchedule);
-  
-  // Estado para controlar el panel de Proyección Profesional
   const [showGoals, setShowGoals] = useState(false);
+  const [showAbsences, setShowAbsences] = useState(false); // Estado para ausencias
 
-  // Sincronizar si cambia desde fuera (ej: recarga de datos)
   useEffect(() => {
     setSchedule(employee.workSchedule);
   }, [employee.workSchedule]);
@@ -37,11 +35,8 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
     }));
   };
 
-  // Guardar en base de datos al salir del input (onBlur)
   const saveSchedule = async () => {
-    // Calculamos nueva capacidad total sumando los días
     const newCapacity = Object.values(schedule).reduce((a, b) => a + b, 0);
-    
     await updateEmployee({
       ...employee,
       workSchedule: schedule,
@@ -82,7 +77,6 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Edición de Horario Diario */}
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Horario Semanal</Label>
             <div className="grid grid-cols-5 gap-2">
@@ -111,16 +105,26 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
             </div>
           </div>
 
-          {/* Botones de Acción (Proyección + Eliminar) */}
+          {/* BOTONES DE ACCIÓN: Proyección, Ausencias y Borrar */}
           <div className="flex gap-2 pt-2">
             <Button 
               variant="outline" 
               size="sm" 
-              className="flex-1 gap-2 text-xs h-8 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border-yellow-200"
+              className="flex-1 gap-1.5 text-[10px] h-8 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border-yellow-200"
               onClick={() => setShowGoals(true)}
             >
-              <Trophy className="h-3.5 w-3.5" />
+              <Trophy className="h-3 w-3" />
               Proyección
+            </Button>
+
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1 gap-1.5 text-[10px] h-8 bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
+              onClick={() => setShowAbsences(true)}
+            >
+              <Palmtree className="h-3 w-3" />
+              Ausencias
             </Button>
             
             <Button 
@@ -135,13 +139,13 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
         </CardContent>
       </Card>
 
-      {/* Panel de Proyección Profesional (Fuera del DOM de la tarjeta) */}
+      {/* Paneles Flotantes */}
       {showGoals && (
-        <ProfessionalGoalsSheet 
-          open={showGoals} 
-          onOpenChange={setShowGoals} 
-          employeeId={employee.id} 
-        />
+        <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={employee.id} />
+      )}
+      
+      {showAbsences && (
+        <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={employee.id} />
       )}
     </>
   );
