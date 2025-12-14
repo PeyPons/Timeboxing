@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
+// AÑADIDO: Importaciones necesarias para la seguridad y el modelo
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+// AÑADIDO: AlertTriangle
 import { Bot, Send, User, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 
 // Inicializar Gemini
@@ -23,7 +25,7 @@ export default function DashboardAI() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: '¡Hola! Soy Minguito y tengo acceso a los datos de tu equipo, proyectos y cargas de trabajo. ¿En qué puedo ayudarte hoy?',
+      content: '¡Hola! Soy tu asistente de Timeboxing. Hemos tenido problemas con el nombre del modelo. Probemos con la versión oficial recomendada. ¿En qué puedo ayudarte hoy?',
       timestamp: new Date()
     }
   ]);
@@ -43,7 +45,7 @@ export default function DashboardAI() {
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
         setMessages(prev => [...prev, { 
             role: 'assistant', 
-            content: "⚠️ Error: API Key no detectada.", 
+            content: "⚠️ Error: API Key no detectada. Comprueba el archivo .env.", 
             timestamp: new Date(),
             isError: true 
         }]);
@@ -91,13 +93,13 @@ export default function DashboardAI() {
         
         Instrucciones:
         - Sé breve y directo.
-        - Si preguntan disponibilidad, calcula (Capacidad - Asignado).
+        - Si preguntan disponibilidad, calcula (Capacidad - Asignado - Ausencias).
         - Usa negritas para nombres y datos clave.
       `;
 
-      // CAMBIO CLAVE: Usamos gemini-pro (Suele tener cuota gratuita más alta en el nivel básico)
+      // CAMBIO CLAVE: Usamos gemini-2.5-flash (Modelo recomendado para SDK web)
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-pro", 
+        model: "gemini-2.5-flash", 
         safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -118,9 +120,9 @@ export default function DashboardAI() {
       
       let errorMsg = "Lo siento, ha ocurrido un error.";
       
-      if (error.message?.includes('429')) errorMsg = "🛑 LÍMITE DE CUOTA EXCEDIDO (429). Tienes que esperar unos minutos o **habilitar la facturación en Google AI Studio** para continuar. (No se te cobrará si estás bajo la capa gratuita).";
-      else if (error.message?.includes('404')) errorMsg = "Error de modelo. Tu clave no tiene acceso al modelo solicitado. Intenta con gemini-pro.";
-      else if (error.message?.includes('fetch')) errorMsg = "Error de conexión. Verifica tu internet.";
+      if (error.message?.includes('429')) errorMsg = "🛑 LÍMITE DE CUOTA EXCEDIDO (429). La única solución es **habilitar la facturación en Google AI Studio** para eliminar el límite 'cero'.";
+      else if (error.message?.includes('404')) errorMsg = "Error de modelo. Tu clave no tiene acceso a gemini-2.5-flash. **La cuota es la única restricción restante.**";
+      else if (error.message?.includes('fetch')) errorMsg = "Error de conexión de red.";
       else errorMsg = `Error técnico: ${error.message}`;
 
       setMessages(prev => [...prev, { role: 'assistant', content: errorMsg, timestamp: new Date(), isError: true }]);
