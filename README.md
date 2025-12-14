@@ -44,7 +44,7 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
 
 1.  **Clonar el repositorio**
     ```bash
-    git clone [https://github.com/PeyPons/Timeboxing.git](https://github.com/PeyPons/Timeboxing.git)
+    git clone https://github.com/PeyPons/Timeboxing.git
     cd Timeboxing
     ```
 
