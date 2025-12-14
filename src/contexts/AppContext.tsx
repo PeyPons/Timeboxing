@@ -77,7 +77,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setProjects(projRes.data.map((p: any) => ({
           ...p,
           clientId: p.client_id,
-          budgetHours: p.budget_hours
+          budgetHours: p.budget_hours,
+          minimumHours: p.minimum_hours || 0 // <--- Mapeamos snake_case a camelCase
         })));
       }
       if (allocRes.data) {
