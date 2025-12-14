@@ -33,14 +33,10 @@ import { cn } from '@/lib/utils';
 export default function ProjectsPage() {
   const { projects, clients, allocations, employees, updateProject } = useApp();
   
-  // Estado para la navegación mensual
   const [currentMonth, setCurrentMonth] = useState(new Date());
-
-  // ✅ NUEVOS ESTADOS DE FILTRO
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
 
-  // Estados para Edición
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState('');
@@ -51,15 +47,10 @@ export default function ProjectsPage() {
   const handleNextMonth = () => setCurrentMonth(prev => addMonths(prev, 1));
   const handleToday = () => setCurrentMonth(new Date());
 
-  // ✅ LÓGICA DE FILTRADO AVANZADA
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
         if (p.status !== 'active') return false;
-
-        // Filtro por Nombre
         const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        // Filtro por Empleado (si seleccionamos uno, miramos si tiene tareas en este mes para este proyecto)
         let matchesEmployee = true;
         if (selectedEmployeeId !== 'all') {
             matchesEmployee = allocations.some(a => 
@@ -68,12 +59,10 @@ export default function ProjectsPage() {
                 isSameMonth(parseISO(a.weekStartDate), currentMonth)
             );
         }
-
         return matchesSearch && matchesEmployee;
     });
   }, [projects, searchTerm, selectedEmployeeId, allocations, currentMonth]);
 
-  // Abrir modal de edición
   const handleEditClick = (project: Project) => {
     setEditingProject(project);
     setEditName(project.name);
@@ -82,7 +71,6 @@ export default function ProjectsPage() {
     setIsEditOpen(true);
   };
 
-  // Guardar cambios
   const handleSaveEdit = async () => {
     if (!editingProject) return;
     await updateProject({
@@ -98,7 +86,6 @@ export default function ProjectsPage() {
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
       
-      {/* --- CABECERA Y FILTROS --- */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
@@ -107,11 +94,10 @@ export default function ProjectsPage() {
                 Proyectos y Tareas
             </h1>
             <p className="text-muted-foreground">
-                Seguimiento de planificación vs ejecución real.
+                Control de ejecución y rentabilidad.
             </p>
             </div>
 
-            {/* Controles de Mes */}
             <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-lg border shadow-sm">
                 <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
                     <ChevronLeft className="h-4 w-4" />
@@ -130,7 +116,6 @@ export default function ProjectsPage() {
             </div>
         </div>
 
-        {/* --- BARRA DE HERRAMIENTAS (BUSCADOR Y FILTROS) --- */}
         <div className="flex flex-col sm:flex-row gap-4 bg-slate-50/50 p-4 rounded-xl border">
             <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -161,36 +146,28 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {/* --- LISTADO DE PROYECTOS --- */}
       <div className="grid gap-6">
         {filteredProjects.map((project) => {
           const client = clients.find(c => c.id === project.clientId);
           
-          // 1. Filtrar tareas de este mes
           let monthTasks = allocations.filter(a => {
              const taskDate = parseISO(a.weekStartDate);
              return a.projectId === project.id && isSameMonth(taskDate, currentMonth);
           });
 
-          // Si hay filtro de empleado activo, filtramos las tareas visualmente también
           if (selectedEmployeeId !== 'all') {
               monthTasks = monthTasks.filter(t => t.employeeId === selectedEmployeeId);
           }
 
-          // 2. Cálculos de horas locales
           const totalAssigned = monthTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
           const totalCompleted = monthTasks
             .filter(t => t.status === 'completed')
-            .reduce((sum, t) => sum + t.hoursAssigned, 0);
+            .reduce((sum, t) => sum + (t.hoursActual || t.hoursAssigned), 0);
 
           const budget = project.budgetHours || 0;
-          
-          // Calculamos el porcentaje, pero evitamos división por cero si budget es 0
           const assignedPct = budget > 0 ? (totalAssigned / budget) * 100 : 0;
           const completedPct = budget > 0 ? (totalCompleted / budget) * 100 : 0;
 
-          // ✅ CÁLCULO DE PENDIENTE DE ASIGNAR (ALERT)
-          // Solo calculamos "restante" si hay presupuesto definido
           const remainingBudget = Math.max(0, budget - totalAssigned);
           const isUnderBudget = budget > 0 && remainingBudget > 0;
 
@@ -201,7 +178,6 @@ export default function ProjectsPage() {
               <CardHeader className="bg-slate-50/50 dark:bg-slate-900/50 pb-4">
                 <div className="flex flex-col md:flex-row justify-between gap-6">
                     
-                    {/* Info Proyecto (Izquierda) */}
                     <div className="flex items-start gap-4 flex-1">
                         <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shadow-sm flex-shrink-0">
                             <Briefcase className="h-5 w-5 text-slate-500" />
@@ -226,7 +202,6 @@ export default function ProjectsPage() {
                                         <TrendingUp className="h-3 w-3" /> Activo
                                     </span>
                                 )}
-                                {/* ✅ ALERTA: HORAS PENDIENTES */}
                                 {isUnderBudget && selectedEmployeeId === 'all' && (
                                     <span className="text-amber-600 font-medium flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
                                         <AlertCircle className="h-3 w-3" />
@@ -237,22 +212,19 @@ export default function ProjectsPage() {
                         </div>
                     </div>
 
-                    {/* Métricas Duales (Derecha) */}
                     <div className="min-w-[240px] flex flex-col justify-center gap-3 bg-white dark:bg-slate-950 p-3 rounded-lg border">
                         
-                        {/* Barra 1: Asignado (Planificación) */}
                         <div className="space-y-1.5">
                             <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-slate-500">
-                                <span>Planificado ({selectedEmployeeId !== 'all' ? 'Filtrado' : 'Total'})</span>
+                                <span>Planificado</span>
                                 <span>{totalAssigned}h</span>
                             </div>
                             <Progress value={assignedPct} className="h-1.5 bg-slate-100" />
                         </div>
 
-                        {/* Barra 2: Completado (Ejecución) */}
                         <div className="space-y-1.5">
                             <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-emerald-600">
-                                <span>Ejecutado</span>
+                                <span>Computado</span>
                                 <span>{totalCompleted}h</span>
                             </div>
                             <Progress value={completedPct} className="h-1.5 bg-emerald-100 [&>div]:bg-emerald-500" />
@@ -265,16 +237,14 @@ export default function ProjectsPage() {
                 {hasActivity ? (
                     <div className="divide-y">
                         <div className="bg-slate-50 px-6 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex">
-                            <div className="w-8"></div> {/* Estado */}
+                            <div className="w-8"></div>
                             <div className="flex-1">Tarea / Descripción</div>
                             <div className="w-40">Empleado</div>
                             <div className="w-32">Semana</div>
                             <div className="w-20 text-right">Horas</div>
                         </div>
                         
-                        {/* Listado de Tareas */}
                         {monthTasks.sort((a, b) => {
-                            // Ordenar: primero pendientes, luego completadas
                             if (a.status === 'completed' && b.status !== 'completed') return 1;
                             if (a.status !== 'completed' && b.status === 'completed') return -1;
                             return new Date(a.weekStartDate).getTime() - new Date(b.weekStartDate).getTime();
@@ -287,7 +257,6 @@ export default function ProjectsPage() {
                                     "px-6 py-3 flex items-center gap-4 transition-colors text-sm group",
                                     isCompleted ? "bg-slate-50/50 text-muted-foreground" : "hover:bg-slate-50"
                                 )}>
-                                    {/* Icono de Estado */}
                                     <div className="w-8 flex justify-center">
                                         {isCompleted ? (
                                             <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -320,22 +289,18 @@ export default function ProjectsPage() {
                                         "w-20 text-right font-mono font-medium px-2 py-1 rounded text-xs",
                                         isCompleted ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"
                                     )}>
-                                        {task.hoursAssigned}h
+                                        {isCompleted && task.hoursActual ? task.hoursActual : task.hoursAssigned}h
                                     </div>
                                 </div>
                             );
                         })}
                         
-                        {/* Footer Totales */}
                         <div className="bg-slate-50/80 px-6 py-3 border-t flex justify-end gap-6 text-xs font-medium">
-                            <div className="text-muted-foreground">
-                                Pendiente: <span className="text-slate-900">{round2(totalAssigned - totalCompleted)}h</span>
-                            </div>
                             <div className="text-emerald-700">
-                                Completado: <span className="font-bold">{totalCompleted}h</span>
+                                Computado: <span className="font-bold">{totalCompleted}h</span>
                             </div>
                             <div className="text-indigo-700 border-l pl-6">
-                                Total Asignado: <span className="font-bold">{totalAssigned}h</span>
+                                Planificado: <span className="font-bold">{totalAssigned}h</span>
                             </div>
                         </div>
                     </div>
@@ -363,7 +328,6 @@ export default function ProjectsPage() {
         )}
       </div>
 
-      {/* --- DIALOGO DE EDICIÓN --- */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent>
             <DialogHeader>
