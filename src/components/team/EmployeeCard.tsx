@@ -6,13 +6,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Trash2, Trophy, Palmtree, Briefcase, ChevronDown } from 'lucide-react';
+import { Trash2, Trophy, Palmtree, Briefcase } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
 import { ProfessionalGoalsSheet } from './ProfessionalGoalsSheet';
 import { AbsencesSheet } from './AbsencesSheet';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Badge } from '@/components/ui/badge';
+// ✅ IMPORTAR EL NUEVO COMPONENTE
+import { ProjectsSheet } from './ProjectsSheet'; 
 
 interface EmployeeCardProps {
   employee: Employee;
@@ -24,24 +24,14 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
   const [schedule, setSchedule] = useState<WorkSchedule>(employee.workSchedule);
   const [showGoals, setShowGoals] = useState(false);
   const [showAbsences, setShowAbsences] = useState(false);
+  const [showProjects, setShowProjects] = useState(false); // ✅ ESTADO PARA EL SHEET DE PROYECTOS
 
-  // Obtener proyectos y calcular horas totales por proyecto para este empleado
-  const employeeProjectStats = projects.reduce((acc, project) => {
-    const projectAllocations = allocations.filter(
-      a => a.employeeId === employee.id && a.projectId === project.id
-    );
-    
-    if (projectAllocations.length > 0) {
-      const totalHours = projectAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-      acc.push({
-        id: project.id,
-        name: project.name,
-        hours: totalHours,
-        status: project.status
-      });
-    }
-    return acc;
-  }, [] as { id: string; name: string; hours: number; status: 'active' | 'completed' | 'on-hold' }[]);
+  // Obtener conteo de proyectos únicos
+  const activeProjectsCount = new Set(
+    allocations
+      .filter(a => a.employeeId === employee.id)
+      .map(a => a.projectId)
+  ).size;
 
   useEffect(() => {
     setSchedule(employee.workSchedule);
@@ -125,43 +115,19 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
             </div>
           </div>
 
-          {/* ✅ NUEVA SECCIÓN: BOTÓN DESPLEGABLE DE PROYECTOS */}
+          {/* ✅ BOTÓN QUE ABRE EL SHEET DE PROYECTOS (ESTILO UNIFICADO) */}
           <div className="pt-2 border-t">
-             <Popover>
-                <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between h-9 text-xs font-normal border-dashed">
-                        <span className="flex items-center gap-2 text-muted-foreground">
-                            <Briefcase className="h-3.5 w-3.5" />
-                            {employeeProjectStats.length} Proyectos Asignados
-                        </span>
-                        <ChevronDown className="h-3 w-3 opacity-50" />
-                    </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-64 p-2" align="start">
-                    <div className="space-y-2">
-                        <h4 className="font-medium text-xs text-muted-foreground px-2">Resumen de Carga</h4>
-                        {employeeProjectStats.length > 0 ? (
-                            <div className="space-y-1">
-                                {employeeProjectStats.map(proj => (
-                                    <div key={proj.id} className="flex items-center justify-between text-xs p-2 hover:bg-muted rounded-md transition-colors">
-                                        <div className="flex flex-col">
-                                            <span className="font-medium">{proj.name}</span>
-                                            <span className="text-[10px] text-muted-foreground capitalize">{proj.status}</span>
-                                        </div>
-                                        <Badge variant="secondary" className="font-mono text-[10px]">
-                                            {proj.hours}h
-                                        </Badge>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-xs text-center text-muted-foreground py-4 italic">
-                                Sin proyectos activos.
-                            </div>
-                        )}
-                    </div>
-                </PopoverContent>
-             </Popover>
+            <Button 
+                variant="outline" 
+                className="w-full justify-between h-9 text-xs font-normal border-dashed"
+                onClick={() => setShowProjects(true)}
+            >
+                <span className="flex items-center gap-2 text-muted-foreground">
+                    <Briefcase className="h-3.5 w-3.5" />
+                    {activeProjectsCount} Proyectos Asignados
+                </span>
+                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 rounded">Ver detalles</span>
+            </Button>
           </div>
 
           <div className="flex gap-2 pt-2">
@@ -182,6 +148,8 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
 
       {showGoals && <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={employee.id} />}
       {showAbsences && <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={employee.id} />}
+      {/* ✅ RENDERIZAR SHEET PROYECTOS */}
+      {showProjects && <ProjectsSheet open={showProjects} onOpenChange={setShowProjects} employeeId={employee.id} />}
     </>
   );
 }
