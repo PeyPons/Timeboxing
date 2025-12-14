@@ -14,6 +14,7 @@ interface EmployeeRowProps {
 
 export function EmployeeRow({ employee, weeks, onCellClick, currentMonth }: EmployeeRowProps) {
   const { getEmployeeLoadForWeek, absences, getEmployeeAllocationsForWeek } = useApp();
+  
   const employeeAbsences = absences.filter(a => a.employeeId === employee.id);
   const initials = employee.name.substring(0, 2).toUpperCase();
 
@@ -32,16 +33,24 @@ export function EmployeeRow({ employee, weeks, onCellClick, currentMonth }: Empl
 
       {weeks.map((week) => {
         const weekStartStr = formatDateToISO(week.weekStart);
-        // ✅ USAR LLAVE DE ALMACENAMIENTO
+        // ✅ USAR LLAVE DE ALMACENAMIENTO AJUSTADA AL MES
         const storageKey = getStorageKey(week.weekStart, currentMonth);
         
         const cellAllocations = getEmployeeAllocationsForWeek(employee.id, storageKey);
-        const load = getEmployeeLoadForWeek(employee.id, storageKey, week.effectiveStart, week.effectiveEnd);
+        
+        const load = getEmployeeLoadForWeek(
+          employee.id, 
+          storageKey, 
+          week.effectiveStart, 
+          week.effectiveEnd
+        );
         
         const rangeStart = week.effectiveStart || week.weekStart;
         const rangeEnd = week.effectiveEnd || new Date(week.weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+        
         const absenceHours = getAbsenceHoursInRange(rangeStart, rangeEnd, employeeAbsences, employee.workSchedule);
         const hasAbsence = absenceHours > 0;
+        
         const { totalHours: baseCapacity } = getWorkingDaysInRange(rangeStart, rangeEnd, employee.workSchedule);
         
         return (
