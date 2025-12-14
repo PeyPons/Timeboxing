@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, addMonths, subMonths, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
@@ -14,22 +18,53 @@ import {
   ChevronRight, 
   CalendarDays, 
   Briefcase, 
-  User,
-  LayoutList
+  LayoutList,
+  Pencil // Icono para editar
 } from 'lucide-react';
+import { Project } from '@/types';
 
 export default function ProjectsPage() {
-  const { projects, clients, allocations, employees, getProjectHoursForMonth } = useApp();
+  const { projects, clients, allocations, employees, getProjectHoursForMonth, updateProject } = useApp();
   
   // Estado para la navegación mensual
   const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  // Estados para Edición
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editBudget, setEditBudget] = useState('');
+  const [editStatus, setEditStatus] = useState<'active' | 'archived' | 'completed'>('active');
 
   const handlePrevMonth = () => setCurrentMonth(prev => subMonths(prev, 1));
   const handleNextMonth = () => setCurrentMonth(prev => addMonths(prev, 1));
   const handleToday = () => setCurrentMonth(new Date());
 
-  // Filtramos solo proyectos activos para no ensuciar la vista
   const activeProjects = projects.filter(p => p.status === 'active');
+
+  // Abrir modal de edición
+  const handleEditClick = (project: Project) => {
+    setEditingProject(project);
+    setEditName(project.name);
+    setEditBudget(project.budgetHours.toString());
+    setEditStatus(project.status);
+    setIsEditOpen(true);
+  };
+
+  // Guardar cambios
+  const handleSaveEdit = async () => {
+    if (!editingProject) return;
+    
+    await updateProject({
+        ...editingProject,
+        name: editName,
+        budgetHours: parseFloat(editBudget) || 0,
+        status: editStatus
+    });
+    
+    setIsEditOpen(false);
+    setEditingProject(null);
+  };
 
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
@@ -42,7 +77,7 @@ export default function ProjectsPage() {
             Proyectos y Tareas
           </h1>
           <p className="text-muted-foreground">
-            Auditoría de tareas y consumo de horas por proyecto.
+            Auditoría de tareas, edición y consumo de horas por proyecto.
           </p>
         </div>
 
@@ -69,18 +104,13 @@ export default function ProjectsPage() {
       <div className="grid gap-6">
         {activeProjects.map((project) => {
           const client = clients.find(c => c.id === project.clientId);
-          
-          // Obtenemos métricas del mes seleccionado
           const stats = getProjectHoursForMonth(project.id, currentMonth);
           
-          // Filtramos las tareas de ESTE mes para ESTE proyecto
-          // Usamos la lógica de Storage Key: si la fecha de inicio de la tarea cae en el mes visualizado
           const monthTasks = allocations.filter(a => {
              const taskDate = parseISO(a.weekStartDate);
              return a.projectId === project.id && isSameMonth(taskDate, currentMonth);
           });
 
-          // Si no hay tareas y el proyecto no tiene horas este mes, podemos optar por mostrarlo "apagado" o normal.
           const hasActivity = monthTasks.length > 0;
 
           return (
@@ -89,18 +119,22 @@ export default function ProjectsPage() {
                 <div className="flex flex-col md:flex-row justify-between gap-4">
                     
                     {/* Info Proyecto */}
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-4 flex-1">
                         <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shadow-sm">
                             <Briefcase className="h-5 w-5 text-slate-500" />
                         </div>
-                        <div>
-                            <CardTitle className="text-lg flex items-center gap-2">
-                                {project.name}
+                        <div className="flex-1">
+                            <div className="flex items-center gap-3">
+                                <CardTitle className="text-lg">{project.name}</CardTitle>
                                 <Badge variant="outline" className="font-normal text-xs bg-white">
                                     <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: client?.color || '#ccc' }} />
                                     {client?.name || 'Sin Cliente'}
                                 </Badge>
-                            </CardTitle>
+                                {/* BOTÓN EDITAR */}
+                                <Button variant="ghost" size="icon" className="h-6 w-6 ml-2 text-slate-400 hover:text-indigo-600" onClick={() => handleEditClick(project)}>
+                                    <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                            </div>
                             <CardDescription className="mt-1 flex items-center gap-4 text-xs">
                                 <span>Presupuesto Total: {project.budgetHours}h</span>
                                 {hasActivity ? (
@@ -168,7 +202,6 @@ export default function ProjectsPage() {
                             );
                         })}
                         
-                        {/* Footer del Proyecto */}
                         <div className="bg-slate-50/80 px-6 py-3 border-t flex justify-end">
                             <div className="text-sm font-medium">
                                 Total {format(currentMonth, 'MMMM', { locale: es })}: <span className="text-indigo-600 font-bold ml-1">{stats.used}h</span>
@@ -194,6 +227,45 @@ export default function ProjectsPage() {
             </div>
         )}
       </div>
+
+      {/* --- DIALOGO DE EDICIÓN --- */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Editar Proyecto</DialogTitle>
+                <DialogDescription>Ajusta el presupuesto de horas o el estado del proyecto.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                    <Label>Nombre del Proyecto</Label>
+                    <Input value={editName} onChange={e => setEditName(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Presupuesto (Horas)</Label>
+                        <Input type="number" value={editBudget} onChange={e => setEditBudget(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Estado</Label>
+                        <Select value={editStatus} onValueChange={(val: any) => setEditStatus(val)}>
+                            <SelectTrigger>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="active">Activo</SelectItem>
+                                <SelectItem value="completed">Completado</SelectItem>
+                                <SelectItem value="archived">Archivado</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsEditOpen(false)}>Cancelar</Button>
+                <Button onClick={handleSaveEdit}>Guardar Cambios</Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
