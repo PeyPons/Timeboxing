@@ -7,11 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox'; // Asegúrate de tener este componente
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'; // Y este
+import { Checkbox } from '@/components/ui/checkbox';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Trash2, AlertCircle, Pencil, Clock, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, Pencil, Clock, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth } from '@/utils/dateUtils';
 
@@ -45,22 +45,14 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   const [selectedWeek, setSelectedWeek] = useState(weekStart);
 
   const employee = employees.find(e => e.id === employeeId);
-  const allocations = getEmployeeAllocationsForWeek(employeeId, weekStart);
-  const load = getEmployeeLoadForWeek(employeeId, weekStart);
-
   if (!employee) return null;
 
-  const weekDate = new Date(weekStart);
-  const weekLabel = weekDate.toLocaleDateString('es-ES', { 
-    day: 'numeric', 
-    month: 'long', 
-    year: 'numeric' 
-  });
+  // Calculamos el mes y las semanas para mostrar la parrilla completa
+  const currentMonthDate = new Date(weekStart);
+  const monthLabel = currentMonthDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+  const weeks = getWeeksForMonth(currentMonthDate);
 
-  const currentMonth = new Date(weekStart);
-  const weeks = getWeeksForMonth(currentMonth);
-
-  // --- LOGICA DEL FORMULARIO ---
+  // --- LOGICA FORMULARIO ---
 
   const handleAddAllocation = () => {
     if (!newProjectId || !newHours) return;
@@ -92,12 +84,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     updateAllocation({ ...allocation, status: newStatus });
   };
 
-  const startAdd = () => {
+  const startAdd = (weekDateStr: string) => {
     setEditingAllocation(null);
     setNewProjectId('');
     setNewHours('');
     setNewDescription('');
-    setSelectedWeek(weekStart);
+    setSelectedWeek(weekDateStr);
     setIsFormOpen(true);
   };
 
@@ -121,143 +113,170 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   };
 
   const getProjectAvailableHours = (projectId: string) => {
-    return getProjectHoursForMonth(projectId, weekDate);
+    return getProjectHoursForMonth(projectId, currentMonthDate);
   };
 
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-[500px] sm:max-w-[500px] overflow-y-auto px-4">
-          <SheetHeader className="pb-4 border-b mb-4">
-            <div className="flex justify-between items-center">
-                <div>
-                    <SheetTitle className="text-xl">{employee.name}</SheetTitle>
-                    <SheetDescription>Semana del {weekLabel}</SheetDescription>
+        {/* CAMBIO CLAVE: Ancho mucho mayor (90vw) para ver todo el mes */}
+        <SheetContent className="w-full sm:max-w-[90vw] overflow-y-auto px-6 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-xl">
+          <SheetHeader className="pb-6 border-b mb-6">
+            <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xl">
+                    {employee.name.substring(0, 2).toUpperCase()}
                 </div>
-                {/* Resumen de carga mini en la cabecera */}
-                <div className={cn(
-                    "px-3 py-1 rounded-full text-xs font-bold border",
-                    load.status === 'overload' ? "bg-destructive/10 text-destructive border-destructive/20" : 
-                    load.status === 'warning' ? "bg-warning/10 text-warning border-warning/20" :
-                    "bg-success/10 text-success border-success/20"
-                )}>
-                    {load.hours}h / {load.capacity}h
+                <div>
+                    <SheetTitle className="text-2xl">{employee.name}</SheetTitle>
+                    <SheetDescription className="text-base flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        Planificación Mensual - <span className="capitalize text-foreground font-medium">{monthLabel}</span>
+                    </SheetDescription>
                 </div>
             </div>
           </SheetHeader>
 
-          {/* Botón Añadir Rápido */}
-          <Button className="w-full gap-2 mb-6 shadow-sm" onClick={startAdd}>
-            <Plus className="h-4 w-4" /> Añadir Tarea
-          </Button>
+          {/* PARRILLA DE SEMANAS (GRID LAYOUT) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pb-10">
+            {weeks.map((week, index) => {
+                const weekStr = week.weekStart.toISOString().split('T')[0];
+                const allocations = getEmployeeAllocationsForWeek(employeeId, weekStr);
+                const load = getEmployeeLoadForWeek(employeeId, weekStr);
+                const isCurrent = weekStr === weekStart;
 
-          {/* LISTA AGRUPADA (ACORDEÓN) */}
-          <div className="space-y-4">
-            {allocations.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-40 text-muted-foreground border-2 border-dashed rounded-xl bg-muted/20">
-                <CheckCircle2 className="h-10 w-10 mb-2 opacity-20" />
-                <p className="text-sm">Todo limpio por aquí</p>
-              </div>
-            ) : (
-              <Accordion type="multiple" className="w-full space-y-3" defaultValue={
-                  // Por defecto abrimos todos los clientes con tareas activas
-                  Array.from(new Set(allocations.map(a => {
-                      const p = getProjectById(a.projectId);
-                      return p?.clientId || '';
-                  })))
-              }>
-                {Object.entries(
-                  allocations.reduce((acc, allocation) => {
-                    const project = getProjectById(allocation.projectId);
-                    const clientId = project?.clientId || 'unknown';
-                    if (!acc[clientId]) acc[clientId] = [];
-                    acc[clientId].push(allocation);
-                    return acc;
-                  }, {} as Record<string, typeof allocations>)
-                ).map(([clientId, clientAllocations]) => {
-                  const client = getClientById(clientId);
-                  const clientTotalHours = Math.round((clientAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0) + Number.EPSILON) * 100) / 100;
-
-                  return (
-                    <AccordionItem key={clientId} value={clientId} className="border rounded-lg bg-card shadow-sm px-1">
-                      <AccordionTrigger className="px-3 py-3 hover:no-underline">
-                        <div className="flex items-center gap-3 w-full">
-                          <div className="h-3 w-3 rounded-full shadow-sm flex-shrink-0" style={{ backgroundColor: client?.color || '#888' }} />
-                          <span className="font-bold text-sm text-foreground truncate flex-1 text-left">
-                            {client?.name || 'Sin Cliente'}
-                          </span>
-                          <Badge variant="secondary" className="text-xs font-normal ml-2 mr-2">
-                            {clientTotalHours}h
-                          </Badge>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="px-3 pb-3 pt-0">
-                        <div className="space-y-1">
-                          {clientAllocations.map((allocation) => {
-                            const project = getProjectById(allocation.projectId);
-                            const isCompleted = allocation.status === 'completed';
-
-                            return (
-                              <div 
-                                key={allocation.id} 
-                                className={cn(
-                                    "group flex items-start gap-3 p-2 rounded-md transition-all border border-transparent hover:border-border hover:bg-muted/40",
-                                    isCompleted && "opacity-60"
-                                )}
-                              >
-                                {/* Checkbox de Estado */}
-                                <Checkbox 
-                                    checked={isCompleted}
-                                    onCheckedChange={() => toggleStatus(allocation)}
-                                    className="mt-1 data-[state=checked]:bg-primary/50 data-[state=checked]:border-primary/50"
+                return (
+                    <div 
+                        key={weekStr} 
+                        className={cn(
+                            "flex flex-col gap-4 p-4 rounded-xl border bg-card transition-all",
+                            isCurrent ? "ring-2 ring-primary ring-offset-2 shadow-md" : "hover:border-primary/50"
+                        )}
+                    >
+                        {/* Cabecera de Semana */}
+                        <div className="flex flex-col gap-2 pb-3 border-b">
+                            <div className="flex items-center justify-between">
+                                <span className="font-bold text-sm text-muted-foreground uppercase tracking-wider">
+                                    Semana {index + 1}
+                                </span>
+                                <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="h-6 w-6 p-0 hover:bg-primary/10 hover:text-primary"
+                                    onClick={() => startAdd(weekStr)}
+                                >
+                                    <Plus className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <div className="flex items-end justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                    {week.weekLabel}
+                                </span>
+                                <Badge 
+                                    variant="outline" 
+                                    className={cn(
+                                        "font-mono text-xs",
+                                        load.status === 'overload' ? "bg-destructive/10 text-destructive border-destructive/20" : 
+                                        load.status === 'warning' ? "bg-warning/10 text-warning border-warning/20" :
+                                        "bg-success/10 text-success border-success/20"
+                                    )}
+                                >
+                                    {load.hours}/{load.capacity}h
+                                </Badge>
+                            </div>
+                            {/* Barra de progreso mini */}
+                            <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
+                                <div 
+                                    className={cn("h-full transition-all", 
+                                        load.status === 'overload' ? "bg-destructive" : 
+                                        load.status === 'warning' ? "bg-warning" : "bg-success"
+                                    )} 
+                                    style={{ width: `${Math.min(load.percentage, 100)}%` }} 
                                 />
-
-                                <div className="flex-1 min-w-0 grid gap-0.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className={cn("text-sm font-medium leading-none", isCompleted && "line-through text-muted-foreground")}>
-                                        {project?.name}
-                                    </span>
-                                    <span className="text-xs font-bold font-mono text-muted-foreground flex-shrink-0">
-                                        {allocation.hoursAssigned}h
-                                    </span>
-                                  </div>
-                                  
-                                  {allocation.description && (
-                                    <p className={cn("text-xs text-muted-foreground line-clamp-2", isCompleted && "line-through")}>
-                                      {allocation.description}
-                                    </p>
-                                  )}
-                                </div>
-
-                                {/* Botones Edit/Delete (Solo visibles al hover) */}
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => startEdit(allocation)}>
-                                    <Pencil className="h-3 w-3" />
-                                  </Button>
-                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => deleteAllocation(allocation.id)}>
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
+                            </div>
                         </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  );
-                })}
-              </Accordion>
-            )}
+
+                        {/* Lista de Tareas (Acordeón simplificado) */}
+                        <div className="flex-1 overflow-y-auto max-h-[60vh] space-y-3 pr-1">
+                            {allocations.length === 0 ? (
+                                <div className="h-20 flex items-center justify-center text-muted-foreground/30 text-xs italic border-2 border-dashed rounded-lg">
+                                    Sin tareas
+                                </div>
+                            ) : (
+                                <Accordion type="multiple" className="w-full" defaultValue={Array.from(new Set(allocations.map(a => getProjectById(a.projectId)?.clientId || '')))}>
+                                    {Object.entries(
+                                        allocations.reduce((acc, allocation) => {
+                                            const p = getProjectById(allocation.projectId);
+                                            const cid = p?.clientId || 'unknown';
+                                            if (!acc[cid]) acc[cid] = [];
+                                            acc[cid].push(allocation);
+                                            return acc;
+                                        }, {} as Record<string, typeof allocations>)
+                                    ).map(([clientId, clientAllocations]) => {
+                                        const client = getClientById(clientId);
+                                        const total = Math.round(clientAllocations.reduce((s, a) => s + a.hoursAssigned, 0) * 100) / 100;
+
+                                        return (
+                                            <AccordionItem key={clientId} value={clientId} className="border-b-0 mb-2">
+                                                <AccordionTrigger className="py-2 px-0 hover:no-underline justify-start gap-2">
+                                                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: client?.color || '#888' }} />
+                                                    <span className="text-xs font-bold truncate flex-1 text-left">{client?.name}</span>
+                                                    <span className="text-[10px] bg-muted px-1.5 rounded text-muted-foreground">{total}h</span>
+                                                </AccordionTrigger>
+                                                <AccordionContent className="pb-2 pt-0 space-y-1.5">
+                                                    {clientAllocations.map(alloc => {
+                                                        const proj = getProjectById(alloc.projectId);
+                                                        const isDone = alloc.status === 'completed';
+                                                        return (
+                                                            <div key={alloc.id} className="flex gap-2 items-start group bg-muted/20 p-1.5 rounded hover:bg-muted/50 transition-colors">
+                                                                <Checkbox 
+                                                                    checked={isDone} 
+                                                                    onCheckedChange={() => toggleStatus(alloc)}
+                                                                    className="mt-0.5 h-3.5 w-3.5"
+                                                                />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex justify-between items-center gap-1">
+                                                                        <span className={cn("text-xs font-medium truncate", isDone && "line-through opacity-50")}>
+                                                                            {proj?.name}
+                                                                        </span>
+                                                                        <span className="text-[10px] font-mono opacity-70">{alloc.hoursAssigned}h</span>
+                                                                    </div>
+                                                                    {alloc.description && (
+                                                                        <p className={cn("text-[10px] text-muted-foreground line-clamp-2 leading-tight mt-0.5", isDone && "line-through opacity-50")}>
+                                                                            {alloc.description}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                                <Button 
+                                                                    variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 -mr-1"
+                                                                    onClick={() => startEdit(alloc)}
+                                                                >
+                                                                    <Pencil className="h-2.5 w-2.5 text-muted-foreground" />
+                                                                </Button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </AccordionContent>
+                                            </AccordionItem>
+                                        );
+                                    })}
+                                </Accordion>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
           </div>
         </SheetContent>
       </Sheet>
 
-      {/* --- DIÁLOGO FLOTANTE (FORMULARIO) --- */}
+      {/* DIÁLOGO FLOTANTE (FORMULARIO) - Sin cambios, funciona perfecto */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>{editingAllocation ? 'Editar Tarea' : 'Nueva Tarea'}</DialogTitle>
-            <DialogDescription>{employee.name} - Semana del {weekLabel}</DialogDescription>
+            <DialogDescription>{employee.name} - {
+                weeks.find(w => w.weekStart.toISOString().split('T')[0] === selectedWeek)?.weekLabel
+            }</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
@@ -270,7 +289,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                   ))}
                 </SelectContent>
               </Select>
-              {/* Info horas disponibles */}
               {newProjectId && (() => {
                   const hours = getProjectAvailableHours(newProjectId);
                   const project = getProjectById(newProjectId);
@@ -290,12 +308,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
               </div>
               <div className="space-y-2">
                 <Label>Semana</Label>
+                {/* Selector de semana simplificado para el diálogo */}
                 <Select value={selectedWeek} onValueChange={setSelectedWeek}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {weeks.map((week, index) => (
                       <SelectItem key={week.weekStart.toISOString()} value={week.weekStart.toISOString().split('T')[0]}>
-                        Sem {index + 1} ({week.weekLabel})
+                        Semana {index + 1}
                       </SelectItem>
                     ))}
                   </SelectContent>
