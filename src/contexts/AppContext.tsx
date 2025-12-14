@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Employee, Client, Project, Allocation, LoadStatus, Absence, TeamEvent, ProfessionalGoal } from '@/types';
-import { getWorkingDaysInRange, getMonthlyCapacity } from '@/utils/dateUtils';
+import { getWorkingDaysInRange, getMonthlyCapacity, getWeeksForMonth, getStorageKey } from '@/utils/dateUtils'; // ✅ Importamos los nuevos utils
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 import { addDays } from 'date-fns';
@@ -339,6 +339,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('team_events').delete().eq('id', id);
   }, []);
 
+  // --- GETTERS ---
   const getEmployeeAllocationsForWeek = useCallback((employeeId: string, weekStart: string) => {
     return allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
   }, [allocations]);
@@ -353,7 +354,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let capacity: number;
     const weekStartDate = new Date(weekStart);
     const weekEndDate = addDays(weekStartDate, 6);
-    
     const rangeStart = effectiveStart || weekStartDate;
     const rangeEnd = effectiveEnd || weekEndDate;
     
@@ -384,25 +384,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity, status, percentage };
   }, [employees, allocations, absences, teamEvents]);
 
-  // ✅ CORRECCIÓN: SUMA MENSUAL EXACTA USANDO FECHAS
+  // ✅ AQUÍ ESTÁ EL CAMBIO CRUCIAL PARA LA INDEPENDENCIA MENSUAL
   const getEmployeeMonthlyLoad = useCallback((employeeId: string, year: number, month: number) => {
     const employee = employees.find(e => e.id === employeeId);
     if (!employee) return { hours: 0, capacity: 0, status: 'empty' as LoadStatus, percentage: 0 };
 
     const monthStart = new Date(year, month, 1);
-    const monthEnd = new Date(year, month + 1, 0);
-
-    // Sumar solo asignaciones cuyo weekStartDate caiga en este mes
-    // Gracias a la lógica de llaves, si una tarea es de "Enero", su fecha será 2025-01-01
-    // Si es de "Diciembre", será 2024-12-29.
-    const monthAllocations = allocations.filter(a => {
-      if (a.employeeId !== employeeId) return false;
-      const weekStart = new Date(a.weekStartDate);
-      return weekStart >= monthStart && weekStart <= monthEnd;
-    });
-
-    const totalHours = round2(monthAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0));
     
+    // 1. Obtenemos las semanas que tocan el mes
+    const weeks = getWeeksForMonth(monthStart);
+    
+    let totalHours = 0;
+
+    // 2. Sumamos usando la lógica de "Llaves":
+    //    Si el mes es Enero, buscará con llave "2025-01-01" en la semana compartida.
+    //    Si es Diciembre, buscará con llave "2024-12-29".
+    //    Así no se mezclan.
+    weeks.forEach(week => {
+        const storageKey = getStorageKey(week.weekStart, monthStart);
+        const tasks = allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === storageKey);
+        const weekTotal = tasks.reduce((sum, t) => sum + Number(t.hoursAssigned), 0);
+        totalHours += weekTotal;
+    });
+    
+    totalHours = round2(totalHours);
+
+    // 3. Resto de cálculos de capacidad
+    const monthEnd = new Date(year, month + 1, 0);
     let capacity = getMonthlyCapacity(year, month, employee.workSchedule);
     
     const employeeAbsences = absences.filter(a => a.employeeId === employeeId);
@@ -425,21 +433,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity, status, percentage };
   }, [employees, allocations, absences, teamEvents]);
 
+  // Aplicamos la misma lógica a Proyectos y Clientes
   const getProjectHoursForMonth = useCallback((projectId: string, month: Date) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return { used: 0, budget: 0, available: 0, percentage: 0 };
 
-    const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
-    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+    const weeks = getWeeksForMonth(month);
+    let usedHours = 0;
 
-    // ✅ MISMA LÓGICA DE FILTRO ESTRICTO
-    const projectAllocations = allocations.filter(a => {
-      if (a.projectId !== projectId) return false;
-      const weekStart = new Date(a.weekStartDate);
-      return weekStart >= monthStart && weekStart <= monthEnd;
+    weeks.forEach(week => {
+        const storageKey = getStorageKey(week.weekStart, month);
+        const tasks = allocations.filter(a => a.projectId === projectId && a.weekStartDate === storageKey);
+        usedHours += tasks.reduce((sum, t) => sum + Number(t.hoursAssigned), 0);
     });
+    usedHours = round2(usedHours);
 
-    const usedHours = round2(projectAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0));
     const available = round2(Math.max(0, project.budgetHours - usedHours));
     const percentage = project.budgetHours > 0 ? round2((usedHours / project.budgetHours) * 100) : 0;
 
@@ -448,20 +456,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const getClientTotalHoursForMonth = useCallback((clientId: string, month: Date) => {
     const clientProjects = projects.filter(p => p.clientId === clientId);
-    const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
-    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-
+    const weeks = getWeeksForMonth(month);
     let totalUsed = 0;
     let totalBudget = 0;
 
     clientProjects.forEach(project => {
       totalBudget += Number(project.budgetHours);
-      const projectAllocations = allocations.filter(a => {
-        if (a.projectId !== project.id) return false;
-        const weekStart = new Date(a.weekStartDate);
-        return weekStart >= monthStart && weekStart <= monthEnd;
+      weeks.forEach(week => {
+        const storageKey = getStorageKey(week.weekStart, month);
+        const tasks = allocations.filter(a => a.projectId === project.id && a.weekStartDate === storageKey);
+        totalUsed += tasks.reduce((sum, t) => sum + Number(t.hoursAssigned), 0);
       });
-      totalUsed += projectAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0);
     });
 
     totalUsed = round2(totalUsed);
