@@ -14,7 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Info, Search } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Info, Search, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -55,10 +55,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     if (open) setViewDate(viewDateContext || new Date(weekStart));
   }, [open, weekStart, viewDateContext]);
 
-  // Estados de Interfaz
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
-  
   const [searchTerm, setSearchTerm] = useState('');
 
   const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
@@ -270,7 +268,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 const weekStr = week.weekStart.toISOString().split('T')[0];
                 const storageKey = getStorageKey(week.weekStart, viewDate);
                 
-                // 1. Obtener todas las asignaciones
                 let weekAllocations = getEmployeeAllocationsForWeek(employeeId, storageKey);
                 
                 if (searchTerm) {
@@ -341,8 +338,9 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                 sortedProjectGroups.map(([projId, projAllocations]) => {
                                   const project = getProjectById(projId);
                                   const client = getClientById(project?.clientId || '');
-                                  const totalProjHours = projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+                                  const totalProjHours = projAllocations.reduce((sum, a) => sum + (a.status === 'completed' && a.hoursActual ? a.hoursActual : a.hoursAssigned), 0);
 
+                                  // ✅ ORDENACIÓN INTELIGENTE: Completados abajo
                                   const sortedTasks = [...projAllocations].sort((a, b) => {
                                       if (a.status === 'completed' && b.status !== 'completed') return 1;
                                       if (a.status !== 'completed' && b.status === 'completed') return -1;
@@ -369,16 +367,21 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                         </div>
 
                                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                            {sortedTasks.map(alloc => (
+                                            {sortedTasks.map(alloc => {
+                                                const isCompleted = alloc.status === 'completed';
+                                                const actual = alloc.hoursActual || 0;
+                                                const estimated = alloc.hoursAssigned;
+                                                const isOverBudget = actual > estimated;
+
+                                                return (
                                                 <div 
                                                     key={alloc.id} 
                                                     className={cn(
                                                         "group flex items-center gap-3 p-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors",
-                                                        // Efecto visual para tareas completadas
-                                                        alloc.status === 'completed' && "bg-slate-50/50 opacity-60"
+                                                        isCompleted && "bg-slate-50/50 opacity-80"
                                                     )}
                                                 >
-                                                    <Checkbox checked={alloc.status === 'completed'} onCheckedChange={() => toggleStatus(alloc)} className="h-4 w-4 mt-0.5 rounded-sm" />
+                                                    <Checkbox checked={isCompleted} onCheckedChange={() => toggleStatus(alloc)} className="h-4 w-4 mt-0.5 rounded-sm" />
                                                     
                                                     <div className="flex-1 min-w-0" onDoubleClick={() => startInlineEdit(alloc)}>
                                                         <div className="flex justify-between items-center gap-2">
@@ -393,19 +396,55 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                 />
                                                             ) : (
                                                                 <span 
-                                                                    className={cn("text-xs font-medium leading-tight text-slate-700 dark:text-slate-300 truncate cursor-text", alloc.status === 'completed' && "line-through opacity-50")}
+                                                                    className={cn("text-xs font-medium leading-tight text-slate-700 dark:text-slate-300 truncate cursor-text", isCompleted && "line-through opacity-50")}
                                                                     title="Doble clic para editar nombre"
                                                                 >
                                                                     {alloc.taskName || 'General'}
                                                                 </span>
                                                             )}
-                                                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{alloc.hoursAssigned}h</span>
                                                         </div>
                                                         {alloc.description && !inlineEditingId && (
                                                             <p className="text-[10px] text-slate-400 truncate mt-0.5">
                                                                 {alloc.description}
                                                             </p>
                                                         )}
+                                                        
+                                                        {/* ✅ AVISO PASIVO */}
+                                                        {isCompleted && isOverBudget && (
+                                                            <div className="flex items-center gap-1 text-[9px] text-red-500 mt-1 font-medium animate-in fade-in">
+                                                                <AlertTriangle className="h-3 w-3" />
+                                                                <span>+{parseFloat((actual - estimated).toFixed(2))}h extra</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* ✅ DOBLE INPUT: REAL vs EST */}
+                                                    <div className="flex flex-col gap-1 items-end">
+                                                        <div className="flex items-center gap-1" title="Horas Estimadas">
+                                                            <span className="text-[9px] text-muted-foreground uppercase scale-[0.8]">Est</span>
+                                                            <div className="w-10 h-5 flex items-center justify-center bg-slate-100 rounded text-[10px] font-bold text-slate-500">
+                                                                {estimated}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1" title="Horas Reales">
+                                                            <span className={cn("text-[9px] uppercase scale-[0.8]", isOverBudget ? "text-red-500 font-bold" : "text-muted-foreground")}>Real</span>
+                                                            <Input 
+                                                                type="number" 
+                                                                className={cn(
+                                                                    "w-10 h-5 px-0 text-center text-[10px] font-bold border-0 ring-1 ring-slate-200 focus-visible:ring-indigo-500",
+                                                                    isOverBudget && "text-red-600 bg-red-50 ring-red-200",
+                                                                    !isOverBudget && isCompleted && "text-green-600 bg-green-50 ring-green-200"
+                                                                )}
+                                                                value={alloc.hoursActual || ''}
+                                                                placeholder="-"
+                                                                onChange={(e) => {
+                                                                    const val = parseFloat(e.target.value);
+                                                                    updateAllocation({ ...alloc, hoursActual: isNaN(val) ? 0 : val });
+                                                                }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            />
+                                                        </div>
                                                     </div>
 
                                                     <DropdownMenu>
@@ -431,7 +470,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
                                                 </div>
-                                            ))}
+                                            );
+                                            })}
                                         </div>
                                     </div>
                                   );
@@ -446,7 +486,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
         </SheetContent>
       </Sheet>
 
-      {/* DIÁLOGOS DE EDICIÓN MANTENIDOS IGUAL QUE ANTES (Copiados del archivo anterior para integridad) */}
+      {/* MODAL DE CREACIÓN/EDICIÓN SE MANTIENE IGUAL */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
           <DialogHeader className="p-6 pb-2">
@@ -490,7 +530,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label>Horas</Label>
+                        <Label>Horas Estimadas</Label>
                         <Input type="number" value={editHours} onChange={(e) => setEditHours(e.target.value)} step="0.5" />
                     </div>
                     <div className="space-y-2">
