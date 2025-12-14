@@ -1,191 +1,77 @@
-import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { EmployeeRow } from './EmployeeRow';
-import { AllocationSheet } from './AllocationSheet';
-import { getWeeksForMonth, getMonthName, isCurrentWeek } from '@/utils/dateUtils';
-import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, CalendarDays, Info } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import EmployeeRow from './EmployeeRow';
+import { format, addDays, isSameMonth, startOfWeek, endOfWeek } from 'date-fns';
+import { es } from 'date-fns/locale';
 
-export function PlannerGrid() {
-  const { employees, getEmployeeMonthlyLoad } = useApp();
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: string } | null>(null);
+export default function PlannerGrid() {
+  const { employees, weeks, currentDate } = useApp();
 
-  const weeks = getWeeksForMonth(currentMonth);
-  const year = currentMonth.getFullYear();
-  const month = currentMonth.getMonth();
-
-  // Filter only active employees
+  // Filtrar empleados activos
   const activeEmployees = employees.filter(e => e.isActive);
 
-  const handlePrevMonth = () => {
-    setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-  };
-
-  const handleToday = () => {
-    setCurrentMonth(new Date());
-  };
-
-  const handleCellClick = (employeeId: string, weekStart: string) => {
-    setSelectedCell({ employeeId, weekStart });
+  // Configuración del Grid para ajustar 5 semanas sin scroll forzado
+  // 250px para la columna de empleado, el resto se divide equitativamente
+  const gridStyle = {
+    gridTemplateColumns: `250px repeat(${weeks.length}, minmax(0, 1fr))`
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header Controls */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b bg-card px-4 sm:px-6 py-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl sm:text-2xl font-bold capitalize text-foreground">
-            {getMonthName(currentMonth)}
-          </h2>
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" onClick={handlePrevMonth} className="h-8 w-8 sm:h-9 sm:w-9">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleToday} className="gap-2 h-8 sm:h-9 text-xs sm:text-sm">
-              <CalendarDays className="h-4 w-4" />
-              <span className="hidden sm:inline">Hoy</span>
-            </Button>
-            <Button variant="outline" size="icon" onClick={handleNextMonth} className="h-8 w-8 sm:h-9 sm:w-9">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+    <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-950 rounded-lg shadow border border-slate-200 dark:border-slate-800">
+      
+      {/* Cabecera del Grid */}
+      <div 
+        className="grid border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 sticky top-0 z-10"
+        style={gridStyle}
+      >
+        {/* Celda vacía esquina superior izquierda (Cabecera empleados) */}
+        <div className="p-3 font-semibold text-sm text-slate-500 border-r border-slate-200 dark:border-slate-800 flex items-center">
+          Equipo ({activeEmployees.length})
         </div>
 
-        {/* Legend */}
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs sm:text-sm">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1 text-muted-foreground cursor-help">
-                <Info className="h-4 w-4" />
-                <span className="hidden sm:inline text-xs">Semanas parciales</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="max-w-xs text-xs">
-                Las semanas que no empiezan o terminan completas en el mes tienen la capacidad ajustada automáticamente.
-              </p>
-            </TooltipContent>
-          </Tooltip>
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-success" />
-            <span className="text-muted-foreground">OK</span>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-warning" />
-            <span className="text-muted-foreground">Ajustado</span>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-destructive" />
-            <span className="text-muted-foreground">Exceso</span>
-          </div>
-        </div>
-      </div>
+        {/* Cabeceras de Semanas */}
+        {weeks.map((weekStart, index) => {
+            const start = new Date(weekStart);
+            const end = addDays(start, 4); // Viernes
+            const isCurrentMonth = isSameMonth(start, currentDate) || isSameMonth(end, currentDate);
 
-      {/* Grid Container */}
-      <div className="flex-1 overflow-auto p-3 sm:p-6">
-        {/* Week Headers */}
-        <div className="flex items-center gap-1 sm:gap-2 pb-3 min-w-[600px]">
-          <div className="w-28 sm:w-48 flex-shrink-0" />
-          
-          {/* CORRECCIÓN: El contenedor flex solo envuelve las semanas */}
-          <div className="flex flex-1 gap-1 sm:gap-2">
-            {weeks.map((week, index) => {
-              const isPartialWeek = week.effectiveStart && week.effectiveEnd && (
-                week.effectiveStart.getTime() !== week.weekStart.getTime() ||
-                week.effectiveEnd.getTime() !== week.weekEnd.getTime()
-              );
-              
-              return (
-                <div 
-                  key={week.weekStart.toISOString()} 
-                  className={cn(
-                    "flex-1 min-w-[60px] sm:min-w-[80px] text-center",
-                    isCurrentWeek(week.weekStart) && "font-semibold text-primary"
-                  )}
-                >
-                  <span className="block text-[10px] sm:text-xs font-semibold text-primary mb-0.5">
-                    Semana {index + 1}
-                  </span>
-                  <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
-                    {week.weekLabel}
-                    {isPartialWeek && (
-                      <span className="ml-1 text-primary" title="Semana parcial">*</span>
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* CORRECCIÓN: La columna Total ahora está fuera del flex container de semanas */}
-          <div className="w-16 sm:w-24 flex-shrink-0 text-center">
-            <span className="text-[10px] sm:text-xs font-medium text-primary uppercase tracking-wide">
-              Total
-            </span>
-          </div>
-        </div>
-
-        {/* Employee Rows */}
-        <div className="divide-y divide-border/50 min-w-[600px]">
-          {activeEmployees.map((employee) => {
-            const monthlyLoad = getEmployeeMonthlyLoad(employee.id, year, month);
-            
             return (
-              <div key={employee.id} className="flex items-center gap-1 sm:gap-2">
-                <EmployeeRow
-                  employee={employee}
-                  weeks={weeks}
-                  onCellClick={handleCellClick}
-                />
-                {/* Monthly Total */}
-                <div className={cn(
-                  "w-16 sm:w-24 flex-shrink-0 py-1 sm:py-2 px-1 sm:px-2 rounded-lg text-center border-2",
-                  monthlyLoad.status === 'overload' && "bg-destructive/10 border-destructive/30",
-                  monthlyLoad.status === 'warning' && "bg-warning/10 border-warning/30",
-                  monthlyLoad.status === 'healthy' && "bg-success/10 border-success/30",
-                  monthlyLoad.status === 'empty' && "bg-muted/30 border-muted"
-                )}>
-                  <span className={cn(
-                    "text-xs sm:text-sm font-bold",
-                    monthlyLoad.status === 'overload' && "text-destructive",
-                    monthlyLoad.status === 'warning' && "text-warning",
-                    monthlyLoad.status === 'healthy' && "text-success",
-                    monthlyLoad.status === 'empty' && "text-muted-foreground"
-                  )}>
-                    {monthlyLoad.hours}h
-                  </span>
-                  <span className="block text-[10px] sm:text-xs text-muted-foreground">
-                    / {monthlyLoad.capacity}h
-                  </span>
+                <div 
+                    key={weekStart} 
+                    className={`
+                        p-2 text-center border-r border-slate-200 dark:border-slate-800 last:border-r-0 flex flex-col justify-center
+                        ${!isCurrentMonth ? 'bg-slate-100/50 dark:bg-slate-900/50 text-slate-400' : ''}
+                    `}
+                >
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                        Semana {index + 1}
+                    </span>
+                    <span className="text-[10px] text-slate-500 mt-0.5">
+                        {format(start, 'd MMM', { locale: es })} - {format(end, 'd MMM', { locale: es })}
+                    </span>
                 </div>
-              </div>
             );
-          })}
-        </div>
-
-        {activeEmployees.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            No hay empleados activos para mostrar
-          </div>
-        )}
+        })}
       </div>
 
-      {/* Allocation Sheet */}
-      {selectedCell && (
-        <AllocationSheet
-          open={!!selectedCell}
-          onOpenChange={(open) => !open && setSelectedCell(null)}
-          employeeId={selectedCell.employeeId}
-          weekStart={selectedCell.weekStart}
-        />
-      )}
+      {/* Cuerpo del Grid (Filas de empleados) */}
+      <div className="overflow-y-auto flex-1 custom-scrollbar">
+        <div className="min-w-full"> 
+          {activeEmployees.map(employee => (
+            <EmployeeRow 
+              key={employee.id} 
+              employee={employee} 
+              weeks={weeks}
+              gridColumnsStyle={gridStyle} // Pasamos el estilo al hijo para mantener alineación
+            />
+          ))}
+          
+          {activeEmployees.length === 0 && (
+             <div className="p-10 text-center text-muted-foreground">
+                No hay empleados activos. Añade miembros al equipo para comenzar.
+             </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
