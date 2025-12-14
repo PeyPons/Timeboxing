@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetClose } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Trash2, AlertCircle, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth } from '@/utils/dateUtils';
 
@@ -91,14 +91,14 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   };
 
   const addTaskRow = () => {
-    // 1. Obtener la última fila para copiar datos
+    // 1. Obtener la última fila para copiar datos (Agilidad)
     const lastTask = newTasks.length > 0 ? newTasks[newTasks.length - 1] : null;
     
     setNewTasks(prev => [...prev, {
       id: crypto.randomUUID(),
-      projectId: lastTask ? lastTask.projectId : '', // <--- AQUÍ COPIAMOS EL PROYECTO
+      projectId: lastTask ? lastTask.projectId : '', // Copiamos el proyecto anterior
       hours: '',
-      weekDate: lastTask ? lastTask.weekDate : weekStart, // Copiamos también la semana
+      weekDate: lastTask ? lastTask.weekDate : weekStart, // Copiamos la semana anterior
       description: ''
     }]);
   };
@@ -160,16 +160,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
+        {/* CORRECCIÓN: Quitada la X manual, usamos la del componente. Fondo ajustado */}
         <SheetContent 
-            className="w-full sm:max-w-[95vw] overflow-y-auto px-6 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl border-l shadow-2xl pt-12"
-            // ^^^ Ajuste visual: Fondo más sólido, padding-top para evitar solapamiento con la X
+            className="w-full sm:max-w-[95vw] overflow-y-auto px-6 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl border-l shadow-2xl pt-10"
         >
-          {/* Botón Cerrar Personalizado y Visible */}
-          <SheetClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-            <X className="h-6 w-6 text-foreground" />
-            <span className="sr-only">Cerrar</span>
-          </SheetClose>
-
           <SheetHeader className="pb-6 border-b mb-6 space-y-4">
             <div className="flex items-center gap-4">
                 <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-2xl shadow-sm border border-primary/20">
@@ -191,12 +185,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 const weekStr = week.weekStart.toISOString().split('T')[0];
                 const weekAllocations = getEmployeeAllocationsForWeek(employeeId, weekStr);
                 
-                // --- CORRECCIÓN: Usar effectiveStart/End para calcular capacidad real del mes ---
+                // Cálculo de capacidad real (usando días efectivos del mes)
                 const load = getEmployeeLoadForWeek(
                     employeeId, 
                     weekStr, 
-                    week.effectiveStart, // Pasamos inicio real del mes (si aplica)
-                    week.effectiveEnd    // Pasamos fin real del mes (si aplica)
+                    week.effectiveStart, 
+                    week.effectiveEnd
                 );
                 
                 const isCurrent = weekStr === weekStart;
