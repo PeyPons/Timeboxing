@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,12 +19,16 @@ import {
   CalendarDays, 
   Briefcase, 
   LayoutList,
-  Pencil // Icono para editar
+  Pencil,
+  CheckCircle2, // Icono para completado
+  Circle,       // Icono para pendiente
+  TrendingUp
 } from 'lucide-react';
 import { Project } from '@/types';
+import { cn } from '@/lib/utils';
 
 export default function ProjectsPage() {
-  const { projects, clients, allocations, employees, getProjectHoursForMonth, updateProject } = useApp();
+  const { projects, clients, allocations, employees, updateProject } = useApp();
   
   // Estado para la navegación mensual
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -77,7 +81,7 @@ export default function ProjectsPage() {
             Proyectos y Tareas
           </h1>
           <p className="text-muted-foreground">
-            Auditoría de tareas, edición y consumo de horas por proyecto.
+            Seguimiento de planificación vs ejecución real.
           </p>
         </div>
 
@@ -104,59 +108,77 @@ export default function ProjectsPage() {
       <div className="grid gap-6">
         {activeProjects.map((project) => {
           const client = clients.find(c => c.id === project.clientId);
-          const stats = getProjectHoursForMonth(project.id, currentMonth);
           
+          // 1. Filtrar tareas de este mes para este proyecto
           const monthTasks = allocations.filter(a => {
              const taskDate = parseISO(a.weekStartDate);
              return a.projectId === project.id && isSameMonth(taskDate, currentMonth);
           });
+
+          // 2. Cálculos de horas locales (para separar Planificado vs Completado)
+          const totalAssigned = monthTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
+          const totalCompleted = monthTasks
+            .filter(t => t.status === 'completed')
+            .reduce((sum, t) => sum + t.hoursAssigned, 0);
+
+          // Porcentajes sobre el presupuesto
+          const budget = project.budgetHours || 1; // Evitar división por cero
+          const assignedPct = (totalAssigned / budget) * 100;
+          const completedPct = (totalCompleted / budget) * 100;
 
           const hasActivity = monthTasks.length > 0;
 
           return (
             <Card key={project.id} className={`overflow-hidden transition-all ${hasActivity ? 'border-indigo-100 shadow-md' : 'opacity-80 border-dashed'}`}>
               <CardHeader className="bg-slate-50/50 dark:bg-slate-900/50 pb-4">
-                <div className="flex flex-col md:flex-row justify-between gap-4">
+                <div className="flex flex-col md:flex-row justify-between gap-6">
                     
-                    {/* Info Proyecto */}
+                    {/* Info Proyecto (Izquierda) */}
                     <div className="flex items-start gap-4 flex-1">
-                        <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shadow-sm">
+                        <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shadow-sm flex-shrink-0">
                             <Briefcase className="h-5 w-5 text-slate-500" />
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3">
-                                <CardTitle className="text-lg">{project.name}</CardTitle>
-                                <Badge variant="outline" className="font-normal text-xs bg-white">
+                                <CardTitle className="text-lg truncate">{project.name}</CardTitle>
+                                <Badge variant="outline" className="font-normal text-xs bg-white shrink-0">
                                     <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: client?.color || '#ccc' }} />
                                     {client?.name || 'Sin Cliente'}
                                 </Badge>
-                                {/* BOTÓN EDITAR */}
                                 <Button variant="ghost" size="icon" className="h-6 w-6 ml-2 text-slate-400 hover:text-indigo-600" onClick={() => handleEditClick(project)}>
                                     <Pencil className="h-3.5 w-3.5" />
                                 </Button>
                             </div>
                             <CardDescription className="mt-1 flex items-center gap-4 text-xs">
-                                <span>Presupuesto Total: {project.budgetHours}h</span>
-                                {hasActivity ? (
+                                <span className="font-mono">Presupuesto: {project.budgetHours}h</span>
+                                {hasActivity && (
                                     <span className="text-green-600 font-medium flex items-center gap-1">
-                                        <Clock className="h-3 w-3" /> Activo este mes
+                                        <TrendingUp className="h-3 w-3" /> Activo
                                     </span>
-                                ) : (
-                                    <span>Sin actividad en {format(currentMonth, 'MMMM', { locale: es })}</span>
                                 )}
                             </CardDescription>
                         </div>
                     </div>
 
-                    {/* Métricas del Mes */}
-                    <div className="min-w-[200px] flex flex-col justify-center gap-2">
-                        <div className="flex justify-between text-xs font-medium">
-                            <span>Consumo {format(currentMonth, 'MMM', { locale: es })}</span>
-                            <span>{stats.used}h</span>
+                    {/* Métricas Duales (Derecha) */}
+                    <div className="min-w-[240px] flex flex-col justify-center gap-3 bg-white dark:bg-slate-950 p-3 rounded-lg border">
+                        
+                        {/* Barra 1: Asignado (Planificación) */}
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                                <span>Planificado (Asignado)</span>
+                                <span>{totalAssigned}h</span>
+                            </div>
+                            <Progress value={assignedPct} className="h-1.5 bg-slate-100" />
                         </div>
-                        <Progress value={stats.percentage} className={`h-2 ${stats.percentage > 100 ? '[&>div]:bg-red-500' : '[&>div]:bg-indigo-500'}`} />
-                        <div className="text-[10px] text-muted-foreground text-right">
-                            {stats.available}h restantes del total
+
+                        {/* Barra 2: Completado (Ejecución) */}
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-emerald-600">
+                                <span>Ejecutado (Completado)</span>
+                                <span>{totalCompleted}h</span>
+                            </div>
+                            <Progress value={completedPct} className="h-1.5 bg-emerald-100 [&>div]:bg-emerald-500" />
                         </div>
                     </div>
                 </div>
@@ -166,6 +188,7 @@ export default function ProjectsPage() {
                 {hasActivity ? (
                     <div className="divide-y">
                         <div className="bg-slate-50 px-6 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex">
+                            <div className="w-8"></div> {/* Estado */}
                             <div className="flex-1">Tarea / Descripción</div>
                             <div className="w-40">Empleado</div>
                             <div className="w-32">Semana</div>
@@ -173,17 +196,38 @@ export default function ProjectsPage() {
                         </div>
                         
                         {/* Listado de Tareas */}
-                        {monthTasks.sort((a, b) => new Date(a.weekStartDate).getTime() - new Date(b.weekStartDate).getTime()).map(task => {
+                        {monthTasks.sort((a, b) => {
+                            // Ordenar: primero pendientes, luego completadas
+                            if (a.status === 'completed' && b.status !== 'completed') return 1;
+                            if (a.status !== 'completed' && b.status === 'completed') return -1;
+                            return new Date(a.weekStartDate).getTime() - new Date(b.weekStartDate).getTime();
+                        }).map(task => {
                             const emp = employees.find(e => e.id === task.employeeId);
+                            const isCompleted = task.status === 'completed';
+
                             return (
-                                <div key={task.id} className="px-6 py-3 flex items-center gap-4 hover:bg-slate-50/50 transition-colors text-sm">
+                                <div key={task.id} className={cn(
+                                    "px-6 py-3 flex items-center gap-4 transition-colors text-sm group",
+                                    isCompleted ? "bg-slate-50/50 text-muted-foreground" : "hover:bg-slate-50"
+                                )}>
+                                    {/* Icono de Estado */}
+                                    <div className="w-8 flex justify-center">
+                                        {isCompleted ? (
+                                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                        ) : (
+                                            <Circle className="h-4 w-4 text-slate-300 group-hover:text-indigo-400" />
+                                        )}
+                                    </div>
+
                                     <div className="flex-1 min-w-0">
-                                        <p className="font-medium truncate">{task.taskName || 'Sin nombre'}</p>
-                                        {task.description && <p className="text-xs text-muted-foreground truncate">{task.description}</p>}
+                                        <p className={cn("font-medium truncate", isCompleted && "line-through decoration-slate-300")}>
+                                            {task.taskName || 'Sin nombre'}
+                                        </p>
+                                        {task.description && <p className="text-xs text-muted-foreground truncate opacity-80">{task.description}</p>}
                                     </div>
                                     
                                     <div className="w-40 flex items-center gap-2">
-                                        <Avatar className="h-6 w-6">
+                                        <Avatar className="h-6 w-6 border bg-white">
                                             <AvatarImage src={emp?.avatarUrl} />
                                             <AvatarFallback className="text-[10px]">{emp?.name.substring(0,2).toUpperCase()}</AvatarFallback>
                                         </Avatar>
@@ -195,23 +239,33 @@ export default function ProjectsPage() {
                                         {format(parseISO(task.weekStartDate), 'd MMM', { locale: es })}
                                     </div>
 
-                                    <div className="w-20 text-right font-mono font-medium text-slate-700 bg-slate-100 px-2 py-1 rounded text-xs">
+                                    <div className={cn(
+                                        "w-20 text-right font-mono font-medium px-2 py-1 rounded text-xs",
+                                        isCompleted ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"
+                                    )}>
                                         {task.hoursAssigned}h
                                     </div>
                                 </div>
                             );
                         })}
                         
-                        <div className="bg-slate-50/80 px-6 py-3 border-t flex justify-end">
-                            <div className="text-sm font-medium">
-                                Total {format(currentMonth, 'MMMM', { locale: es })}: <span className="text-indigo-600 font-bold ml-1">{stats.used}h</span>
+                        {/* Footer Totales */}
+                        <div className="bg-slate-50/80 px-6 py-3 border-t flex justify-end gap-6 text-xs font-medium">
+                            <div className="text-muted-foreground">
+                                Pendiente: <span className="text-slate-900">{round2(totalAssigned - totalCompleted)}h</span>
+                            </div>
+                            <div className="text-emerald-700">
+                                Completado: <span className="font-bold">{totalCompleted}h</span>
+                            </div>
+                            <div className="text-indigo-700 border-l pl-6">
+                                Total Asignado: <span className="font-bold">{totalAssigned}h</span>
                             </div>
                         </div>
                     </div>
                 ) : (
-                    <div className="py-8 text-center flex flex-col items-center justify-center text-muted-foreground gap-2">
-                        <div className="h-10 w-10 bg-slate-50 rounded-full flex items-center justify-center mb-1">
-                            <LayoutList className="h-5 w-5 text-slate-300" />
+                    <div className="py-10 text-center flex flex-col items-center justify-center text-muted-foreground gap-3">
+                        <div className="h-12 w-12 bg-slate-50 rounded-full flex items-center justify-center">
+                            <LayoutList className="h-6 w-6 text-slate-300" />
                         </div>
                         <p className="text-sm">No hay tareas registradas para este proyecto en {format(currentMonth, 'MMMM', { locale: es })}.</p>
                     </div>
@@ -223,7 +277,7 @@ export default function ProjectsPage() {
 
         {activeProjects.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
-                No tienes proyectos activos. Ve a "Clientes" para crear uno.
+                No tienes proyectos activos.
             </div>
         )}
       </div>
