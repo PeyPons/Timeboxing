@@ -1,17 +1,14 @@
 import { cn } from '@/lib/utils';
-import { LoadStatus } from '@/types';
+import { LoadStatus, Allocation } from '@/types';
 import { AlertTriangle, Palmtree } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Allocation } from '@/types';
 
 interface WeekCellProps {
-  // Mantenemos allocations por si quieres usarlas en el tooltip, 
-  // pero visualmente usaremos solo las métricas
-  allocations?: Allocation[]; 
+  allocations?: Allocation[]; // Se recibe pero no se usa en el renderizado principal
   hours: number;
   capacity: number;
   status: LoadStatus;
-  percentage?: number; // Hacemos opcional para calcularlo si no viene
+  percentage?: number;
   isCurrentWeek?: boolean;
   hasAbsence?: boolean;
   absenceHours?: number;
@@ -31,28 +28,21 @@ export function WeekCell({
   onClick 
 }: WeekCellProps) {
   
-  // Calculamos porcentaje si no viene
+  // Recalcular porcentaje si no viene
   const loadPercentage = percentage ?? (capacity > 0 ? (hours / capacity) * 100 : 0);
 
   const statusClasses = {
     empty: 'bg-muted/30 border-muted hover:bg-muted/50',
-    healthy: 'bg-green-50/50 border-green-200 hover:bg-green-100/50 dark:bg-green-900/10 dark:border-green-900/30',
-    warning: 'bg-yellow-50/50 border-yellow-200 hover:bg-yellow-100/50 dark:bg-yellow-900/10 dark:border-yellow-900/30',
-    overload: 'bg-red-50/50 border-red-200 hover:bg-red-100/50 dark:bg-red-900/10 dark:border-red-900/30',
+    healthy: 'bg-success/10 border-success/30 hover:bg-success/20',
+    warning: 'bg-warning/10 border-warning/30 hover:bg-warning/20',
+    overload: 'bg-destructive/10 border-destructive/30 hover:bg-destructive/20 animate-pulse-soft',
   };
 
   const textClasses = {
     empty: 'text-muted-foreground',
-    healthy: 'text-green-700 dark:text-green-400',
-    warning: 'text-yellow-700 dark:text-yellow-400',
-    overload: 'text-red-700 dark:text-red-400',
-  };
-
-  const barColor = {
-      empty: 'bg-slate-200',
-      healthy: 'bg-green-500',
-      warning: 'bg-yellow-500',
-      overload: 'bg-red-500'
+    healthy: 'text-success',
+    warning: 'text-warning',
+    overload: 'text-destructive',
   };
 
   return (
@@ -61,68 +51,50 @@ export function WeekCell({
         <button
           onClick={onClick}
           className={cn(
-            "relative flex flex-col w-full h-full min-h-[5rem] rounded-md border transition-all duration-200 p-2 gap-2 text-left",
-            "hover:shadow-sm cursor-pointer",
+            "relative flex h-full min-h-[5rem] w-full flex-col items-center justify-center rounded-lg border-2 transition-all duration-200",
+            "hover:shadow-md cursor-pointer",
             statusClasses[status],
-            isCurrentWeek && "ring-1 ring-primary ring-offset-0 shadow-sm",
+            isCurrentWeek && "ring-2 ring-primary ring-offset-2",
             hasAbsence && "border-dashed"
           )}
         >
-            {/* Cabecera con iconos de estado */}
-            <div className="flex justify-between items-start w-full">
-                {status === 'overload' && (
-                    <AlertTriangle className="h-3.5 w-3.5 text-red-500 animate-pulse" />
-                )}
-                {hasAbsence && (
-                    <Palmtree className="h-3.5 w-3.5 text-amber-500 ml-auto" />
-                )}
-            </div>
-
-            {/* Centro: Horas / Capacidad */}
-            <div className="flex-1 flex flex-col justify-center items-center mt-[-10px]"> 
-                {hours > 0 ? (
-                    <>
-                    <span className={cn("text-lg font-bold leading-none tracking-tight", textClasses[status])}>
-                        {hours}h
-                    </span>
-                    <span className="text-[10px] text-muted-foreground font-medium mt-1">
-                        / {capacity}h
-                    </span>
-                    </>
-                ) : (
-                    <span className="text-xl text-muted-foreground/30 font-light">—</span>
-                )}
-            </div>
-
-            {/* Barra de progreso inferior */}
-            {hours > 0 && (
-                <div className="w-full h-1 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden mt-auto">
-                    <div 
-                        className={cn("h-full transition-all duration-500", barColor[status])}
-                        style={{ width: `${Math.min(loadPercentage, 100)}%` }}
-                    />
-                </div>
-            )}
+          {status === 'overload' && (
+            <AlertTriangle className="absolute right-1.5 top-1.5 h-4 w-4 text-destructive" />
+          )}
+          
+          {hasAbsence && status !== 'overload' && (
+            <Palmtree className="absolute right-1.5 top-1.5 h-4 w-4 text-warning" />
+          )}
+          
+          {hours > 0 ? (
+            <>
+              <span className={cn("text-lg font-bold", textClasses[status])}>
+                {hours}h
+              </span>
+              <span className="text-xs text-muted-foreground">
+                / {capacity}h
+              </span>
+            </>
+          ) : (
+            <span className="text-sm text-muted-foreground">—</span>
+          )}
         </button>
       </TooltipTrigger>
-      
-      <TooltipContent side="top" className="text-xs">
+      <TooltipContent side="top" className="text-sm">
         <div className="space-y-1">
-          <p className="font-semibold">
-            Resumen Semanal
+          <p className="font-medium">
+            {hours}h asignadas / {capacity}h capacidad
           </p>
-          <p>
-             Asignado: {hours}h
-          </p>
-          <p>
-             Capacidad: {capacity}h
-          </p>
-          {hasAbsence && (
-            <p className="text-amber-500 flex items-center gap-1">
-              <Palmtree size={10} /> Incluye ausencias
+          {hasAbsence && baseCapacity !== undefined && (
+            <p className="text-xs text-warning">
+              🏖️ Capacidad base: {baseCapacity}h - {absenceHours}h ausencia
             </p>
           )}
-          {status === 'overload' && <p className="text-red-500 font-bold">⚠️ Sobrecarga detectada</p>}
+          <p className={cn("text-xs", textClasses[status])}>
+            {loadPercentage.toFixed(0)}% de carga
+            {status === 'overload' && ' ⚠️ Sobrecarga'}
+            {status === 'warning' && ' ⚡ Cerca del límite'}
+          </p>
         </div>
       </TooltipContent>
     </Tooltip>
