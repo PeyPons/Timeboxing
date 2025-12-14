@@ -1,97 +1,141 @@
+import { Plus } from 'lucide-react';
+import { Allocation } from '@/types';
+import { useApp } from '@/contexts/AppContext';
 import { cn } from '@/lib/utils';
-import { LoadStatus } from '@/types';
-import { AlertTriangle, Palmtree } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Dialog, DialogTrigger } from '@/components/ui/dialog';
+import AllocationSheet from './AllocationSheet';
+import { useState } from 'react';
 
 interface WeekCellProps {
-  hours: number;
-  capacity: number;
-  status: LoadStatus;
-  percentage: number;
-  isCurrentWeek?: boolean;
-  hasAbsence?: boolean;
-  absenceHours?: number;
-  baseCapacity?: number;
-  onClick?: () => void;
+  employeeId: string;
+  weekStart: string;
+  allocations: Allocation[];
+  maxCapacity: number;
 }
 
-export function WeekCell({ 
-  hours, 
-  capacity, 
-  status, 
-  percentage, 
-  isCurrentWeek, 
-  hasAbsence,
-  absenceHours = 0,
-  baseCapacity,
-  onClick 
-}: WeekCellProps) {
-  const statusClasses = {
-    empty: 'bg-muted/30 border-muted hover:bg-muted/50',
-    healthy: 'bg-success/10 border-success/30 hover:bg-success/20',
-    warning: 'bg-warning/10 border-warning/30 hover:bg-warning/20',
-    overload: 'bg-destructive/10 border-destructive/30 hover:bg-destructive/20 animate-pulse-soft',
+export default function WeekCell({ employeeId, weekStart, allocations: cellAllocations, maxCapacity }: WeekCellProps) {
+  const { projects } = useApp();
+  const [isHovered, setIsHovered] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedAllocation, setSelectedAllocation] = useState<Allocation | undefined>(undefined);
+
+  // Calcular total de horas para alertas de capacidad
+  const totalHours = cellAllocations.reduce((sum, alloc) => sum + alloc.hoursAssigned, 0);
+  const isOverCapacity = totalHours > maxCapacity;
+  const utilizationPercentage = Math.round((totalHours / maxCapacity) * 100);
+
+  // 1. Agrupar asignaciones por Proyecto
+  const allocationsByProject = cellAllocations.reduce((acc, alloc) => {
+    const project = projects.find(p => p.id === alloc.projectId);
+    const projectName = project ? project.name : 'Sin Proyecto';
+    
+    if (!acc[projectName]) {
+      acc[projectName] = { project, allocations: [] };
+    }
+    acc[projectName].allocations.push(alloc);
+    return acc;
+  }, {} as Record<string, { project: any, allocations: Allocation[] }>);
+
+  const handleEdit = (allocation: Allocation) => {
+    setSelectedAllocation(allocation);
+    setIsDialogOpen(true);
   };
 
-  const textClasses = {
-    empty: 'text-muted-foreground',
-    healthy: 'text-success',
-    warning: 'text-warning',
-    overload: 'text-destructive',
+  const handleAddNew = () => {
+    setSelectedAllocation(undefined);
+    setIsDialogOpen(true);
   };
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          onClick={onClick}
-          className={cn(
-            "relative flex h-16 w-full flex-col items-center justify-center rounded-lg border-2 transition-all duration-200",
-            "hover:shadow-md cursor-pointer",
-            statusClasses[status],
-            isCurrentWeek && "ring-2 ring-primary ring-offset-2",
-            hasAbsence && "border-dashed"
-          )}
-        >
-          {status === 'overload' && (
-            <AlertTriangle className="absolute right-1.5 top-1.5 h-4 w-4 text-destructive" />
-          )}
-          
-          {hasAbsence && status !== 'overload' && (
-            <Palmtree className="absolute right-1.5 top-1.5 h-4 w-4 text-warning" />
-          )}
-          
-          {hours > 0 ? (
-            <>
-              <span className={cn("text-lg font-bold", textClasses[status])}>
-                {hours}h
+    <div 
+      className={cn(
+        "h-full min-h-[120px] p-1 border-r border-b text-xs relative group transition-colors flex flex-col",
+        isOverCapacity ? "bg-red-50 dark:bg-red-900/10" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+      )}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Cabecera de la celda con métricas */}
+      <div className="flex justify-between items-center mb-1 px-1 h-5">
+        {totalHours > 0 && (
+          <span className={cn(
+            "font-mono font-bold text-[10px]",
+            isOverCapacity ? "text-red-600" : "text-slate-500"
+          )}>
+            {totalHours}h <span className="text-slate-300 font-normal">/ {maxCapacity}h</span>
+          </span>
+        )}
+        
+        {/* Botón flotante para añadir (visible en hover o si está vacío) */}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <button 
+              onClick={handleAddNew}
+              className={cn(
+                "rounded-full p-0.5 hover:bg-indigo-100 text-indigo-600 transition-opacity",
+                isHovered || cellAllocations.length === 0 ? "opacity-100" : "opacity-0"
+              )}
+            >
+              <Plus size={14} />
+            </button>
+          </DialogTrigger>
+          <AllocationSheet 
+            isOpen={isDialogOpen} 
+            onClose={() => setIsDialogOpen(false)} 
+            allocationToEdit={selectedAllocation}
+            defaultEmployeeId={employeeId}
+            defaultWeek={weekStart}
+          />
+        </Dialog>
+      </div>
+
+      {/* Lista de Proyectos y Tareas */}
+      <div className="space-y-2 flex-1 overflow-y-auto max-h-[150px] custom-scrollbar">
+        {Object.entries(allocationsByProject).map(([projectName, { allocations }]) => (
+          <div key={projectName} className="rounded border border-indigo-100 dark:border-indigo-900/50 bg-white dark:bg-slate-900 overflow-hidden shadow-sm mx-0.5">
+            {/* Cabecera del Proyecto */}
+            <div className="bg-indigo-50 dark:bg-indigo-950/30 px-2 py-1 border-b border-indigo-100 dark:border-indigo-900/50">
+              <span className="font-semibold text-indigo-700 dark:text-indigo-300 truncate block text-[10px] uppercase tracking-wider" title={projectName}>
+                {projectName}
               </span>
-              <span className="text-xs text-muted-foreground">
-                / {capacity}h
-              </span>
-            </>
-          ) : (
-            <span className="text-sm text-muted-foreground">—</span>
-          )}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="text-sm">
-        <div className="space-y-1">
-          <p className="font-medium">
-            {hours}h asignadas / {capacity}h capacidad
-          </p>
-          {hasAbsence && baseCapacity !== undefined && (
-            <p className="text-xs text-warning">
-              🏖️ Capacidad base: {baseCapacity}h - {absenceHours}h ausencia
-            </p>
-          )}
-          <p className={cn("text-xs", textClasses[status])}>
-            {percentage.toFixed(0)}% de carga
-            {status === 'overload' && ' ⚠️ Sobrecarga'}
-            {status === 'warning' && ' ⚡ Cerca del límite'}
-          </p>
+            </div>
+            
+            {/* Lista de Tareas debajo del proyecto */}
+            <div className="p-1 space-y-0.5">
+              {allocations.map(alloc => (
+                <div 
+                  key={alloc.id} 
+                  onClick={() => handleEdit(alloc)}
+                  className="cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-1 flex justify-between items-center group/task transition-colors"
+                >
+                  <span className="truncate mr-2 text-slate-600 dark:text-slate-400 font-medium" title={alloc.taskName || 'Tarea general'}>
+                    {alloc.taskName || 'General'}
+                  </span>
+                  <span className={cn(
+                    "font-mono font-medium text-[10px]",
+                    alloc.hoursAssigned > 10 ? "text-amber-600" : "text-slate-500"
+                  )}>
+                    {alloc.hoursAssigned}h
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Barra de progreso visual en la parte inferior */}
+      {totalHours > 0 && (
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-slate-100 mt-auto">
+          <div 
+            className={cn(
+              "h-full transition-all duration-500",
+              isOverCapacity ? "bg-red-500" : utilizationPercentage > 80 ? "bg-amber-500" : "bg-green-500"
+            )}
+            style={{ width: `${Math.min(utilizationPercentage, 100)}%` }}
+          />
         </div>
-      </TooltipContent>
-    </Tooltip>
+      )}
+    </div>
   );
 }
