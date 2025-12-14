@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge';
 import { format, max, min, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export function PlannerGrid() {
   const { employees, getEmployeeMonthlyLoad } = useApp();
@@ -49,7 +50,6 @@ export function PlannerGrid() {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
   
-  // Límites del mes actual para "recortar" visualmente
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
@@ -72,43 +72,70 @@ export function PlannerGrid() {
   const handleToday = () => setCurrentMonth(new Date());
   const handleCellClick = (employeeId: string, weekStart: string) => setSelectedCell({ employeeId, weekStart });
 
-  const handleAnalyze = () => {
+  // ✅ FUNCIÓN DE IA REAL CONECTADA A GEMINI
+  const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setInsights(null);
-    setTimeout(() => {
-        const newInsights: { type: 'warning' | 'success' | 'info', text: string }[] = [];
-        const overloadedEmployees = filteredEmployees.filter(e => {
-            const load = getEmployeeMonthlyLoad(e.id, year, month);
-            return load.status === 'overload';
-        });
-        if (overloadedEmployees.length > 0) {
-            newInsights.push({
-                type: 'warning',
-                text: `⚠️ Detectada sobrecarga en: ${overloadedEmployees.map(e => e.name).join(', ')}.`
-            });
-        }
-        const freeEmployees = filteredEmployees.filter(e => {
-            const load = getEmployeeMonthlyLoad(e.id, year, month);
-            return load.percentage < 50;
-        });
-        if (freeEmployees.length > 0) {
-            newInsights.push({
-                type: 'success',
-                text: `✅ Capacidad disponible: ${freeEmployees.length} personas tienen baja carga.`
-            });
-        }
-        if (newInsights.length === 0) {
-            newInsights.push({ type: 'info', text: "👍 Todo parece equilibrado." });
-        }
-        setInsights(newInsights);
+
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+        setInsights([{ type: 'warning', text: 'Falta la API Key de Gemini en .env' }]);
         setIsAnalyzing(false);
-    }, 1500);
+        return;
+    }
+
+    try {
+        // 1. Preparar datos para la IA
+        const staffData = filteredEmployees.map(e => {
+            const load = getEmployeeMonthlyLoad(e.id, year, month);
+            return {
+                name: e.name,
+                role: e.role,
+                hours: load.hours,
+                capacity: load.capacity,
+                status: load.status
+            };
+        });
+
+        const prompt = `
+            Actúa como Project Manager. Analiza estos datos de carga de trabajo para ${getMonthName(currentMonth)}:
+            ${JSON.stringify(staffData)}
+            
+            Detecta:
+            1. Sobrecargas críticas.
+            2. Personas con baja carga (oportunidades).
+            3. Balance general.
+
+            Responde ÚNICAMENTE con un JSON válido que sea un array de objetos con este formato:
+            [{"type": "warning" | "success" | "info", "text": "Mensaje corto y directo"}]
+            No uses markdown, solo el JSON raw.
+        `;
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+        
+        // Limpieza básica por si la IA envuelve en markdown
+        const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsedInsights = JSON.parse(cleanJson);
+
+        setInsights(parsedInsights);
+
+    } catch (error) {
+        console.error("Error IA:", error);
+        setInsights([{ type: 'warning', text: 'Error al conectar con Minguito. Inténtalo de nuevo.' }]);
+    } finally {
+        setIsAnalyzing(false);
+    }
   };
 
   const gridTemplate = `250px repeat(${weeks.length}, minmax(0, 1fr)) 100px`;
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 rounded-lg border shadow-sm overflow-hidden">
+      {/* CABECERA */}
       <div className="flex flex-col gap-4 border-b bg-card px-4 py-3 z-20 relative">
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -182,21 +209,19 @@ export function PlannerGrid() {
         </div>
       </div>
 
+      {/* GRID */}
       <div className="flex-1 overflow-auto custom-scrollbar bg-slate-50/50 dark:bg-slate-900/50">
         <div style={{ minWidth: '1000px' }}>
             <div className="grid sticky top-0 z-10 bg-white dark:bg-slate-950 border-b shadow-sm" style={{ gridTemplateColumns: gridTemplate }}>
                 <div className="px-4 py-3 font-bold text-sm text-slate-700 dark:text-slate-200 border-r flex items-center bg-slate-50 dark:bg-slate-900">Equipo ({filteredEmployees.length})</div>
                 {weeks.map((week, index) => {
-                    // ✅ LÓGICA DE RECORTE VISUAL: Mostramos la fecha real recortada por el mes
                     const visualStart = max([week.weekStart, monthStart]);
                     const visualEnd = min([week.weekEnd, monthEnd]);
-                    
                     return (
                         <div key={week.weekStart.toISOString()} className={cn("text-center px-1 py-2 border-r last:border-r-0 flex flex-col justify-center", isCurrentWeek(week.weekStart) ? "bg-indigo-50/50 dark:bg-indigo-950/30" : "")}>
                             <span className={cn("text-xs font-bold uppercase tracking-wider", isCurrentWeek(week.weekStart) ? "text-indigo-600" : "text-slate-500")}>
                                 Semana {index + 1}
                             </span>
-                            {/* ✅ FECHAS EXACTAS DEL MES: "1 Ene - 4 Ene" en lugar de "29 Dic - 4 Ene" */}
                             <span className="text-[10px] text-slate-400 font-medium">
                                 {format(visualStart, 'd MMM', { locale: es })} - {format(visualEnd, 'd MMM', { locale: es })}
                             </span>
