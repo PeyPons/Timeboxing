@@ -17,13 +17,14 @@ export default function ProjectsPage() {
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState<string | null>(null);
   
+  // 1. CAMBIO AQUÍ: Añadimos minimumHours al estado inicial
   const [newProject, setNewProject] = useState({
-      name: '',
-      clientId: '',
-      status: 'active' as const,
-      budgetHours: 20,
-      minimumHours: 0, // <--- Inicializar
-    });
+    name: '',
+    clientId: '',
+    status: 'active' as const,
+    budgetHours: 20,
+    minimumHours: 0, 
+  });
 
   const currentMonth = new Date();
 
@@ -41,7 +42,8 @@ export default function ProjectsPage() {
       return;
     }
     addProject(newProject);
-    setNewProject({ name: '', clientId: '', status: 'active', budgetHours: 20 });
+    // Reseteamos el formulario incluyendo el nuevo campo
+    setNewProject({ name: '', clientId: '', status: 'active', budgetHours: 20, minimumHours: 0 });
     setIsAdding(false);
     toast({ title: "Proyecto creado", description: `${newProject.name} ha sido añadido` });
   };
@@ -121,14 +123,26 @@ export default function ProjectsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Horas mensuales</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={newProject.budgetHours}
-                  onChange={(e) => setNewProject({ ...newProject, budgetHours: parseFloat(e.target.value) || 0 })}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Horas mensuales</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={newProject.budgetHours}
+                    onChange={(e) => setNewProject({ ...newProject, budgetHours: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                {/* 2. CAMBIO AQUÍ: Input de Horas Mínimas en Crear */}
+                <div className="space-y-2">
+                  <Label>Horas Mínimas</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={newProject.minimumHours}
+                    onChange={(e) => setNewProject({ ...newProject, minimumHours: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
               </div>
             </div>
             <DialogFooter>
@@ -207,14 +221,26 @@ export default function ProjectsPage() {
                               </SelectContent>
                             </Select>
                           </div>
-                          <div className="space-y-2">
-                            <Label>Horas mensuales</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              value={project.budgetHours}
-                              onChange={(e) => updateProject({ ...project, budgetHours: parseFloat(e.target.value) || 0 })}
-                            />
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Horas mensuales</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={project.budgetHours}
+                                onChange={(e) => updateProject({ ...project, budgetHours: parseFloat(e.target.value) || 0 })}
+                              />
+                            </div>
+                            {/* 3. CAMBIO AQUÍ: Input de Horas Mínimas en Editar */}
+                            <div className="space-y-2">
+                              <Label>Horas Mínimas</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={project.minimumHours || 0}
+                                onChange={(e) => updateProject({ ...project, minimumHours: parseFloat(e.target.value) || 0 })}
+                              />
+                            </div>
                           </div>
                           <div className="space-y-2">
                             <Label>Estado</Label>
@@ -273,13 +299,21 @@ export default function ProjectsPage() {
                       <Clock className="h-4 w-4" />
                       <span>Horas</span>
                     </div>
-                    <span className={cn(
-                      "font-bold",
-                      percentage > 100 && "text-destructive",
-                      percentage > 85 && percentage <= 100 && "text-warning"
-                    )}>
-                      {projectHours.used}h / {projectHours.budget}h
-                    </span>
+                    <div className="text-right">
+                      <span className={cn(
+                        "font-bold",
+                        percentage > 100 && "text-destructive",
+                        percentage > 85 && percentage <= 100 && "text-warning"
+                      )}>
+                        {projectHours.used}h / {projectHours.budget}h
+                      </span>
+                      {/* Mostrar mínimo si existe */}
+                      {(project.minimumHours || 0) > 0 && (
+                        <span className="block text-xs text-muted-foreground">
+                          Mín: {project.minimumHours}h
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                     <div 
