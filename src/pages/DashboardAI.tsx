@@ -1,20 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai"; // <--- IMPORTANTE: Nuevos imports
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Bot, Send, User, Sparkles, Loader2 } from 'lucide-react';
+import { Bot, Send, User, Sparkles, Loader2, AlertTriangle } from 'lucide-react'; // <--- Icono de alerta
 
-// Inicializar Gemini con la clave del .env
+// Inicializar Gemini
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  isError?: boolean; // <--- Nuevo campo para marcar errores visualmente
 }
 
 export default function DashboardAI() {
@@ -30,7 +31,6 @@ export default function DashboardAI() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll al final del chat
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -38,7 +38,18 @@ export default function DashboardAI() {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!input.trim() || !import.meta.env.VITE_GEMINI_API_KEY) return;
+    if (!input.trim()) return;
+    
+    // Check de seguridad básico antes de enviar
+    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+        setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: "⚠️ Error: No detecto la API Key en el archivo .env. Asegúrate de tener VITE_GEMINI_API_KEY configurada.", 
+            timestamp: new Date(),
+            isError: true 
+        }]);
+        return;
+    }
 
     const userMessage = input;
     setInput('');
@@ -46,63 +57,77 @@ export default function DashboardAI() {
     setIsLoading(true);
 
     try {
-      // 1. Preparamos el CONTEXTO de datos para la IA
       const today = new Date();
       
       const dataContext = {
         fecha_hoy: today.toLocaleDateString(),
-        resumen: "Eres el asistente de operaciones de una agencia. Tienes acceso a estos datos en tiempo real:",
+        // Simplificamos claves para ahorrar tokens y reducir ruido
         empleados: employees.filter(e => e.isActive).map(e => ({
-          id: e.name, 
+          nombre: e.name, 
           rol: e.role,
-          horas_semanales_contrato: e.defaultWeeklyCapacity
+          capacidad: e.defaultWeeklyCapacity
         })),
-        proyectos_activos: projects.filter(p => p.status === 'active').map(p => ({
+        proyectos: projects.filter(p => p.status === 'active').map(p => ({
           nombre: p.name,
-          cliente: clients.find(c => c.id === p.clientId)?.name,
-          horas_presupuestadas: p.budgetHours
+          cliente: clients.find(c => c.id === p.clientId)?.name || 'Sin cliente',
+          presupuesto: p.budgetHours
         })),
-        ausencias_futuras: absences.filter(a => new Date(a.endDate) >= today).map(a => ({
-          empleado: employees.find(e => e.id === a.employeeId)?.name,
+        ausencias: absences.filter(a => new Date(a.endDate) >= today).map(a => ({
+          quien: employees.find(e => e.id === a.employeeId)?.name,
           tipo: a.type,
-          desde: a.startDate,
-          hasta: a.endDate
+          fin: a.endDate
         })),
-        asignaciones_recientes: allocations.map(a => ({
-          empleado: employees.find(e => e.id === a.employeeId)?.name,
+        asignaciones: allocations.map(a => ({
+          quien: employees.find(e => e.id === a.employeeId)?.name,
           proyecto: projects.find(p => p.id === a.projectId)?.name,
           horas: a.hoursAssigned,
-          semana_inicio: a.weekStartDate
+          semana: a.weekStartDate
         }))
       };
 
-      // 2. Construimos el Prompt
       const systemPrompt = `
-        Actúa como un Project Manager Senior experto en análisis de datos.
-        
-        TUS DATOS (Fuente de la verdad):
+        Eres un Project Manager Senior. Analiza estos datos de la agencia:
         ${JSON.stringify(dataContext)}
 
-        INSTRUCCIONES:
-        1. Responde a la pregunta del usuario basándote EXCLUSIVAMENTE en los datos de arriba.
-        2. Si preguntan "¿Quién está libre?", calcula (Capacidad - Horas Asignadas - Ausencias).
-        3. Sé muy conciso. Usa listas (bullets) si hay varios puntos.
-        4. Si detectas que alguien tiene más horas asignadas de las que permite su contrato, avisa del riesgo de burnout.
+        Pregunta: ${userMessage}
         
-        Usuario: ${userMessage}
+        Instrucciones:
+        - Sé breve y directo.
+        - Si preguntan disponibilidad, calcula (Capacidad - Asignado).
+        - Usa negritas para nombres y datos clave.
       `;
 
-      // 3. Llamada a Gemini
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      // CONFIGURACIÓN DE SEGURIDAD: Permisiva para evitar bloqueos falsos
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+        ]
+      });
+
       const result = await model.generateContent(systemPrompt);
       const response = result.response;
-      const text = response.text();
+      
+      // Intentamos leer el texto. Si fue bloqueado, esto lanzará error o devolverá null.
+      const text = response.text(); 
 
       setMessages(prev => [...prev, { role: 'assistant', content: text, timestamp: new Date() }]);
 
-    } catch (error) {
-      console.error("Error AI:", error);
-      setMessages(prev => [...prev, { role: 'assistant', content: "Lo siento, tuve un problema conectando con la API de Google. Verifica tu conexión o la API Key.", timestamp: new Date() }]);
+    } catch (error: any) {
+      console.error("Error AI Detallado:", error);
+      
+      // Mensaje de error inteligente según lo que haya pasado
+      let errorMsg = "Lo siento, ha ocurrido un error desconocido.";
+      
+      if (error.message?.includes('API key')) errorMsg = "Error de API Key: Verifica que es válida en el .env";
+      else if (error.message?.includes('blocked')) errorMsg = "⚠️ La respuesta fue bloqueada por los filtros de seguridad de Google. Intenta preguntar de otra forma.";
+      else if (error.message?.includes('fetch')) errorMsg = "Error de conexión. Verifica tu internet.";
+      else errorMsg = `Error técnico: ${error.message}`;
+
+      setMessages(prev => [...prev, { role: 'assistant', content: errorMsg, timestamp: new Date(), isError: true }]);
     } finally {
       setIsLoading(false);
     }
@@ -141,9 +166,12 @@ export default function DashboardAI() {
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'assistant' && (
-                    <Avatar className="h-8 w-8 mt-1 border border-indigo-200 bg-white">
-                      <AvatarImage src="/bot-avatar.png" />
-                      <AvatarFallback className="bg-indigo-50 text-indigo-600"><Bot className="h-5 w-5" /></AvatarFallback>
+                    <Avatar className={`h-8 w-8 mt-1 border ${msg.isError ? 'border-red-200 bg-red-50' : 'border-indigo-200 bg-white'}`}>
+                      {msg.isError ? 
+                        <AlertTriangle className="h-5 w-5 text-red-500 m-1.5" /> : 
+                        <AvatarImage src="/bot-avatar.png" />
+                      }
+                      {!msg.isError && <AvatarFallback className="bg-indigo-50 text-indigo-600"><Bot className="h-5 w-5" /></AvatarFallback>}
                     </Avatar>
                   )}
                   
@@ -151,7 +179,9 @@ export default function DashboardAI() {
                     rounded-2xl px-4 py-3 max-w-[85%] text-sm shadow-sm whitespace-pre-wrap leading-relaxed
                     ${msg.role === 'user' 
                       ? 'bg-indigo-600 text-white rounded-br-none' 
-                      : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-bl-none prose prose-sm dark:prose-invert'}
+                      : msg.isError 
+                        ? 'bg-red-50 border border-red-200 text-red-700'
+                        : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-bl-none prose prose-sm dark:prose-invert'}
                   `}>
                     {msg.content}
                   </div>
