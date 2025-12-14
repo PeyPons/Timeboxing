@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,12 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth } from '@/utils/dateUtils';
 import { format } from 'date-fns';
@@ -30,7 +29,7 @@ interface AllocationSheetProps {
 interface NewTaskRow {
   id: string;
   projectId: string;
-  taskName: string; // ✅ NUEVO CAMPO
+  taskName: string; 
   hours: string;
   weekDate: string;
   description: string;
@@ -43,8 +42,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     getEmployeeAllocationsForWeek, 
     getEmployeeLoadForWeek,
     getProjectById,
-    getClientById,
-    getProjectHoursForMonth,
     addAllocation,
     updateAllocation
   } = useApp();
@@ -57,7 +54,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
 
   // Estados para UNA tarea (Editar)
   const [editProjectId, setEditProjectId] = useState('');
-  const [editTaskName, setEditTaskName] = useState(''); // ✅ NUEVO CAMPO
+  const [editTaskName, setEditTaskName] = useState('');
   const [editHours, setEditHours] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editWeek, setEditWeek] = useState('');
@@ -79,7 +76,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
       .sort((a, b) => a.name.localeCompare(b.name)),
   [projects]);
 
-  // --- LOGICA ---
+  // --- LÓGICA DE FORMULARIO ---
 
   const startAdd = (initialWeekStr: string) => {
     setEditingAllocation(null);
@@ -118,7 +115,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   const startEdit = (allocation: Allocation) => {
     setEditingAllocation(allocation);
     setEditProjectId(allocation.projectId);
-    setEditTaskName(allocation.taskName || ''); // Cargar nombre
+    setEditTaskName(allocation.taskName || '');
     setEditHours(allocation.hoursAssigned.toString());
     setEditDescription(allocation.description || '');
     setEditWeek(allocation.weekStartDate);
@@ -131,7 +128,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
       updateAllocation({
         ...editingAllocation,
         projectId: editProjectId,
-        taskName: editTaskName, // Guardar nombre
+        taskName: editTaskName,
         weekStartDate: editWeek,
         hoursAssigned: parseFloat(editHours),
         description: editDescription,
@@ -142,7 +139,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
           addAllocation({
             employeeId,
             projectId: task.projectId,
-            taskName: task.taskName, // Guardar nombre
+            taskName: task.taskName,
             weekStartDate: task.weekDate,
             hoursAssigned: parseFloat(task.hours),
             status: 'planned',
@@ -159,13 +156,23 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     updateAllocation({ ...allocation, status: newStatus });
   };
 
+  // --- HELPER PARA AGRUPAR POR PROYECTO ---
+  const groupAllocationsByProject = (allocations: Allocation[]) => {
+    return allocations.reduce((acc, alloc) => {
+      const projId = alloc.projectId;
+      if (!acc[projId]) acc[projId] = [];
+      acc[projId].push(alloc);
+      return acc;
+    }, {} as Record<string, Allocation[]>);
+  };
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full sm:max-w-[95vw] overflow-y-auto px-6 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl border-l shadow-2xl pt-10">
           <SheetHeader className="pb-6 border-b mb-6 space-y-4">
             <div className="flex items-center gap-4">
-                <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-2xl shadow-sm border border-primary/20">
+                <div className="h-14 w-14 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-2xl shadow-sm border border-indigo-200">
                     {employee.name.substring(0, 2).toUpperCase()}
                 </div>
                 <div>
@@ -178,7 +185,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
             </div>
           </SheetHeader>
 
-          {/* PARRILLA MENSUAL (Mantenida intacta) */}
+          {/* PARRILLA MENSUAL */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pb-20">
             {weeks.map((week, index) => {
                 const weekStr = week.weekStart.toISOString().split('T')[0];
@@ -186,81 +193,105 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 const load = getEmployeeLoadForWeek(employeeId, weekStr, week.effectiveStart, week.effectiveEnd);
                 const isCurrent = weekStr === weekStart;
 
+                // Agrupamos las tareas de esta semana por proyecto
+                const allocationsByProject = groupAllocationsByProject(weekAllocations);
+
                 return (
-                    <div key={weekStr} className={cn("flex flex-col gap-4 p-4 rounded-xl border bg-card transition-all h-full", isCurrent ? "ring-2 ring-primary ring-offset-2 shadow-lg scale-[1.01]" : "hover:border-primary/30 hover:shadow-md")}>
+                    <div key={weekStr} className={cn("flex flex-col gap-4 p-4 rounded-xl border bg-card transition-all h-full", isCurrent ? "ring-2 ring-indigo-500 ring-offset-2 shadow-lg scale-[1.01]" : "hover:border-indigo-200 hover:shadow-md")}>
+                        {/* Cabecera Semana */}
                         <div className="flex flex-col gap-3 pb-3 border-b">
                             <div className="flex items-center justify-between">
                                 <span className="font-bold text-sm text-foreground/80 uppercase tracking-wider">
                                     Semana {index + 1}
                                 </span>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-primary hover:text-primary-foreground rounded-full transition-colors" onClick={() => startAdd(weekStr)}>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-indigo-100 hover:text-indigo-700 rounded-full transition-colors" onClick={() => startAdd(weekStr)}>
                                     <Plus className="h-4 w-4" />
                                 </Button>
                             </div>
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground font-medium bg-muted px-2 py-0.5 rounded">
-                                    {/* ✅ FECHAS LEGIBLES EN LA VISTA DE COLUMNAS TAMBIÉN */}
                                     {format(week.effectiveStart!, 'd MMM', { locale: es })} - {format(week.effectiveEnd!, 'd MMM', { locale: es })}
                                 </span>
-                                <Badge variant="outline" className={cn("font-mono text-xs px-2 py-0.5 h-auto", load.status === 'overload' ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success")}>
+                                <Badge variant="outline" className={cn("font-mono text-xs px-2 py-0.5 h-auto", load.status === 'overload' ? "bg-red-50 text-red-600 border-red-200" : "bg-green-50 text-green-600 border-green-200")}>
                                     {load.hours} / {load.capacity}h
                                 </Badge>
                             </div>
-                            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                                <div className={cn("h-full transition-all duration-500 ease-out", load.status === 'overload' ? "bg-destructive" : "bg-success")} style={{ width: `${Math.min(load.percentage, 100)}%` }} />
+                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div className={cn("h-full transition-all duration-500 ease-out", load.status === 'overload' ? "bg-red-500" : "bg-green-500")} style={{ width: `${Math.min(load.percentage, 100)}%` }} />
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto max-h-[65vh] space-y-2 pr-1 custom-scrollbar">
+                        {/* LISTA DE TAREAS (DISEÑO JERÁRQUICO) */}
+                        <div className="flex-1 overflow-y-auto max-h-[65vh] space-y-3 pr-1 custom-scrollbar">
                             {weekAllocations.length === 0 ? (
-                                <div className="h-32 flex flex-col items-center justify-center text-muted-foreground/30 text-xs italic border-2 border-dashed rounded-lg bg-muted/5">
+                                <div className="h-32 flex flex-col items-center justify-center text-muted-foreground/30 text-xs italic border-2 border-dashed rounded-lg bg-slate-50">
                                     <Clock className="h-8 w-8 mb-2 opacity-20" />
                                     <span>Sin tareas asignadas</span>
                                 </div>
                             ) : (
-                                <Accordion type="multiple" className="w-full space-y-2" defaultValue={Array.from(new Set(weekAllocations.map(a => getProjectById(a.projectId)?.clientId || '')))}>
-                                    {Object.entries(weekAllocations.reduce((acc, a) => {
-                                            const cid = getProjectById(a.projectId)?.clientId || 'unknown';
-                                            if (!acc[cid]) acc[cid] = [];
-                                            acc[cid].push(a); return acc;
-                                        }, {} as Record<string, typeof weekAllocations>)).map(([clientId, clientAllocations]) => {
-                                        const client = getClientById(clientId);
-                                        return (
-                                            <AccordionItem key={clientId} value={clientId} className="border rounded-lg bg-background/50 shadow-sm px-0 overflow-hidden">
-                                                <AccordionTrigger className="py-2 px-3 hover:bg-muted/30 hover:no-underline justify-start gap-2 border-b border-border/50">
-                                                    <div className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ backgroundColor: client?.color || '#888' }} />
-                                                    <span className="text-xs font-bold truncate flex-1 text-left text-foreground/90">{client?.name}</span>
-                                                </AccordionTrigger>
-                                                <AccordionContent className="pb-1 pt-1 px-1 bg-muted/10 space-y-1">
-                                                    {clientAllocations.map(alloc => {
-                                                        const proj = getProjectById(alloc.projectId);
-                                                        const isDone = alloc.status === 'completed';
-                                                        return (
-                                                            <div key={alloc.id} className="flex gap-2 items-start group p-2 rounded-md transition-all hover:bg-background hover:shadow-sm border border-transparent hover:border-border/50">
-                                                                <Checkbox checked={isDone} onCheckedChange={() => toggleStatus(alloc)} className="mt-0.5 h-3.5 w-3.5" />
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex justify-between items-start gap-1">
-                                                                        <div className="flex flex-col min-w-0">
-                                                                            <span className="text-[10px] text-muted-foreground truncate uppercase tracking-wider">{proj?.name}</span>
-                                                                            <span className={cn("text-xs font-medium truncate", isDone && "line-through opacity-70")}>
-                                                                                 {/* ✅ AQUI MOSTRAMOS EL NOMBRE DE LA TAREA */}
-                                                                                {alloc.taskName || 'Tarea General'}
-                                                                            </span>
-                                                                        </div>
-                                                                        <span className="text-[10px] font-bold font-mono opacity-80 bg-muted/50 px-1 rounded ml-1 whitespace-nowrap">{alloc.hoursAssigned}h</span>
-                                                                    </div>
-                                                                </div>
-                                                                <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100" onClick={() => startEdit(alloc)}>
-                                                                    <Pencil className="h-2.5 w-2.5 text-muted-foreground" />
-                                                                </Button>
+                                /* Iteramos por PROYECTO */
+                                Object.entries(allocationsByProject).map(([projId, projAllocations]) => {
+                                  const project = getProjectById(projId);
+                                  const totalProjHours = projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+
+                                  return (
+                                    <div key={projId} className="bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden">
+                                        {/* CABECERA PROYECTO */}
+                                        <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 border-b flex justify-between items-center">
+                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                <FolderKanban className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
+                                                <span className="font-semibold text-xs text-slate-700 dark:text-slate-200 truncate" title={project?.name}>
+                                                    {project?.name || 'Proyecto desconocido'}
+                                                </span>
+                                            </div>
+                                            <span className="text-[10px] font-mono font-medium bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-300">
+                                                {totalProjHours}h
+                                            </span>
+                                        </div>
+
+                                        {/* LISTA DE TAREAS DEL PROYECTO */}
+                                        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {projAllocations.map(alloc => {
+                                                const isDone = alloc.status === 'completed';
+                                                return (
+                                                    <div key={alloc.id} className="group flex items-center gap-3 p-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                                                        <Checkbox 
+                                                            checked={isDone} 
+                                                            onCheckedChange={() => toggleStatus(alloc)}
+                                                            className="h-3.5 w-3.5 mt-0.5 rounded-sm data-[state=checked]:bg-indigo-600 data-[state=checked]:border-indigo-600"
+                                                        />
+                                                        
+                                                        <div className="flex-1 min-w-0 flex justify-between items-start gap-2">
+                                                            <div className="flex flex-col min-w-0">
+                                                                <span className={cn("text-xs text-slate-600 dark:text-slate-300 truncate", isDone && "line-through opacity-50")}>
+                                                                    {alloc.taskName || 'Tarea General'}
+                                                                </span>
+                                                                {alloc.description && (
+                                                                    <span className="text-[10px] text-slate-400 truncate max-w-[150px]">
+                                                                        {alloc.description}
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                        );
-                                                    })}
-                                                </AccordionContent>
-                                            </AccordionItem>
-                                        );
-                                    })}
-                                </Accordion>
+                                                            <span className="text-[10px] font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 rounded">
+                                                                {alloc.hoursAssigned}h
+                                                            </span>
+                                                        </div>
+
+                                                        <Button 
+                                                            variant="ghost" 
+                                                            size="icon" 
+                                                            className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 text-slate-400 hover:text-indigo-600" 
+                                                            onClick={() => startEdit(alloc)}
+                                                        >
+                                                            <Pencil className="h-3 w-3" />
+                                                        </Button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                  );
+                                })
                             )}
                         </div>
                     </div>
@@ -309,7 +340,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                     </PopoverContent>
                   </Popover>
                 </div>
-                {/* ✅ INPUT PARA NOMBRE DE TAREA */}
                 <div className="space-y-2">
                     <Label>Nombre de la Tarea</Label>
                     <Input placeholder="Ej: Maquetación, Diseño..." value={editTaskName} onChange={(e) => setEditTaskName(e.target.value)} />
@@ -326,7 +356,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                             <SelectContent>
                                 {weeks.map((w, i) => (
                                     <SelectItem key={w.weekStart.toISOString()} value={w.weekStart.toISOString().split('T')[0]}>
-                                        {/* ✅ FECHA EN DESPLEGABLE */}
                                         Sem {i + 1} ({format(w.effectiveStart!, 'd MMM', { locale: es })} - {format(w.effectiveEnd!, 'd MMM', { locale: es })})
                                     </SelectItem>
                                 ))}
@@ -340,18 +369,18 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 </div>
               </div>
             ) : (
-              /* --- MODO BULK --- */
+              /* --- MODO BULK (LISTADO) --- */
               <div className="space-y-3 mt-4">
                 <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
                     <div className="flex-1 pl-1">Proyecto</div>
-                    <div className="flex-1 pl-1">Tarea</div> {/* ✅ CABECERA NUEVA */}
+                    <div className="flex-1 pl-1">Tarea</div>
                     <div className="w-20 mx-2 text-center">Horas</div>
                     <div className="w-36">Semana</div>
                     <div className="w-8"></div>
                 </div>
                 
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
-                    {newTasks.map((task, index) => (
+                    {newTasks.map((task) => (
                         <div key={task.id} className="flex gap-2 items-start animate-in fade-in slide-in-from-top-1 duration-200">
                             {/* Buscador Proyecto */}
                             <div className="flex-1 min-w-0">
@@ -380,7 +409,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                 </Popover>
                             </div>
 
-                            {/* ✅ INPUT NOMBRE TAREA */}
                             <Input 
                                 className="flex-1 h-10 px-2 bg-muted/30 border-input/50" 
                                 placeholder="Nombre tarea..." 
@@ -403,7 +431,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                     <SelectContent>
                                         {weeks.map((w, i) => (
                                             <SelectItem key={w.weekStart.toISOString()} value={w.weekStart.toISOString().split('T')[0]}>
-                                                {/* ✅ FECHA EN DESPLEGABLE BULK */}
                                                 Sem {i+1} ({format(w.effectiveStart!, 'd MMM', { locale: es })})
                                             </SelectItem>
                                         ))}
