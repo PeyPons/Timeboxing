@@ -1,144 +1,93 @@
-import { WeekData } from '@/types';
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, isSameMonth, addDays, format, eachDayOfInterval } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { WorkSchedule } from '@/types';
 
-export function getWeekStart(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  // Ajuste para que la semana empiece el Lunes (1) y acabe el Domingo (0)
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-export function getWeekEnd(weekStart: Date): Date {
-  const d = new Date(weekStart);
-  d.setDate(d.getDate() + 6);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
-export function formatWeekLabelForMonth(weekStart: Date, month: number, year: number): string {
-  const weekEnd = getWeekEnd(weekStart);
-  const monthStart = new Date(year, month, 1);
-  const monthEnd = new Date(year, month + 1, 0);
-  
-  // Recortamos visualmente para mostrar solo los días que caen en este mes
-  const displayStart = weekStart < monthStart ? monthStart : weekStart;
-  const displayEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
-  
-  const startDay = displayStart.getDate();
-  const endDay = displayEnd.getDate();
-  
-  return `${startDay}-${endDay}`;
-}
-
-export function getWeeksForMonth(date: Date): WeekData[] {
-  const weeks: WeekData[] = [];
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const firstDayOfMonth = new Date(year, month, 1);
-  const lastDayOfMonth = new Date(year, month + 1, 0);
-  
-  // Empezamos por la semana que contiene el día 1
-  let weekStart = getWeekStart(firstDayOfMonth);
-  
-  while (weekStart <= lastDayOfMonth) {
-    const weekEnd = getWeekEnd(weekStart);
-    
-    // Calculamos qué parte de esta semana cae realmente dentro del mes actual
-    const monthStart = new Date(year, month, 1);
-    const monthEnd = new Date(year, month + 1, 0);
-    
-    const effectiveStart = weekStart < monthStart ? monthStart : weekStart;
-    const effectiveEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
-    
-    // --- LÓGICA INTELIGENTE ---
-    // Comprobamos si el trozo de semana dentro del mes tiene algún día laborable (L-V)
-    // Si solo tiene Sábado o Domingo, la ignoramos.
-    let hasWorkingDays = false;
-    const tempDate = new Date(effectiveStart);
-    // Iteramos día a día en el rango efectivo
-    while (tempDate <= effectiveEnd) {
-        const dayOfWeek = tempDate.getDay();
-        if (dayOfWeek >= 1 && dayOfWeek <= 5) { // 1=Lunes ... 5=Viernes
-            hasWorkingDays = true;
-            break;
-        }
-        tempDate.setDate(tempDate.getDate() + 1);
+// ✅ CLAVE: Decide con qué fecha se guarda una tarea dependiendo del mes que miras
+export const getStorageKey = (weekStart: Date, viewMonth: Date): string => {
+    // Si la semana empieza en el mismo mes que estamos viendo, usamos su fecha real
+    if (isSameMonth(weekStart, viewMonth)) {
+        return format(weekStart, 'yyyy-MM-dd');
     }
 
-    if (hasWorkingDays) {
-        weeks.push({
-          weekStart: new Date(weekStart),
-          weekEnd: new Date(weekEnd),
-          weekLabel: formatWeekLabelForMonth(weekStart, month, year),
-          effectiveStart: new Date(effectiveStart),
-          effectiveEnd: new Date(effectiveEnd),
-        });
+    // Si la semana empieza ANTES del mes que vemos (ej: 29 Dic viendo Enero)
+    // La "caja" para guardar las tareas de Enero será el 1 de Enero
+    const monthStart = startOfMonth(viewMonth);
+    if (weekStart < monthStart) {
+        return format(monthStart, 'yyyy-MM-dd');
     }
-    
-    // Saltamos a la siguiente semana
-    weekStart.setDate(weekStart.getDate() + 7);
+
+    // Si la semana empieza DESPUÉS (raro en vista mensual estándar), fecha real
+    return format(weekStart, 'yyyy-MM-dd');
+};
+
+export const getWeeksForMonth = (date: Date) => {
+  const monthStart = startOfMonth(date);
+  const monthEnd = endOfMonth(date);
+  
+  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+
+  const weeks = [];
+  let currentWeekStart = startDate;
+
+  while (currentWeekStart <= endDate) {
+    const currentWeekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
+
+    // Calculamos límites visuales para que la etiqueta diga "1 Ene" y no "29 Dic"
+    const effectiveStart = currentWeekStart < monthStart ? monthStart : currentWeekStart;
+    const effectiveEnd = currentWeekEnd > monthEnd ? monthEnd : currentWeekEnd;
+
+    weeks.push({
+      weekStart: currentWeekStart,
+      weekEnd: currentWeekEnd,
+      weekLabel: `Semana ${weeks.length + 1}`,
+      effectiveStart,
+      effectiveEnd,
+    });
+
+    currentWeekStart = addDays(currentWeekStart, 7);
   }
-  
+
   return weeks;
-}
+};
 
-export function formatDateToISO(date: Date): string {
-  return date.toISOString().split('T')[0];
-}
+export const getMonthName = (date: Date) => format(date, 'MMMM', { locale: es });
+export const formatDateToISO = (date: Date) => format(date, 'yyyy-MM-dd');
 
-export function isCurrentWeek(weekStart: Date): boolean {
-  const today = new Date();
-  const currentWeekStart = getWeekStart(today);
-  return formatDateToISO(weekStart) === formatDateToISO(currentWeekStart);
-}
+export const isCurrentWeek = (date: Date) => {
+    const now = new Date();
+    const start = startOfWeek(now, { weekStartsOn: 1 });
+    return date.getTime() === start.getTime();
+};
 
-export function getMonthName(date: Date): string {
-  const month = date.toLocaleDateString('es-ES', { month: 'long' });
-  const year = date.getFullYear();
-  const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
-  return `${capitalizedMonth} - ${year}`;
-}
-
-export function getWorkingDaysInRange(
-  startDate: Date, 
-  endDate: Date, 
-  workSchedule: { monday: number; tuesday: number; wednesday: number; thursday: number; friday: number; saturday: number; sunday: number }
-): { totalHours: number; days: number } {
-  const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-  let totalHours = 0;
-  let days = 0;
-  
-  const current = new Date(startDate);
-  current.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
-  
-  while (current <= end) {
-    const dayOfWeek = current.getDay();
-    const dayKey = dayKeys[dayOfWeek];
-    const hoursForDay = workSchedule[dayKey];
+export const getWorkingDaysInRange = (start: Date, end: Date, schedule: WorkSchedule) => {
+    let totalHours = 0;
+    let days = 0;
+    let current = start;
     
-    if (hoursForDay > 0) {
-      totalHours += hoursForDay;
-      days++;
+    // Evitar bucles infinitos por seguridad
+    if (current > end) return { totalHours: 0, days: 0 };
+
+    while (current <= end) {
+        const dayOfWeek = current.getDay(); // 0 = Dom, 1 = Lun...
+        const dayKey = dayOfWeek === 0 ? 'sunday' : 
+                       dayOfWeek === 1 ? 'monday' : 
+                       dayOfWeek === 2 ? 'tuesday' : 
+                       dayOfWeek === 3 ? 'wednesday' : 
+                       dayOfWeek === 4 ? 'thursday' : 
+                       dayOfWeek === 5 ? 'friday' : 'saturday';
+        
+        // @ts-ignore
+        const hours = schedule[dayKey] || 0;
+        if (hours > 0) days++;
+        totalHours += hours;
+        current = addDays(current, 1);
     }
-    
-    current.setDate(current.getDate() + 1);
-  }
-  
-  return { totalHours, days };
-}
+    return { totalHours, days };
+};
 
-export function getMonthlyCapacity(
-  year: number,
-  month: number,
-  workSchedule: { monday: number; tuesday: number; wednesday: number; thursday: number; friday: number; saturday: number; sunday: number }
-): number {
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  
-  const { totalHours } = getWorkingDaysInRange(firstDay, lastDay, workSchedule);
-  return totalHours;
-}
+export const getMonthlyCapacity = (year: number, month: number, schedule: WorkSchedule) => {
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 0);
+    return getWorkingDaysInRange(start, end, schedule).totalHours;
+};
