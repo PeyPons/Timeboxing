@@ -70,3 +70,15 @@ export interface Absence {
   type: 'vacation' | 'sick' | 'personal' | 'other';
   description?: string;
 }
+
+export interface ProfessionalGoal {
+  id: string;
+  employeeId: string;
+  title: string;
+  keyResults?: string;
+  actions?: string;
+  trainingUrl?: string;
+  startDate?: string;
+  dueDate?: string;
+  progress: number;
+}
