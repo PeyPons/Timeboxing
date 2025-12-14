@@ -91,7 +91,7 @@ export function PlannerGrid() {
       {/* Grid Container */}
       <div className="flex-1 overflow-auto p-3 sm:p-6">
         {/* Week Headers */}
-        <div className="flex items-center gap-1 sm:gap-2 pb-3 min-w-[600px]">
+        <div className="flex items-center gap-1 sm:gap-2 pb-3 min-w-fit">
           <div className="w-28 sm:w-48 flex-shrink-0" />
           
           {/* CORRECCIÓN: El contenedor flex solo envuelve las semanas */}
@@ -106,7 +106,7 @@ export function PlannerGrid() {
                 <div 
                   key={week.weekStart.toISOString()} 
                   className={cn(
-                    "flex-1 min-w-[60px] sm:min-w-[80px] text-center",
+                    "flex-1 min-w-0 text-center",
                     isCurrentWeek(week.weekStart) && "font-semibold text-primary"
                   )}
                 >
@@ -133,7 +133,7 @@ export function PlannerGrid() {
         </div>
 
         {/* Employee Rows */}
-        <div className="divide-y divide-border/50 min-w-[600px]">
+        <div className="divide-y divide-border/50 min-w-fit">
           {activeEmployees.map((employee) => {
             const monthlyLoad = getEmployeeMonthlyLoad(employee.id, year, month);
             

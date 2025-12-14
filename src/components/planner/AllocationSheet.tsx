@@ -153,8 +153,15 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     updateAllocation({ ...allocation, status: newStatus });
   };
 
-  const getProjectAvailableHours = (projectId: string) => {
-    return getProjectHoursForMonth(projectId, currentMonthDate);
+  // Helper para formatear la semana en el dropdown
+  const formatWeekLabel = (week: typeof weeks[0], index: number) => {
+      const start = week.effectiveStart || week.weekStart;
+      const end = week.effectiveEnd || week.weekEnd;
+      const startStr = start.getDate();
+      const endStr = end.getDate();
+      const monthShort = start.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+
+      return `Sem ${index + 1} (${startStr} - ${endStr} ${monthShort})`;
   };
 
   return (
@@ -163,8 +170,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
         <SheetContent 
             className="w-full sm:max-w-[95vw] overflow-y-auto px-6 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl border-l shadow-2xl pt-10"
         >
-          {/* HE QUITADO EL BOTÓN MANUAL <SheetClose> PARA EVITAR LA DOBLE X */}
-          
           <SheetHeader className="pb-6 border-b mb-6 space-y-4">
             <div className="flex items-center gap-4">
                 <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-2xl shadow-sm border border-primary/20">
@@ -245,7 +250,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                             </div>
                         </div>
 
-                        {/* Tareas (Acordeón) */}
+                        {/* Tareas (Acordeón por Proyecto) */}
                         <div className="flex-1 overflow-y-auto max-h-[65vh] space-y-2 pr-1 custom-scrollbar">
                             {weekAllocations.length === 0 ? (
                                 <div className="h-32 flex flex-col items-center justify-center text-muted-foreground/30 text-xs italic border-2 border-dashed rounded-lg bg-muted/5">
@@ -253,29 +258,31 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                     <span>Sin tareas asignadas</span>
                                 </div>
                             ) : (
-                                <Accordion type="multiple" className="w-full space-y-2" defaultValue={Array.from(new Set(weekAllocations.map(a => getProjectById(a.projectId)?.clientId || '')))}>
+                                <Accordion type="multiple" className="w-full space-y-2" defaultValue={Array.from(new Set(weekAllocations.map(a => a.projectId)))}>
                                     {Object.entries(
                                         weekAllocations.reduce((acc, allocation) => {
-                                            const p = getProjectById(allocation.projectId);
-                                            const cid = p?.clientId || 'unknown';
-                                            if (!acc[cid]) acc[cid] = [];
-                                            acc[cid].push(allocation);
+                                            const pid = allocation.projectId;
+                                            if (!acc[pid]) acc[pid] = [];
+                                            acc[pid].push(allocation);
                                             return acc;
                                         }, {} as Record<string, typeof weekAllocations>)
-                                    ).map(([clientId, clientAllocations]) => {
-                                        const client = getClientById(clientId);
-                                        const total = Math.round(clientAllocations.reduce((s, a) => s + a.hoursAssigned, 0) * 100) / 100;
+                                    ).map(([projectId, projectAllocations]) => {
+                                        const project = getProjectById(projectId);
+                                        const client = project ? getClientById(project.clientId) : null;
+                                        const total = Math.round(projectAllocations.reduce((s, a) => s + a.hoursAssigned, 0) * 100) / 100;
 
                                         return (
-                                            <AccordionItem key={clientId} value={clientId} className="border rounded-lg bg-background/50 shadow-sm px-0 overflow-hidden">
+                                            <AccordionItem key={projectId} value={projectId} className="border rounded-lg bg-background/50 shadow-sm px-0 overflow-hidden">
                                                 <AccordionTrigger className="py-2 px-3 hover:bg-muted/30 hover:no-underline justify-start gap-2 border-b border-border/50">
                                                     <div className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ backgroundColor: client?.color || '#888' }} />
-                                                    <span className="text-xs font-bold truncate flex-1 text-left text-foreground/90">{client?.name}</span>
+                                                    <div className="flex flex-col items-start flex-1 min-w-0">
+                                                        <span className="text-xs font-bold truncate w-full text-left text-foreground/90">{project?.name || 'Desconocido'}</span>
+                                                        <span className="text-[10px] text-muted-foreground truncate">{client?.name}</span>
+                                                    </div>
                                                     <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded text-secondary-foreground font-mono">{total}h</span>
                                                 </AccordionTrigger>
                                                 <AccordionContent className="pb-1 pt-1 px-1 bg-muted/10 space-y-1">
-                                                    {clientAllocations.map(alloc => {
-                                                        const proj = getProjectById(alloc.projectId);
+                                                    {projectAllocations.map(alloc => {
                                                         const isDone = alloc.status === 'completed';
                                                         return (
                                                             <div key={alloc.id} className={cn(
@@ -289,18 +296,14 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                                                 />
                                                                 <div className="flex-1 min-w-0">
                                                                     <div className="flex justify-between items-start gap-1">
+                                                                        {/* Descripción como título principal de la tarea */}
                                                                         <span className={cn("text-xs font-medium truncate leading-tight", isDone && "line-through opacity-70")}>
-                                                                            {proj?.name}
+                                                                            {alloc.description || "Sin nombre"}
                                                                         </span>
                                                                         <span className="text-[10px] font-bold font-mono opacity-80 bg-muted/50 px-1 rounded ml-1 whitespace-nowrap">
                                                                             {alloc.hoursAssigned}h
                                                                         </span>
                                                                     </div>
-                                                                    {alloc.description && (
-                                                                        <p className={cn("text-[10px] text-muted-foreground line-clamp-2 leading-snug mt-0.5", isDone && "line-through opacity-50")}>
-                                                                            {alloc.description}
-                                                                        </p>
-                                                                    )}
                                                                 </div>
                                                                 <Button 
                                                                     variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 -mr-1 hover:bg-muted"
@@ -327,13 +330,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
 
       {/* DIÁLOGO AÑADIR/EDITAR (Bulk Mode) */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[850px]" : "")}>
+        <DialogContent className={cn("max-w-[700px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[950px]" : "")}>
           <DialogHeader className="p-6 pb-2">
             <DialogTitle>{editingAllocation ? 'Editar Tarea' : 'Añadir Tareas (Bulk Mode)'}</DialogTitle>
             <DialogDescription>
               {editingAllocation 
                 ? `Editando tarea de ${employee.name}` 
-                : 'Añade múltiples tareas rápidamente. El proyecto se copia automáticamente.'}
+                : 'Añade múltiples tareas rápidamente.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -380,7 +383,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                             <SelectContent>
                                 {weeks.map((w, i) => (
                                     <SelectItem key={w.weekStart.toISOString()} value={w.weekStart.toISOString().split('T')[0]}>
-                                        Semana {i + 1} ({w.weekLabel})
+                                        {formatWeekLabel(w, i)}
                                     </SelectItem>
                                 ))}
                             </SelectContent>
@@ -397,8 +400,9 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
               <div className="space-y-3 mt-4">
                 <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
                     <div className="flex-1 pl-1">Proyecto</div>
+                    <div className="flex-1 pl-1">Tarea (Descripción)</div>
                     <div className="w-20 mx-2 text-center">Horas</div>
-                    <div className="w-32">Semana</div>
+                    <div className="w-40 px-2">Semana</div>
                     <div className="w-8"></div>
                 </div>
                 
@@ -433,6 +437,16 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                 </Popover>
                             </div>
 
+                             {/* Input Descripción */}
+                             <div className="flex-1 min-w-0">
+                                <Input
+                                    className="h-10 bg-muted/30 border-input/50"
+                                    placeholder="Nombre de la tarea..."
+                                    value={task.description}
+                                    onChange={(e) => updateTaskRow(task.id, 'description', e.target.value)}
+                                />
+                             </div>
+
                             {/* Input Horas */}
                             <Input 
                                 type="number" 
@@ -444,13 +458,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                             />
 
                             {/* Selector Semana */}
-                            <div className="w-32">
+                            <div className="w-40">
                                 <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
                                     <SelectTrigger className="h-10 px-2 bg-muted/30 border-input/50"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         {weeks.map((w, i) => (
                                             <SelectItem key={w.weekStart.toISOString()} value={w.weekStart.toISOString().split('T')[0]}>
-                                                Sem {i+1}
+                                                 {formatWeekLabel(w, i)}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>

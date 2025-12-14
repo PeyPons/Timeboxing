@@ -378,7 +378,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!employee) return { hours: 0, capacity: 0, status: 'empty' as LoadStatus, percentage: 0 };
 
     const employeeAllocations = allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
-    const totalHours = round2(employeeAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0));
+    let totalHours = round2(employeeAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0));
     
     let capacity: number;
     const weekStartDate = new Date(weekStart);
@@ -391,6 +391,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (effectiveStart && effectiveEnd) {
       const { totalHours: capacityHours } = getWorkingDaysInRange(effectiveStart, effectiveEnd, employee.workSchedule);
       capacity = capacityHours;
+
+      // --- AJUSTE PROPORCIONAL DE HORAS ASIGNADAS ---
+      // Si estamos viendo una semana parcial, escalamos las horas asignadas
+      // para que visualmente correspondan al "peso" de esos días en la semana.
+      // Esto soluciona que 40h asignadas aparezcan como sobrecarga en una semana de 2 días.
+      const { totalHours: fullWeekHours } = getWorkingDaysInRange(weekStartDate, weekEndDate, employee.workSchedule);
+
+      if (fullWeekHours > 0) {
+          const ratio = capacityHours / fullWeekHours;
+          // Solo aplicamos el ratio si es < 1 (es decir, es una semana parcial)
+          if (ratio < 0.99) {
+              totalHours = round2(totalHours * ratio);
+          }
+      }
     } else {
       capacity = employee.defaultWeeklyCapacity;
     }

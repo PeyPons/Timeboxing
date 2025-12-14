@@ -17,7 +17,7 @@ interface EmployeeCardProps {
 }
 
 export function EmployeeCard({ employee }: EmployeeCardProps) {
-  const { updateEmployee, deleteEmployee, toggleEmployeeActive } = useApp();
+  const { updateEmployee, deleteEmployee, toggleEmployeeActive, allocations, projects } = useApp();
   
   const [schedule, setSchedule] = useState<WorkSchedule>(employee.workSchedule);
   const [showGoals, setShowGoals] = useState(false);
@@ -53,6 +53,16 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
     { key: 'friday', label: 'V' },
   ];
 
+  // Obtener proyectos activos del empleado (últimas 4 semanas o futuras)
+  const activeProjects = Array.from(new Set(
+      allocations
+        .filter(a => a.employeeId === employee.id && a.status !== 'completed') // Asignaciones no completadas
+        .map(a => a.projectId)
+  ))
+  .map(pid => projects.find(p => p.id === pid))
+  .filter(p => p && p.status === 'active') // Solo proyectos activos
+  .slice(0, 3); // Mostrar máximo 3
+
   return (
     <>
       <Card className={`transition-all hover:shadow-md ${!employee.isActive ? 'opacity-60 bg-muted/50' : ''}`}>
@@ -68,6 +78,17 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
               <div>
                 <CardTitle className="text-lg font-bold">{employee.name}</CardTitle>
                 <p className="text-sm text-muted-foreground">{employee.role || "Sin cargo"}</p>
+                {/* Proyectos Activos (Badges) */}
+                <div className="flex gap-1 mt-1 flex-wrap">
+                  {activeProjects.map(p => (
+                    <span key={p!.id} className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-sm font-medium truncate max-w-[120px]">
+                      {p!.name}
+                    </span>
+                  ))}
+                  {activeProjects.length === 0 && (
+                     <span className="text-[10px] text-muted-foreground italic">Sin proyectos activos</span>
+                  )}
+                </div>
               </div>
             </div>
             <Switch 

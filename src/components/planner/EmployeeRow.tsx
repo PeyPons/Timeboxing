@@ -66,7 +66,7 @@ export function EmployeeRow({ employee, weeks, onCellClick }: EmployeeRowProps) 
           const { totalHours: baseCapacity } = getWorkingDaysInRange(rangeStart, rangeEnd, employee.workSchedule);
           
           return (
-            <div key={weekStartStr} className="flex-1 min-w-[60px] sm:min-w-[80px]">
+            <div key={weekStartStr} className="flex-1 min-w-0">
               <WeekCell
                 hours={load.hours}
                 capacity={load.capacity}
