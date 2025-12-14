@@ -66,4 +66,4 @@ El proyecto requiere las siguientes tablas en Supabase:
 Las contribuciones son bienvenidas. Por favor, abre un issue primero para discutir lo que te gustaría cambiar.
 
 ---
-Desarrollado con ❤️ por [Tu Nombre]
+Desarrollado con ❤️ por Alexander y sus coleguitas Lovable y Gemini
