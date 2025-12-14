@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +22,10 @@ import {
   Pencil,
   CheckCircle2, 
   Circle,       
-  TrendingUp
+  TrendingUp,
+  Search,
+  Filter,
+  AlertCircle
 } from 'lucide-react';
 import { Project } from '@/types';
 import { cn } from '@/lib/utils';
@@ -32,6 +35,10 @@ export default function ProjectsPage() {
   
   // Estado para la navegación mensual
   const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  // ✅ NUEVOS ESTADOS DE FILTRO
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
 
   // Estados para Edición
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -44,7 +51,27 @@ export default function ProjectsPage() {
   const handleNextMonth = () => setCurrentMonth(prev => addMonths(prev, 1));
   const handleToday = () => setCurrentMonth(new Date());
 
-  const activeProjects = projects.filter(p => p.status === 'active');
+  // ✅ LÓGICA DE FILTRADO AVANZADA
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p => {
+        if (p.status !== 'active') return false;
+
+        // Filtro por Nombre
+        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        // Filtro por Empleado (si seleccionamos uno, miramos si tiene tareas en este mes para este proyecto)
+        let matchesEmployee = true;
+        if (selectedEmployeeId !== 'all') {
+            matchesEmployee = allocations.some(a => 
+                a.projectId === p.id && 
+                a.employeeId === selectedEmployeeId && 
+                isSameMonth(parseISO(a.weekStartDate), currentMonth)
+            );
+        }
+
+        return matchesSearch && matchesEmployee;
+    });
+  }, [projects, searchTerm, selectedEmployeeId, allocations, currentMonth]);
 
   // Abrir modal de edición
   const handleEditClick = (project: Project) => {
@@ -58,14 +85,12 @@ export default function ProjectsPage() {
   // Guardar cambios
   const handleSaveEdit = async () => {
     if (!editingProject) return;
-    
     await updateProject({
         ...editingProject,
         name: editName,
         budgetHours: parseFloat(editBudget) || 0,
         status: editStatus
     });
-    
     setIsEditOpen(false);
     setEditingProject(null);
   };
@@ -73,58 +98,101 @@ export default function ProjectsPage() {
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
       
-      {/* --- CABECERA Y NAVEGACIÓN --- */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
-            <FolderKanban className="h-8 w-8 text-indigo-600" />
-            Proyectos y Tareas
-          </h1>
-          <p className="text-muted-foreground">
-            Seguimiento de planificación vs ejecución real.
-          </p>
+      {/* --- CABECERA Y FILTROS --- */}
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
+                <FolderKanban className="h-8 w-8 text-indigo-600" />
+                Proyectos y Tareas
+            </h1>
+            <p className="text-muted-foreground">
+                Seguimiento de planificación vs ejecución real.
+            </p>
+            </div>
+
+            {/* Controles de Mes */}
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-lg border shadow-sm">
+                <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
+                    <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="flex items-center gap-2 px-2 min-w-[140px] justify-center font-medium">
+                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                    <span className="capitalize">{format(currentMonth, 'MMMM yyyy', { locale: es })}</span>
+                </div>
+                <Button variant="ghost" size="icon" onClick={handleNextMonth}>
+                    <ChevronRight className="h-4 w-4" />
+                </Button>
+                <div className="w-px h-6 bg-border mx-1" />
+                <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">
+                    Hoy
+                </Button>
+            </div>
         </div>
 
-        {/* Controles de Mes */}
-        <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-lg border shadow-sm">
-            <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
-                <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-2 px-2 min-w-[140px] justify-center font-medium">
-                <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                <span className="capitalize">{format(currentMonth, 'MMMM yyyy', { locale: es })}</span>
+        {/* --- BARRA DE HERRAMIENTAS (BUSCADOR Y FILTROS) --- */}
+        <div className="flex flex-col sm:flex-row gap-4 bg-slate-50/50 p-4 rounded-xl border">
+            <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                    placeholder="Buscar proyecto..." 
+                    className="pl-9 bg-white" 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
             </div>
-            <Button variant="ghost" size="icon" onClick={handleNextMonth}>
-                <ChevronRight className="h-4 w-4" />
-            </Button>
-            <div className="w-px h-6 bg-border mx-1" />
-            <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">
-                Hoy
-            </Button>
+            
+            <div className="w-full sm:w-[250px]">
+                <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                    <SelectTrigger className="bg-white">
+                        <div className="flex items-center gap-2">
+                            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                            <SelectValue placeholder="Filtrar por empleado" />
+                        </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Todos los empleados</SelectItem>
+                        {employees.filter(e => e.isActive).map(emp => (
+                            <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
         </div>
       </div>
 
       {/* --- LISTADO DE PROYECTOS --- */}
       <div className="grid gap-6">
-        {activeProjects.map((project) => {
+        {filteredProjects.map((project) => {
           const client = clients.find(c => c.id === project.clientId);
           
-          // 1. Filtrar tareas de este mes para este proyecto
-          const monthTasks = allocations.filter(a => {
+          // 1. Filtrar tareas de este mes
+          let monthTasks = allocations.filter(a => {
              const taskDate = parseISO(a.weekStartDate);
              return a.projectId === project.id && isSameMonth(taskDate, currentMonth);
           });
 
-          // 2. Cálculos de horas locales (para separar Planificado vs Completado)
+          // Si hay filtro de empleado activo, filtramos las tareas visualmente también
+          if (selectedEmployeeId !== 'all') {
+              monthTasks = monthTasks.filter(t => t.employeeId === selectedEmployeeId);
+          }
+
+          // 2. Cálculos de horas locales
           const totalAssigned = monthTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
           const totalCompleted = monthTasks
             .filter(t => t.status === 'completed')
             .reduce((sum, t) => sum + t.hoursAssigned, 0);
 
-          // Porcentajes sobre el presupuesto
-          const budget = project.budgetHours || 1; // Evitar división por cero
-          const assignedPct = (totalAssigned / budget) * 100;
-          const completedPct = (totalCompleted / budget) * 100;
+          const budget = project.budgetHours || 0;
+          
+          // Calculamos el porcentaje, pero evitamos división por cero si budget es 0
+          const assignedPct = budget > 0 ? (totalAssigned / budget) * 100 : 0;
+          const completedPct = budget > 0 ? (totalCompleted / budget) * 100 : 0;
+
+          // ✅ CÁLCULO DE PENDIENTE DE ASIGNAR (ALERT)
+          // Solo calculamos "restante" si hay presupuesto definido
+          const remainingBudget = Math.max(0, budget - totalAssigned);
+          const isUnderBudget = budget > 0 && remainingBudget > 0;
 
           const hasActivity = monthTasks.length > 0;
 
@@ -149,14 +217,23 @@ export default function ProjectsPage() {
                                     <Pencil className="h-3.5 w-3.5" />
                                 </Button>
                             </div>
-                            <CardDescription className="mt-1 flex items-center gap-4 text-xs">
-                                <span className="font-mono">Presupuesto: {project.budgetHours}h</span>
+                            <div className="mt-1 flex flex-wrap items-center gap-4 text-xs">
+                                <CardDescription className="font-mono">
+                                    Presupuesto: {project.budgetHours}h
+                                </CardDescription>
                                 {hasActivity && (
                                     <span className="text-green-600 font-medium flex items-center gap-1">
                                         <TrendingUp className="h-3 w-3" /> Activo
                                     </span>
                                 )}
-                            </CardDescription>
+                                {/* ✅ ALERTA: HORAS PENDIENTES */}
+                                {isUnderBudget && selectedEmployeeId === 'all' && (
+                                    <span className="text-amber-600 font-medium flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                                        <AlertCircle className="h-3 w-3" />
+                                        Faltan {round2(remainingBudget)}h por asignar
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -166,7 +243,7 @@ export default function ProjectsPage() {
                         {/* Barra 1: Asignado (Planificación) */}
                         <div className="space-y-1.5">
                             <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-slate-500">
-                                <span>Planificado (Asignado)</span>
+                                <span>Planificado ({selectedEmployeeId !== 'all' ? 'Filtrado' : 'Total'})</span>
                                 <span>{totalAssigned}h</span>
                             </div>
                             <Progress value={assignedPct} className="h-1.5 bg-slate-100" />
@@ -175,7 +252,7 @@ export default function ProjectsPage() {
                         {/* Barra 2: Completado (Ejecución) */}
                         <div className="space-y-1.5">
                             <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-emerald-600">
-                                <span>Ejecutado (Completado)</span>
+                                <span>Ejecutado</span>
                                 <span>{totalCompleted}h</span>
                             </div>
                             <Progress value={completedPct} className="h-1.5 bg-emerald-100 [&>div]:bg-emerald-500" />
@@ -267,7 +344,11 @@ export default function ProjectsPage() {
                         <div className="h-12 w-12 bg-slate-50 rounded-full flex items-center justify-center">
                             <LayoutList className="h-6 w-6 text-slate-300" />
                         </div>
-                        <p className="text-sm">No hay tareas registradas para este proyecto en {format(currentMonth, 'MMMM', { locale: es })}.</p>
+                        <p className="text-sm">
+                            {selectedEmployeeId !== 'all' 
+                                ? "Este empleado no tiene tareas en este proyecto este mes." 
+                                : `No hay tareas registradas para este proyecto en ${format(currentMonth, 'MMMM', { locale: es })}.`}
+                        </p>
                     </div>
                 )}
               </CardContent>
@@ -275,9 +356,9 @@ export default function ProjectsPage() {
           );
         })}
 
-        {activeProjects.length === 0 && (
+        {filteredProjects.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
-                No tienes proyectos activos.
+                No se encontraron proyectos con los filtros actuales.
             </div>
         )}
       </div>
@@ -324,5 +405,4 @@ export default function ProjectsPage() {
   );
 }
 
-// Función auxiliar para redondeo seguro
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
