@@ -23,7 +23,7 @@ export default function DashboardAI() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: '¡Hola! Soy tu asistente de Timeboxing. Tengo acceso a los datos de tu equipo, proyectos y cargas de trabajo. ¿En qué puedo ayudarte hoy?',
+      content: '¡Hola! Soy Minguito y tengo acceso a los datos de tu equipo, proyectos y cargas de trabajo. ¿En qué puedo ayudarte hoy?',
       timestamp: new Date()
     }
   ]);
