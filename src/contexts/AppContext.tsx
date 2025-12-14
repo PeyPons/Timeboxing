@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Employee, Client, Project, Allocation, LoadStatus, WorkSchedule, Absence, TeamEvent } from '@/types';
+import { Employee, Client, Project, Allocation, LoadStatus, Absence, TeamEvent, ProfessionalGoal } from '@/types'; // Asegúrate de importar ProfessionalGoal si falta en tu types
 import { getWorkingDaysInRange, getMonthlyCapacity } from '@/utils/dateUtils';
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 
+// ... (Mantenemos las interfaces igual) ...
 interface AppContextType {
   employees: Employee[];
   clients: Client[];
@@ -47,7 +48,6 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Función de redondeo global
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -86,7 +86,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setProjects(projRes.data.map((p: any) => ({
           ...p,
           clientId: p.client_id,
-          budgetHours: round2(p.budget_hours), // Redondeo al cargar
+          budgetHours: round2(p.budget_hours),
           minimumHours: round2(p.minimum_hours || 0)
         })));
       }
@@ -96,7 +96,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           employeeId: a.employee_id,
           projectId: a.project_id,
           weekStartDate: a.week_start_date,
-          hoursAssigned: round2(a.hours_assigned) // <--- ESTO ARREGLA LOS DECIMALES EN LISTAS
+          hoursAssigned: round2(a.hours_assigned),
+          taskName: a.task_name // Cargar nombre
         })));
       }
       if (absRes.data) {
@@ -135,7 +136,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     fetchData();
   }, [fetchData]);
 
-  // Añadir funciones crud
+  // --- GOALS ---
   const addProfessionalGoal = useCallback(async (goal: Omit<ProfessionalGoal, 'id'>) => {
     const { data } = await supabase.from('professional_goals').insert({
       employee_id: goal.employeeId,
@@ -184,7 +185,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // --- EMPLEADOS ---
   const addEmployee = useCallback(async (employee: Omit<Employee, 'id'>) => {
-    const { data, error } = await supabase.from('employees').insert({
+    const { data } = await supabase.from('employees').insert({
       name: employee.name,
       role: employee.role,
       avatar_url: employee.avatarUrl,
@@ -193,7 +194,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       is_active: employee.isActive
     }).select().single();
 
-    if (error) { console.error("Error adding employee:", error); return; }
     if (data) {
       setEmployees(prev => [...prev, {
         ...data,
@@ -292,15 +292,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       week_start_date: allocation.weekStartDate,
       hours_assigned: allocation.hoursAssigned,
       status: allocation.status,
-      description: allocation.description
+      description: allocation.description,
+      // ✅ CORRECCIÓN: Se añade el campo task_name para que se guarde en la BD
+      task_name: allocation.taskName 
     }).select().single();
+    
     if (data) {
       setAllocations(prev => [...prev, {
         ...data,
         employeeId: data.employee_id,
         projectId: data.project_id,
         weekStartDate: data.week_start_date,
-        hoursAssigned: round2(data.hours_assigned)
+        hoursAssigned: round2(data.hours_assigned),
+        taskName: data.task_name // Asegurar que se guarda en estado local también
       }]);
     }
   }, []);
@@ -310,7 +314,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('allocations').update({
       hours_assigned: allocation.hoursAssigned,
       status: allocation.status,
-      description: allocation.description
+      description: allocation.description,
+      task_name: allocation.taskName // ✅ Aseguramos actualización
     }).eq('id', allocation.id);
   }, []);
 
@@ -319,7 +324,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('allocations').delete().eq('id', id);
   }, []);
 
-  // --- AUSENCIAS ---
+  // --- AUSENCIAS & EVENTOS (Sin cambios) ---
   const addAbsence = useCallback(async (absence: Omit<Absence, 'id'>) => {
     const { data } = await supabase.from('absences').insert({
       employee_id: absence.employeeId,
@@ -338,7 +343,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('absences').delete().eq('id', id);
   }, []);
 
-  // --- EVENTOS ---
   const addTeamEvent = useCallback(async (event: Omit<TeamEvent, 'id'>) => {
     const { data } = await supabase.from('team_events').insert({
       name: event.name,
@@ -368,7 +372,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('team_events').delete().eq('id', id);
   }, []);
 
-  // --- GETTERS (Con Redondeo) ---
+  // --- GETTERS ---
   const getEmployeeAllocationsForWeek = useCallback((employeeId: string, weekStart: string) => {
     return allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
   }, [allocations]);
@@ -545,7 +549,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addAbsence, deleteAbsence,
     addTeamEvent, updateTeamEvent, deleteTeamEvent,
     getEmployeeAllocationsForWeek, getEmployeeLoadForWeek, getEmployeeMonthlyLoad,
-    getProjectHoursForMonth, getClientTotalHoursForMonth, getProjectById, getClientById
+    getProjectHoursForMonth, getClientTotalHoursForMonth, getProjectById, getClientById,
+    professionalGoals, addProfessionalGoal, updateProfessionalGoal, deleteProfessionalGoal, getEmployeeGoals
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
