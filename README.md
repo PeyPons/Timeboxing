@@ -83,6 +83,104 @@ El proyecto requiere las siguientes tablas en Supabase. Puedes usar el editor SQ
 * `team_events`: Eventos globales y festivos (con soporte para reducción parcial o día completo).
 * `professional_goals`: Seguimiento de objetivos, formación y OKRs.
 
+```sql
+-- 1. TABLAS MAESTRAS (Clientes, Empleados, Proyectos)
+
+CREATE TABLE public.clients (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  name text NOT NULL,
+  color text NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE public.employees (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  name text NOT NULL,
+  avatar_url text,
+  role text NOT NULL,
+  default_weekly_capacity int NOT NULL,
+  work_schedule jsonb NOT NULL, -- Ej: {"monday": 8, "tuesday": 8...}
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE public.projects (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  client_id uuid REFERENCES public.clients(id),
+  name text NOT NULL,
+  status text DEFAULT 'active', -- 'active', 'archived', 'completed'
+  budget_hours numeric DEFAULT 0,
+  minimum_hours numeric DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+-- 2. TABLAS TRANSACCIONALES (Asignaciones, Ausencias, Eventos)
+
+CREATE TABLE public.allocations (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  employee_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
+  project_id uuid REFERENCES public.projects(id),
+  week_start_date date NOT NULL, -- Clave de almacenamiento inteligente (Storage Key)
+  hours_assigned numeric NOT NULL,
+  task_name text,
+  description text,
+  status text DEFAULT 'planned', -- 'planned', 'completed'
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE public.absences (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  employee_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  type text NOT NULL, -- 'vacation', 'sick_leave', etc.
+  description text,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE public.team_events (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  name text NOT NULL,
+  date date NOT NULL,
+  hours_reduction numeric NOT NULL,
+  affected_employee_ids jsonb NOT NULL, -- Array de IDs de empleados afectados
+  description text,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE public.professional_goals (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  employee_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  key_results text,
+  actions text,
+  training_url text,
+  start_date date,
+  due_date date,
+  progress int DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+-- 3. SEGURIDAD (Habilitar RLS y políticas públicas para desarrollo)
+
+ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.allocations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.absences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.team_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.professional_goals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public Access Employees" ON public.employees FOR ALL USING (true);
+CREATE POLICY "Public Access Clients" ON public.clients FOR ALL USING (true);
+CREATE POLICY "Public Access Projects" ON public.projects FOR ALL USING (true);
+CREATE POLICY "Public Access Allocations" ON public.allocations FOR ALL USING (true);
+CREATE POLICY "Public Access Absences" ON public.absences FOR ALL USING (true);
+CREATE POLICY "Public Access Events" ON public.team_events FOR ALL USING (true);
+CREATE POLICY "Public Access Goals" ON public.professional_goals FOR ALL USING (true);
+
+
+
 ## 🤝 Contribución
 
 Las contribuciones son bienvenidas. Por favor, abre un *issue* primero para discutir lo que te gustaría cambiar.
