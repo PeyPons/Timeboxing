@@ -20,8 +20,8 @@ import {
   Briefcase, 
   LayoutList,
   Pencil,
-  CheckCircle2, // Icono para completado
-  Circle,       // Icono para pendiente
+  CheckCircle2, 
+  Circle,       
   TrendingUp
 } from 'lucide-react';
 import { Project } from '@/types';
@@ -323,3 +323,6 @@ export default function ProjectsPage() {
     </div>
   );
 }
+
+
+const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
