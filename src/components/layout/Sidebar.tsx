@@ -22,8 +22,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <Calendar className="h-5 w-5 text-sidebar-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-sidebar-foreground">ResourceFlow</h1>
-          <p className="text-xs text-sidebar-foreground/60">Gestión de Recursos</p>
+          <h1 className="text-lg font-semibold text-sidebar-foreground">Timeboxing</h1>
+          <p className="text-xs text-sidebar-foreground/60">Gestión de equipo</p>
         </div>
       </div>
 
