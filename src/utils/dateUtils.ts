@@ -76,7 +76,13 @@ export function isCurrentWeek(weekStart: Date): boolean {
 }
 
 export function getMonthName(date: Date): string {
-  return date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+  const month = date.toLocaleDateString('es-ES', { month: 'long' });
+  const year = date.getFullYear();
+  
+  // Capitalizamos la primera letra del mes
+  const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
+  
+  return `${capitalizedMonth} - ${year}`;
 }
 
 // Get the working days within a specific date range for an employee's schedule
