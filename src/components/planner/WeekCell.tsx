@@ -1,6 +1,6 @@
 import { Allocation, LoadStatus } from '@/types';
 import { cn } from '@/lib/utils';
-import { Check, AlertCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock, AlertCircle } from 'lucide-react';
 
 interface WeekCellProps {
   allocations: Allocation[];
@@ -15,60 +15,87 @@ interface WeekCellProps {
   onClick: () => void;
 }
 
+const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
 export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, onClick }: WeekCellProps) {
   
-  const tasksPreview = allocations.slice(0, 3);
-  const hiddenCount = Math.max(0, allocations.length - 3);
+  // 1. Calcular métricas de la celda
+  const totalEstimated = round2(allocations.reduce((sum, a) => sum + Number(a.hoursAssigned || 0), 0));
+  
+  // Computado: Solo sumamos si la tarea tiene horas computadas (aunque no esté "completed" si quieres ir viendo progreso, o solo cerradas)
+  // Generalmente se suma lo que haya en 'hoursActual'.
+  const totalComputed = round2(allocations.reduce((sum, a) => sum + Number(a.hoursActual || 0), 0));
+  
+  // Balance: Positivo = Ahorro (Verde), Negativo = Desvío (Rojo)
+  // Solo calculamos balance sobre tareas que tengan algo computado para no falsear datos
+  const activeAllocations = allocations.filter(a => (a.hoursActual || 0) > 0);
+  
+  let balance = 0;
+  if (activeAllocations.length > 0) {
+      const est = activeAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0);
+      const comp = activeAllocations.reduce((sum, a) => sum + Number(a.hoursActual), 0);
+      balance = round2(est - comp);
+  }
+
+  const hasActivity = allocations.length > 0;
+  const isOverload = status === 'overload';
 
   return (
     <div onClick={onClick} className={cn(
-      "h-full min-h-[120px] p-2 transition-all cursor-pointer border border-transparent hover:border-indigo-300 rounded-md relative flex flex-col gap-1",
-      isCurrentWeek ? "bg-white shadow-sm" : "bg-slate-50/50 hover:bg-white"
+      "h-full min-h-[120px] p-2 transition-all cursor-pointer border border-transparent hover:border-indigo-300 rounded-md relative flex flex-col justify-between",
+      isCurrentWeek ? "bg-white shadow-sm" : "bg-slate-50/50 hover:bg-white",
+      !hasActivity && "opacity-60 hover:opacity-100"
     )}>
+      {/* Semáforo de Estado General */}
       <div className={cn("absolute top-1 right-1 w-2 h-2 rounded-full",
           status === 'overload' ? "bg-red-500" :
           status === 'warning' ? "bg-amber-400" :
           status === 'healthy' ? "bg-green-400" : "bg-slate-200"
       )} />
 
-      <div className="flex-1 flex flex-col gap-1 mt-1">
-        {tasksPreview.map(task => {
-            const isCompleted = task.status === 'completed';
-            const estimated = task.hoursAssigned;
-            const actual = task.hoursActual || 0;
-            
-            // ✅ LOGICA DE SEMÁFORO EN TAREA
-            const isOverBudget = isCompleted && actual > estimated;
-            const hoursToShow = (isCompleted && actual > 0) ? actual : estimated;
+      {hasActivity ? (
+        <div className="flex flex-col gap-2 mt-1">
+            {/* Bloque Estimado */}
+            <div className="flex justify-between items-center text-xs text-slate-500">
+                <span>Estimado</span>
+                <span className="font-mono font-medium">{totalEstimated}h</span>
+            </div>
 
-            return (
-                <div key={task.id} className={cn(
-                    "text-[10px] px-1.5 py-1 rounded border flex justify-between items-center gap-1",
-                    isCompleted ? "bg-slate-100 text-slate-500 border-slate-200" : "bg-white border-slate-100 shadow-sm",
-                    isOverBudget && "bg-red-50 border-red-200 text-red-700"
+            {/* Bloque Computado */}
+            <div className="flex justify-between items-center text-xs text-slate-700">
+                <span className="font-medium">Computado</span>
+                <span className="font-mono font-bold">{totalComputed}h</span>
+            </div>
+
+            {/* Bloque Balance (Solo si hay actividad real) */}
+            {totalComputed > 0 && (
+                <div className={cn(
+                    "flex justify-between items-center text-[10px] px-1.5 py-0.5 rounded border",
+                    balance >= 0 ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"
                 )}>
-                    <span className="truncate flex-1 font-medium">{task.taskName || 'Tarea'}</span>
-                    
-                    <span className={cn(
-                        "font-mono font-bold ml-1",
-                        isOverBudget && "text-red-600"
-                    )}>
-                        {hoursToShow}h
-                        {isOverBudget && <span className="ml-0.5 text-[8px] font-bold">!</span>}
+                    <span className="flex items-center gap-1">
+                        {balance >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        {balance >= 0 ? "Ahorro" : "Desvío"}
                     </span>
+                    <span className="font-mono font-bold">{balance > 0 ? '+' : ''}{balance}h</span>
                 </div>
-            );
-        })}
-        {hiddenCount > 0 && <div className="text-[9px] text-center text-muted-foreground">+{hiddenCount} más</div>}
-      </div>
+            )}
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center">
+            <span className="text-[10px] text-slate-300 uppercase tracking-widest font-medium">Libre</span>
+        </div>
+      )}
 
-      <div className="mt-auto text-right border-t pt-1">
-         <span className={cn(
-             "text-xs font-bold",
-             status === 'overload' ? "text-red-600" : "text-slate-600"
+      {/* Footer Celda: Carga vs Capacidad */}
+      <div className="mt-auto pt-2 border-t flex justify-end">
+         <div className={cn(
+             "text-xs font-bold flex items-center gap-1",
+             isOverload ? "text-red-600" : "text-slate-600"
          )}>
+             {isOverload && <AlertCircle className="h-3 w-3" />}
              {hours}/{capacity}h
-         </span>
+         </div>
       </div>
     </div>
   );
