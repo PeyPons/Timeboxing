@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -10,9 +10,10 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -45,21 +46,17 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     updateAllocation
   } = useApp();
 
-  // ✅ ESTADO PARA NAVEGACIÓN DE MESES DENTRO DE LA FICHA
   const [viewDate, setViewDate] = useState(() => new Date(weekStart));
-
-  // Resetear la fecha si se abre la ficha con un weekStart diferente
-  useEffect(() => {
-    if (open) {
-      setViewDate(new Date(weekStart));
-    }
-  }, [open, weekStart]);
-
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
 
-  // Estados Editar
+  // ✅ ESTADO PARA EDICIÓN INLINE
+  const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
+  const [inlineNameValue, setInlineNameValue] = useState('');
+  const inlineInputRef = useRef<HTMLInputElement>(null);
+
+  // Estados Editar Full
   const [editProjectId, setEditProjectId] = useState('');
   const [editTaskName, setEditTaskName] = useState('');
   const [editHours, setEditHours] = useState('');
@@ -70,12 +67,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   const [editComboboxOpen, setEditComboboxOpen] = useState(false);
 
   const employee = employees.find(e => e.id === employeeId);
-  if (!employee) return null;
-
-  // ✅ CÁLCULO DE SEMANAS BASADO EN viewDate (Navegable)
   const weeks = useMemo(() => getWeeksForMonth(viewDate), [viewDate]);
-  
-  // ✅ FORMATO DE FECHA CORREGIDO (Mayúscula inicial: Diciembre - 2025)
   const monthName = format(viewDate, 'MMMM', { locale: es });
   const monthLabel = `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} - ${format(viewDate, 'yyyy')}`;
 
@@ -83,7 +75,19 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     projects.filter(p => p.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
   [projects]);
 
-  // Funciones de navegación
+  useEffect(() => {
+    if (open) setViewDate(new Date(weekStart));
+  }, [open, weekStart]);
+
+  // Focus automático al input inline
+  useEffect(() => {
+    if (inlineEditingId && inlineInputRef.current) {
+        inlineInputRef.current.focus();
+    }
+  }, [inlineEditingId]);
+
+  if (!employee) return null;
+
   const handlePrevMonth = () => setViewDate(prev => subMonths(prev, 1));
   const handleNextMonth = () => setViewDate(prev => addMonths(prev, 1));
 
@@ -123,7 +127,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     setNewTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
-  const startEdit = (allocation: Allocation) => {
+  const startEditFull = (allocation: Allocation) => {
     setEditingAllocation(allocation);
     setEditProjectId(allocation.projectId);
     setEditTaskName(allocation.taskName || '');
@@ -131,6 +135,31 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     setEditDescription(allocation.description || '');
     setEditWeek(allocation.weekStartDate);
     setIsFormOpen(true);
+  };
+
+  // ✅ INICIAR EDICIÓN INLINE
+  const startInlineEdit = (allocation: Allocation) => {
+    setInlineEditingId(allocation.id);
+    setInlineNameValue(allocation.taskName || '');
+  };
+
+  // ✅ GUARDAR EDICIÓN INLINE
+  const saveInlineEdit = (allocation: Allocation) => {
+    if (inlineNameValue.trim() !== allocation.taskName) {
+        updateAllocation({
+            ...allocation,
+            taskName: inlineNameValue
+        });
+    }
+    setInlineEditingId(null);
+  };
+
+  // ✅ MOVER TAREA A OTRA SEMANA
+  const moveTaskToWeek = (allocation: Allocation, targetWeekDate: string) => {
+    updateAllocation({
+        ...allocation,
+        weekStartDate: targetWeekDate
+    });
   };
 
   const handleSave = () => {
@@ -167,7 +196,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     updateAllocation({ ...allocation, status: newStatus });
   };
 
-  // ✅ ORDENACIÓN: PRIMERO MAYOR PRESUPUESTO, LUEGO ALFABÉTICO
   const groupAndSortAllocations = (allocations: Allocation[]) => {
     const grouped = allocations.reduce((acc, alloc) => {
       const projId = alloc.projectId;
@@ -176,16 +204,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
       return acc;
     }, {} as Record<string, Allocation[]>);
 
-    // Convertir a array y ordenar
     return Object.entries(grouped).sort(([projIdA], [projIdB]) => {
       const projA = getProjectById(projIdA);
       const projB = getProjectById(projIdB);
       const budgetA = projA?.budgetHours || 0;
       const budgetB = projB?.budgetHours || 0;
-
-      // 1. Mayor presupuesto primero
       if (budgetB !== budgetA) return budgetB - budgetA;
-      // 2. Alfabético si empate
       return (projA?.name || '').localeCompare(projB?.name || '');
     });
   };
@@ -209,7 +233,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                     </div>
                 </div>
 
-                {/* ✅ CONTROLES DE NAVEGACIÓN DE MES */}
                 <div className="flex items-center gap-4 bg-background/50 p-1.5 rounded-lg border shadow-sm">
                     <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
                         <ChevronLeft className="h-5 w-5" />
@@ -224,52 +247,44 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
             </div>
           </SheetHeader>
 
-          {/* ✅ GRID CORREGIDO: SE FUERZA A 5 COLUMNAS EN PANTALLAS GRANDES PARA QUE NO CAIGA LA SEMANA 5 */}
+          {/* ✅ GRID DE 5 COLUMNAS Y FUENTE MÁS GRANDE */}
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 pb-20">
             {weeks.map((week, index) => {
                 const weekStr = week.weekStart.toISOString().split('T')[0];
                 const weekAllocations = getEmployeeAllocationsForWeek(employeeId, weekStr);
                 const load = getEmployeeLoadForWeek(employeeId, weekStr, week.effectiveStart, week.effectiveEnd);
                 
-                // Calculamos si es la semana actual real
-                const isCurrent = isSameMonth(viewDate, new Date()) && 
-                                  new Date() >= week.weekStart && 
-                                  new Date() <= week.weekEnd;
-
-                // Ordenamos las tareas
+                const isCurrent = isSameMonth(viewDate, new Date()) && new Date() >= week.weekStart && new Date() <= week.weekEnd;
                 const sortedProjectGroups = groupAndSortAllocations(weekAllocations);
 
                 return (
-                    <div key={weekStr} className={cn("flex flex-col gap-3 p-3 rounded-xl border bg-card transition-all h-full", isCurrent ? "ring-2 ring-indigo-500 ring-offset-2 shadow-lg scale-[1.01]" : "hover:border-indigo-200 hover:shadow-md")}>
-                        {/* Cabecera Semana */}
+                    <div key={weekStr} className={cn("flex flex-col gap-3 p-3 rounded-xl border bg-card transition-all h-full min-h-[300px]", isCurrent ? "ring-2 ring-indigo-500 ring-offset-2 shadow-lg scale-[1.01]" : "hover:border-indigo-200 hover:shadow-md")}>
                         <div className="flex flex-col gap-2 pb-2 border-b">
                             <div className="flex items-center justify-between">
-                                <span className="font-bold text-xs text-foreground/80 uppercase tracking-wider">
+                                <span className="font-bold text-sm text-foreground/80 uppercase tracking-wider">
                                     Semana {index + 1}
                                 </span>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-indigo-100 hover:text-indigo-700 rounded-full transition-colors" onClick={() => startAdd(weekStr)}>
-                                    <Plus className="h-3.5 w-3.5" />
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-indigo-100 hover:text-indigo-700 rounded-full transition-colors" onClick={() => startAdd(weekStr)}>
+                                    <Plus className="h-4 w-4" />
                                 </Button>
                             </div>
                             <div className="flex items-center justify-between">
-                                <span className="text-[10px] text-muted-foreground font-medium bg-muted px-1.5 py-0.5 rounded">
+                                <span className="text-xs text-muted-foreground font-medium bg-muted px-2 py-0.5 rounded">
                                     {format(week.effectiveStart!, 'd MMM', { locale: es })} - {format(week.effectiveEnd!, 'd MMM', { locale: es })}
                                 </span>
-                                <Badge variant="outline" className={cn("font-mono text-[10px] px-1.5 py-0 h-auto", load.status === 'overload' ? "bg-red-50 text-red-600 border-red-200" : "bg-green-50 text-green-600 border-green-200")}>
+                                <Badge variant="outline" className={cn("font-mono text-xs px-2 py-0.5 h-auto", load.status === 'overload' ? "bg-red-50 text-red-600 border-red-200" : "bg-green-50 text-green-600 border-green-200")}>
                                     {load.hours}/{load.capacity}h
                                 </Badge>
                             </div>
-                            {/* Barra de progreso visual */}
-                            <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                 <div className={cn("h-full transition-all duration-500 ease-out", load.status === 'overload' ? "bg-red-500" : "bg-green-500")} style={{ width: `${Math.min(load.percentage, 100)}%` }} />
                             </div>
                         </div>
 
-                        {/* LISTA DE TAREAS */}
-                        <div className="flex-1 overflow-y-auto max-h-[60vh] space-y-2 pr-1 custom-scrollbar">
+                        <div className="flex-1 overflow-y-auto max-h-[60vh] space-y-3 pr-1 custom-scrollbar">
                             {weekAllocations.length === 0 ? (
-                                <div className="h-24 flex flex-col items-center justify-center text-muted-foreground/30 text-xs italic border-2 border-dashed rounded-lg bg-slate-50/50">
-                                    <Clock className="h-6 w-6 mb-1 opacity-20" />
+                                <div className="h-24 flex flex-col items-center justify-center text-muted-foreground/30 text-sm italic border-2 border-dashed rounded-lg bg-slate-50/50">
+                                    <Clock className="h-6 w-6 mb-2 opacity-20" />
                                     <span>Libre</span>
                                 </div>
                             ) : (
@@ -278,15 +293,15 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                   const totalProjHours = projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
 
                                   return (
-                                    <div key={projId} className="bg-white dark:bg-slate-900 border rounded shadow-sm overflow-hidden">
-                                        <div className="bg-slate-50 dark:bg-slate-800 px-2 py-1.5 border-b flex justify-between items-center">
-                                            <div className="flex items-center gap-1.5 overflow-hidden">
-                                                <FolderKanban className="h-3 w-3 text-indigo-500 flex-shrink-0" />
-                                                <span className="font-semibold text-[10px] text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={project?.name}>
+                                    <div key={projId} className="bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden">
+                                        <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 border-b flex justify-between items-center">
+                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                <FolderKanban className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
+                                                <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={project?.name}>
                                                     {project?.name || 'Desc.'}
                                                 </span>
                                             </div>
-                                            <span className="text-[9px] font-mono font-bold text-slate-500 dark:text-slate-400">
+                                            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">
                                                 {totalProjHours}h
                                             </span>
                                         </div>
@@ -295,24 +310,62 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                             {projAllocations.map(alloc => (
                                                 <div 
                                                     key={alloc.id} 
-                                                    className="group flex items-center gap-2 p-1.5 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
-                                                    onDoubleClick={() => startEdit(alloc)} // ✅ DOBLE CLIC PARA EDITAR
+                                                    className="group flex items-center gap-3 p-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
                                                 >
-                                                    <Checkbox checked={alloc.status === 'completed'} onCheckedChange={() => toggleStatus(alloc)} className="h-3 w-3 mt-0.5 rounded-sm" />
+                                                    <Checkbox checked={alloc.status === 'completed'} onCheckedChange={() => toggleStatus(alloc)} className="h-4 w-4 mt-0.5 rounded-sm" />
                                                     
-                                                    <div className="flex-1 min-w-0 cursor-pointer" title="Doble clic para editar">
-                                                        <div className="flex justify-between items-center gap-1">
-                                                            <span className={cn("text-[10px] font-medium leading-tight text-slate-600 dark:text-slate-300 truncate", alloc.status === 'completed' && "line-through opacity-50")}>
-                                                                {alloc.taskName || 'General'}
-                                                            </span>
-                                                            <span className="text-[9px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1 rounded">{alloc.hoursAssigned}h</span>
+                                                    <div className="flex-1 min-w-0" onDoubleClick={() => startInlineEdit(alloc)}>
+                                                        <div className="flex justify-between items-center gap-2">
+                                                            {/* ✅ LÓGICA DE EDICIÓN INLINE */}
+                                                            {inlineEditingId === alloc.id ? (
+                                                                <Input 
+                                                                    ref={inlineInputRef}
+                                                                    value={inlineNameValue}
+                                                                    onChange={(e) => setInlineNameValue(e.target.value)}
+                                                                    onBlur={() => saveInlineEdit(alloc)}
+                                                                    onKeyDown={(e) => e.key === 'Enter' && saveInlineEdit(alloc)}
+                                                                    className="h-6 text-xs px-1 py-0 w-full"
+                                                                />
+                                                            ) : (
+                                                                <span 
+                                                                    className={cn("text-xs font-medium leading-tight text-slate-700 dark:text-slate-300 truncate cursor-text", alloc.status === 'completed' && "line-through opacity-50")}
+                                                                    title="Doble clic para editar nombre"
+                                                                >
+                                                                    {alloc.taskName || 'General'}
+                                                                </span>
+                                                            )}
+                                                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{alloc.hoursAssigned}h</span>
                                                         </div>
-                                                        {alloc.description && (
-                                                            <p className="text-[9px] text-slate-400 truncate mt-0.5">
+                                                        {alloc.description && !inlineEditingId && (
+                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
                                                                 {alloc.description}
                                                             </p>
                                                         )}
                                                     </div>
+
+                                                    {/* ✅ MENÚ CONTEXTUAL: EDITAR Y MOVER */}
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 text-slate-400 hover:text-indigo-600">
+                                                                <MoreHorizontal className="h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                                                            <DropdownMenuItem onClick={() => startEditFull(alloc)}>
+                                                                <Pencil className="mr-2 h-3.5 w-3.5" /> Editar todo
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuSeparator />
+                                                            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Mover a semana...</DropdownMenuLabel>
+                                                            {weeks.map((w, i) => (
+                                                                w.weekStart.toISOString().split('T')[0] !== weekStr && (
+                                                                    <DropdownMenuItem key={w.weekStart.toISOString()} onClick={() => moveTaskToWeek(alloc, w.weekStart.toISOString().split('T')[0])}>
+                                                                        <ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Semana {i + 1}
+                                                                    </DropdownMenuItem>
+                                                                )
+                                                            ))}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
                                                 </div>
                                             ))}
                                         </div>
@@ -328,7 +381,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
         </SheetContent>
       </Sheet>
 
-      {/* DIÁLOGO AÑADIR/EDITAR (Mantenido igual) */}
+      {/* DIÁLOGO AÑADIR/EDITAR (Mantenido igual, solo necesitas asegurarte de tener la parte de abajo de tu archivo original) */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
           <DialogHeader className="p-6 pb-2">
@@ -407,6 +460,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
                     {newTasks.map((task) => (
                         <div key={task.id} className="flex gap-2 items-start animate-in fade-in slide-in-from-top-1 duration-200">
+                            {/* ... (BUSCADOR PROYECTO MANTENIDO IGUAL QUE ANTES) ... */}
                             <div className="flex-1 min-w-0">
                                 <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
                                     <PopoverTrigger asChild>
@@ -455,7 +509,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                     <SelectContent>
                                         {weeks.map((w, i) => (
                                             <SelectItem key={w.weekStart.toISOString()} value={w.weekStart.toISOString().split('T')[0]}>
-                                                Sem {i+1} ({format(w.effectiveStart!, 'd', { locale: es })} - {format(w.effectiveEnd!, 'd MMM', { locale: es })})
+                                                Sem {i+1} ({format(w.effectiveStart!, 'd MMM', { locale: es })})
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
