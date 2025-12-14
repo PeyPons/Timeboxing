@@ -11,23 +11,17 @@ export const isCurrentWeek = (date: Date) => {
     return date.getTime() === start.getTime();
 };
 
-// ✅ FUNCIÓN CRÍTICA: Decide "dónde" se guardan los datos.
-// Si estamos viendo Enero, las tareas de la semana compartida se guardan en Enero.
-// Si estamos viendo Diciembre, se guardan en Diciembre.
+// ✅ FUNCIÓN CRÍTICA: Lógica de "Cajones Estancos"
+// Si estamos en Enero, la semana compartida usa la llave '2025-01-01'.
+// Si estamos en Diciembre, usa '2024-12-29'.
 export const getStorageKey = (weekStart: Date, viewMonth: Date): string => {
-    // 1. Si la semana empieza en el mismo mes que vemos, llave normal.
     if (isSameMonth(weekStart, viewMonth)) {
         return format(weekStart, 'yyyy-MM-dd');
     }
-
-    // 2. Si la semana empieza ANTES del mes que vemos (ej: 29 Dic viendo Enero),
-    // forzamos que la llave sea el 1er día del mes actual.
     const monthStart = startOfMonth(viewMonth);
     if (weekStart < monthStart) {
         return format(monthStart, 'yyyy-MM-dd');
     }
-
-    // 3. Defecto
     return format(weekStart, 'yyyy-MM-dd');
 };
 
@@ -44,12 +38,11 @@ export const getWeeksForMonth = (date: Date) => {
   while (currentWeekStart <= endDate) {
     const currentWeekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
 
-    // Límites visuales (recorte)
     const effectiveStart = currentWeekStart < monthStart ? monthStart : currentWeekStart;
     const effectiveEnd = currentWeekEnd > monthEnd ? monthEnd : currentWeekEnd;
 
-    // Filtro: Solo añadir la semana si tiene días laborables en este mes
-    // (Arregla que aparezca una semana extra en Marzo si el día 1 es Domingo)
+    // ✅ FILTRO: Si la semana solo tiene Sábado/Domingo en este mes, NO la mostramos.
+    // Esto arregla el problema de que Marzo empiece con una semana vacía si el día 1 es Domingo.
     const daysInInterval = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd });
     const hasWorkingDays = daysInInterval.some(day => !isWeekend(day));
 
