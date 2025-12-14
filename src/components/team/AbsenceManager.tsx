@@ -48,7 +48,13 @@ export function AbsencesSheet({ open, onOpenChange, employeeId }: AbsencesSheetP
     setIsAdding(false);
   };
 
-  const formatDate = (dateStr: string) => format(new Date(dateStr), 'd MMM yyyy', { locale: es });
+  const formatDate = (dateStr: string) => {
+    try {
+      return format(new Date(dateStr), 'd MMM yyyy', { locale: es });
+    } catch (e) {
+      return dateStr;
+    }
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -68,7 +74,7 @@ export function AbsencesSheet({ open, onOpenChange, employeeId }: AbsencesSheetP
         </SheetHeader>
 
         <div className="space-y-6">
-          {/* Formulario de Añadir (Desplegable) */}
+          {/* Formulario Desplegable */}
           {isAdding ? (
             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border shadow-sm space-y-4 animate-in fade-in zoom-in-95 duration-200">
               <div className="grid grid-cols-2 gap-4">
@@ -83,7 +89,7 @@ export function AbsencesSheet({ open, onOpenChange, employeeId }: AbsencesSheetP
               </div>
               
               <div className="space-y-2">
-                <Label>Tipo de Ausencia</Label>
+                <Label>Tipo</Label>
                 <Select value={newAbsence.type} onValueChange={(v: any) => setNewAbsence(prev => ({ ...prev, type: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -96,13 +102,13 @@ export function AbsencesSheet({ open, onOpenChange, employeeId }: AbsencesSheetP
               </div>
 
               <div className="space-y-2">
-                <Label>Notas (Opcional)</Label>
-                <Input placeholder="Ej: Viaje a..." value={newAbsence.description} onChange={e => setNewAbsence(prev => ({ ...prev, description: e.target.value }))} />
+                <Label>Notas</Label>
+                <Input placeholder="Ej: Viaje..." value={newAbsence.description} onChange={e => setNewAbsence(prev => ({ ...prev, description: e.target.value }))} />
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="ghost" size="sm" onClick={() => setIsAdding(false)}>Cancelar</Button>
-                <Button size="sm" onClick={handleAdd} disabled={!newAbsence.startDate || !newAbsence.endDate}>Confirmar</Button>
+                <Button size="sm" onClick={handleAdd} disabled={!newAbsence.startDate || !newAbsence.endDate}>Guardar</Button>
               </div>
             </div>
           ) : (
@@ -111,20 +117,20 @@ export function AbsencesSheet({ open, onOpenChange, employeeId }: AbsencesSheetP
             </Button>
           )}
 
-          {/* Lista de Ausencias */}
+          {/* Lista */}
           <div className="space-y-3">
             <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Historial ({employeeAbsences.length})</h3>
             
             {employeeAbsences.length === 0 ? (
               <div className="text-center py-8 border-2 border-dashed rounded-xl bg-slate-50/50">
                 <Calendar className="h-10 w-10 mx-auto text-slate-300 mb-2" />
-                <p className="text-sm text-muted-foreground">Este empleado no tiene ausencias registradas.</p>
+                <p className="text-sm text-muted-foreground">Sin ausencias registradas.</p>
               </div>
             ) : (
               employeeAbsences.map((absence) => (
                 <div key={absence.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-900 border rounded-lg shadow-sm hover:shadow-md transition-all group">
                   <div className="flex items-start gap-3">
-                    <div className={`mt-1 h-2 w-2 rounded-full ${getAbsenceTypeColor(absence.type).replace('bg-', 'bg-').replace('/10', '')}`} />
+                    <div className={`mt-1 h-2 w-2 rounded-full ${getAbsenceTypeColor(absence.type)}`} />
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">
