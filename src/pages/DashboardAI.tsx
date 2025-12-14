@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
-// IMPORTANTE: Añadimos HarmCategory y HarmBlockThreshold
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-// IMPORTANTE: Añadimos AlertTriangle para el icono de error
 import { Bot, Send, User, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 
 // Inicializar Gemini
@@ -17,7 +15,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  isError?: boolean; // Campo para marcar errores visualmente
+  isError?: boolean;
 }
 
 export default function DashboardAI() {
@@ -97,7 +95,7 @@ export default function DashboardAI() {
         - Usa negritas para nombres y datos clave.
       `;
 
-      // CAMBIO CLAVE: Usamos gemini-pro (Más cuota gratuita)
+      // CAMBIO CLAVE: Usamos gemini-pro (Suele tener cuota gratuita más alta en el nivel básico)
       const model = genAI.getGenerativeModel({ 
         model: "gemini-pro", 
         safetySettings: [
@@ -120,7 +118,7 @@ export default function DashboardAI() {
       
       let errorMsg = "Lo siento, ha ocurrido un error.";
       
-      if (error.message?.includes('429')) errorMsg = "🛑 LÍMITE DE CUOTA EXCEDIDO (429). Tienes que esperar unos minutos o habilitar la facturación en Google AI Studio para continuar.";
+      if (error.message?.includes('429')) errorMsg = "🛑 LÍMITE DE CUOTA EXCEDIDO (429). Tienes que esperar unos minutos o **habilitar la facturación en Google AI Studio** para continuar. (No se te cobrará si estás bajo la capa gratuita).";
       else if (error.message?.includes('404')) errorMsg = "Error de modelo. Tu clave no tiene acceso al modelo solicitado. Intenta con gemini-pro.";
       else if (error.message?.includes('fetch')) errorMsg = "Error de conexión. Verifica tu internet.";
       else errorMsg = `Error técnico: ${error.message}`;
