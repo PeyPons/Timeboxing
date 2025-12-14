@@ -11,8 +11,8 @@ export interface WorkSchedule {
 export interface Employee {
   id: string;
   name: string;
-  avatarUrl?: string;
   role: string;
+  avatarUrl?: string;
   defaultWeeklyCapacity: number;
   workSchedule: WorkSchedule;
   isActive: boolean;
@@ -66,10 +66,11 @@ export interface WeekData {
 export interface Absence {
   id: string;
   employeeId: string;
-  startDate: string; // ISO date
-  endDate: string;   // ISO date
-  type: 'vacation' | 'sick' | 'personal' | 'other';
+  startDate: string;
+  endDate: string;
+  type: 'vacation' | 'sick_leave' | 'personal' | 'other';
   description?: string;
+  hours?: number;
 }
 
 export interface ProfessionalGoal {
