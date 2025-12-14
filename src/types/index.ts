@@ -38,7 +38,8 @@ export interface Project {
   clientId: string;
   name: string;
   status: 'active' | 'archived';
-  budgetHours: number; // Monthly budget for this project
+  budgetHours: number; // Horas contratadas (Techo)
+  minimumHours: number; // <--- ¡NUEVO! (Suelo)
 }
 
 export interface Allocation {
