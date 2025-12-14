@@ -4,7 +4,7 @@ import { Employee, Client, Project, Allocation, LoadStatus, Absence, TeamEvent, 
 import { getWorkingDaysInRange, getMonthlyCapacity, getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
-import { addDays, isWithinInterval, parseISO } from 'date-fns'; // ✅ Añadido isWithinInterval, parseISO
+import { addDays } from 'date-fns';
 
 interface AppContextType {
   employees: Employee[];
@@ -33,14 +33,13 @@ interface AppContextType {
   updateTeamEvent: (event: TeamEvent) => void;
   deleteTeamEvent: (id: string) => void;
   getEmployeeAllocationsForWeek: (employeeId: string, weekStart: string) => Allocation[];
-  // ✅ Actualizamos el tipo de retorno para incluir el desglose
   getEmployeeLoadForWeek: (employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => { 
       hours: number; 
       capacity: number; 
-      baseCapacity: number; // Nuevo
+      baseCapacity: number; 
       status: LoadStatus; 
       percentage: number;
-      breakdown: { reason: string; hours: number; type: 'absence' | 'event' }[] // Nuevo
+      breakdown: { reason: string; hours: number; type: 'absence' | 'event' }[]
   };
   getEmployeeMonthlyLoad: (employeeId: string, year: number, month: number) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
   getProjectHoursForMonth: (projectId: string, month: Date) => { used: number; budget: number; available: number; percentage: number };
@@ -105,6 +104,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           projectId: a.project_id,
           weekStartDate: a.week_start_date,
           hoursAssigned: round2(a.hours_assigned),
+          hoursActual: a.hours_actual ? round2(a.hours_actual) : undefined, // ✅ Leemos el real
           taskName: a.task_name
         })));
       }
@@ -114,7 +114,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           employeeId: ab.employee_id,
           startDate: ab.start_date,
           endDate: ab.end_date,
-          hours: ab.hours // Asumiendo que ya añadiste la columna hours a la DB
+          hours: ab.hours
         })));
       }
       if (goalsRes.data) {
@@ -145,8 +145,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     fetchData();
   }, [fetchData]);
 
-  // ... (CRUD OPERATIONS SE MANTIENEN IGUAL QUE ANTES, CÓPIALAS DEL ARCHIVO ANTERIOR) ...
-  // Para ahorrar espacio aquí, asumo que las operaciones add/update/delete están igual.
+  // CRUD OPERATIONS (Simplificadas para brevedad, solo pongo las modificadas)
+  
+  const addAllocation = useCallback(async (allocation: Omit<Allocation, 'id'>) => {
+    const { data } = await supabase.from('allocations').insert({
+      employee_id: allocation.employeeId,
+      project_id: allocation.projectId,
+      week_start_date: allocation.weekStartDate,
+      hours_assigned: allocation.hoursAssigned,
+      hours_actual: allocation.hoursActual || 0, // ✅ Guardamos real
+      status: allocation.status,
+      description: allocation.description,
+      task_name: allocation.taskName
+    }).select().single();
+    if (data) {
+      setAllocations(prev => [...prev, { 
+          ...data, 
+          employeeId: data.employee_id, 
+          projectId: data.project_id, 
+          weekStartDate: data.week_start_date, 
+          hoursAssigned: round2(data.hours_assigned),
+          hoursActual: round2(data.hours_actual),
+          taskName: data.task_name 
+      }]);
+    }
+  }, []);
+
+  const updateAllocation = useCallback(async (allocation: Allocation) => {
+    setAllocations(prev => prev.map(a => a.id === allocation.id ? allocation : a));
+    await supabase.from('allocations').update({
+      hours_assigned: allocation.hoursAssigned,
+      hours_actual: allocation.hoursActual, // ✅ Actualizamos real
+      status: allocation.status,
+      description: allocation.description,
+      task_name: allocation.taskName
+    }).eq('id', allocation.id);
+  }, []);
+
+  const deleteAllocation = useCallback(async (id: string) => {
+    setAllocations(prev => prev.filter(a => a.id !== id));
+    await supabase.from('allocations').delete().eq('id', id);
+  }, []);
+
+  // ... Resto de adds/updates/deletes se mantienen igual que tu versión anterior ...
   const addProfessionalGoal = useCallback(async (goal: Omit<ProfessionalGoal, 'id'>) => { const { data } = await supabase.from('professional_goals').insert({ employee_id: goal.employeeId, title: goal.title, key_results: goal.keyResults, actions: goal.actions, training_url: goal.trainingUrl, start_date: goal.startDate, due_date: goal.dueDate, progress: goal.progress }).select().single(); if (data) setProfessionalGoals(prev => [...prev, { ...data, employeeId: data.employee_id, keyResults: data.key_results, trainingUrl: data.training_url, startDate: data.start_date, dueDate: data.due_date }]); }, []);
   const updateProfessionalGoal = useCallback(async (goal: ProfessionalGoal) => { setProfessionalGoals(prev => prev.map(g => g.id === goal.id ? goal : g)); await supabase.from('professional_goals').update({ title: goal.title, key_results: goal.keyResults, actions: goal.actions, training_url: goal.trainingUrl, start_date: goal.startDate, due_date: goal.dueDate, progress: goal.progress }).eq('id', goal.id); }, []);
   const deleteProfessionalGoal = useCallback(async (id: string) => { setProfessionalGoals(prev => prev.filter(g => g.id !== id)); await supabase.from('professional_goals').delete().eq('id', id); }, []);
@@ -161,9 +202,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addProject = useCallback(async (project: Omit<Project, 'id'>) => { const { data } = await supabase.from('projects').insert({ client_id: project.clientId, name: project.name, status: project.status, budget_hours: project.budgetHours, minimum_hours: project.minimumHours }).select().single(); if (data) setProjects(prev => [...prev, { ...data, clientId: data.client_id, budgetHours: round2(data.budget_hours), minimumHours: round2(data.minimum_hours) }]); }, []);
   const updateProject = useCallback(async (project: Project) => { setProjects(prev => prev.map(p => p.id === project.id ? project : p)); await supabase.from('projects').update({ client_id: project.clientId, name: project.name, status: project.status, budget_hours: project.budgetHours, minimum_hours: project.minimumHours }).eq('id', project.id); }, []);
   const deleteProject = useCallback(async (id: string) => { setProjects(prev => prev.filter(p => p.id !== id)); setAllocations(prev => prev.filter(a => a.projectId !== id)); await supabase.from('projects').delete().eq('id', id); }, []);
-  const addAllocation = useCallback(async (allocation: Omit<Allocation, 'id'>) => { const { data } = await supabase.from('allocations').insert({ employee_id: allocation.employeeId, project_id: allocation.projectId, week_start_date: allocation.weekStartDate, hours_assigned: allocation.hoursAssigned, status: allocation.status, description: allocation.description, task_name: allocation.taskName }).select().single(); if (data) setAllocations(prev => [...prev, { ...data, employeeId: data.employee_id, projectId: data.project_id, weekStartDate: data.week_start_date, hoursAssigned: round2(data.hours_assigned), taskName: data.task_name }]); }, []);
-  const updateAllocation = useCallback(async (allocation: Allocation) => { setAllocations(prev => prev.map(a => a.id === allocation.id ? allocation : a)); await supabase.from('allocations').update({ hours_assigned: allocation.hoursAssigned, status: allocation.status, description: allocation.description, task_name: allocation.taskName }).eq('id', allocation.id); }, []);
-  const deleteAllocation = useCallback(async (id: string) => { setAllocations(prev => prev.filter(a => a.id !== id)); await supabase.from('allocations').delete().eq('id', id); }, []);
   const addAbsence = useCallback(async (absence: Omit<Absence, 'id'>) => { const { data } = await supabase.from('absences').insert({ employee_id: absence.employeeId, start_date: absence.startDate, end_date: absence.endDate, type: absence.type, description: absence.description, hours: absence.hours }).select().single(); if (data) setAbsences(prev => [...prev, { ...data, employeeId: data.employee_id, startDate: data.start_date, endDate: data.end_date, hours: data.hours }]); }, []);
   const deleteAbsence = useCallback(async (id: string) => { setAbsences(prev => prev.filter(a => a.id !== id)); await supabase.from('absences').delete().eq('id', id); }, []);
   const addTeamEvent = useCallback(async (event: Omit<TeamEvent, 'id'>) => { const { data } = await supabase.from('team_events').insert({ name: event.name, date: event.date, hours_reduction: event.hoursReduction, affected_employee_ids: event.affectedEmployeeIds, description: event.description }).select().single(); if (data) setTeamEvents(prev => [...prev, { ...data, hoursReduction: data.hours_reduction, affectedEmployeeIds: data.affected_employee_ids }]); }, []);
@@ -174,22 +212,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
   }, [allocations]);
 
-  // ✅ AQUÍ ESTÁ LA LÓGICA DE DESGLOSE DE CAPACIDAD MEJORADA
+  // ✅ LOGICA DE CARGA: Real vs Estimado
   const getEmployeeLoadForWeek = useCallback((employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => {
     const employee = employees.find(e => e.id === employeeId);
     if (!employee) return { hours: 0, capacity: 0, baseCapacity: 0, status: 'empty' as LoadStatus, percentage: 0, breakdown: [] };
 
-    // 1. Horas asignadas (Carga)
+    // 1. Horas asignadas (Carga Inteligente)
     const employeeAllocations = allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
-    const totalHours = round2(employeeAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0));
     
-    // 2. Definir rango de fechas de la semana
+    // Si completada, suma Real. Si no, suma Estimado.
+    const totalHours = round2(employeeAllocations.reduce((sum, a) => {
+        const hoursToCount = (a.status === 'completed' && (a.hoursActual || 0) > 0) 
+            ? Number(a.hoursActual) 
+            : Number(a.hoursAssigned);
+        return sum + hoursToCount;
+    }, 0));
+    
+    // 2. Definir rango
     const weekStartDate = new Date(weekStart);
     const weekEndDate = addDays(weekStartDate, 6);
     const rangeStart = effectiveStart || weekStartDate;
     const rangeEnd = effectiveEnd || weekEndDate;
     
-    // 3. Capacidad Base (Antes de reducciones)
+    // 3. Capacidad Base
     let baseCapacity: number;
     if (effectiveStart && effectiveEnd) {
       const { totalHours: capacityHours } = getWorkingDaysInRange(effectiveStart, effectiveEnd, employee.workSchedule);
@@ -198,29 +243,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       baseCapacity = employee.defaultWeeklyCapacity;
     }
 
-    // 4. Calcular reducciones con desglose (Breakdown)
+    // 4. Reducciones
     const breakdown: { reason: string; hours: number; type: 'absence' | 'event' }[] = [];
     let reducedCapacity = baseCapacity;
 
-    // A. Reducciones por Ausencias (Individuales)
     const relevantAbsences = absences.filter(a => a.employeeId === employeeId);
-    // Nota: getAbsenceHoursInRange es muy útil, pero para el desglose necesitamos saber CUÁL ausencia.
-    // Haremos una iteración simple para detectar solapamientos y añadir al breakdown.
-    // (Simplificado: Si la ausencia toca la semana, calculamos su impacto)
     const absenceReductionTotal = getAbsenceHoursInRange(rangeStart, rangeEnd, relevantAbsences, employee.workSchedule);
     
     if (absenceReductionTotal > 0) {
-        // Intentamos desglosar por tipo
         relevantAbsences.forEach(abs => {
             const absStart = new Date(abs.startDate);
             const absEnd = new Date(abs.endDate);
-            // Si hay intersección simple
             if (absStart <= rangeEnd && absEnd >= rangeStart) {
-               // Calculamos impacto de ESTA ausencia específica
                const specificHours = getAbsenceHoursInRange(rangeStart, rangeEnd, [abs], employee.workSchedule);
                if (specificHours > 0) {
                    breakdown.push({
-                       reason: `Ausencia: ${abs.type === 'sick_leave' ? 'Baja' : abs.type === 'vacation' ? 'Vacaciones' : 'Personal'}`,
+                       reason: `Ausencia: ${abs.type === 'vacation' ? 'Vacaciones' : 'Baja/Otro'}`,
                        hours: specificHours,
                        type: 'absence'
                    });
@@ -230,8 +268,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         reducedCapacity -= absenceReductionTotal;
     }
 
-    // B. Reducciones por Eventos de Equipo (Festivos/Globales)
-    // Similar logic for breakdown
     const relevantEvents = teamEvents.filter(te => !te.affectedEmployeeIds || te.affectedEmployeeIds.includes(employeeId));
     const eventReductionTotal = getTeamEventHoursInRange(rangeStart, rangeEnd, employeeId, teamEvents, employee.workSchedule);
 
@@ -239,8 +275,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         relevantEvents.forEach(ev => {
             const evDate = new Date(ev.date);
             if (evDate >= rangeStart && evDate <= rangeEnd) {
-                // Cálculo simple: si es día completo resta 8 (o lo que sea), si no, lo que diga
-                // Ojo: getTeamEventHoursInRange ya hace la lógica compleja, aquí simplificamos para el label
                 breakdown.push({
                     reason: `Evento: ${ev.name}`,
                     hours: Number(ev.hoursReduction),
@@ -252,7 +286,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     reducedCapacity = Math.max(0, round2(reducedCapacity));
-
     const percentage = reducedCapacity > 0 ? round2((totalHours / reducedCapacity) * 100) : (totalHours > 0 ? 999 : 0);
 
     let status: LoadStatus = 'empty';
@@ -265,19 +298,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity: reducedCapacity, baseCapacity, status, percentage, breakdown };
   }, [employees, allocations, absences, teamEvents]);
 
-  // ... (Resto de getters como getEmployeeMonthlyLoad, etc. IGUAL QUE ANTES) ...
+  // ✅ LOGICA MENSUAL ACTUALIZADA TAMBIÉN
   const getEmployeeMonthlyLoad = useCallback((employeeId: string, year: number, month: number) => {
     const employee = employees.find(e => e.id === employeeId);
     if (!employee) return { hours: 0, capacity: 0, status: 'empty' as LoadStatus, percentage: 0 };
+
     const monthStart = new Date(year, month, 1);
     const weeks = getWeeksForMonth(monthStart);
     let totalHours = 0;
+
     weeks.forEach(week => {
         const storageKey = getStorageKey(week.weekStart, monthStart);
         const tasks = allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === storageKey);
-        const weekTotal = tasks.reduce((sum, t) => sum + Number(t.hoursAssigned), 0);
+        
+        // Suma inteligente (Real vs Estimado)
+        const weekTotal = tasks.reduce((sum, a) => {
+            const hoursToCount = (a.status === 'completed' && (a.hoursActual || 0) > 0) 
+                ? Number(a.hoursActual) 
+                : Number(a.hoursAssigned);
+            return sum + hoursToCount;
+        }, 0);
+        
         totalHours += weekTotal;
     });
+    
     totalHours = round2(totalHours);
     const monthEnd = new Date(year, month + 1, 0);
     let capacity = getMonthlyCapacity(year, month, employee.workSchedule);
@@ -294,11 +338,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     else if (percentage <= 85) { status = 'healthy'; }
     else if (percentage <= 100) { status = 'warning'; }
     else { status = 'overload'; }
+
     return { hours: totalHours, capacity, status, percentage };
   }, [employees, allocations, absences, teamEvents]);
 
-  const getProjectHoursForMonth = useCallback((projectId: string, month: Date) => { const project = projects.find(p => p.id === projectId); if (!project) return { used: 0, budget: 0, available: 0, percentage: 0 }; const weeks = getWeeksForMonth(month); let usedHours = 0; weeks.forEach(week => { const storageKey = getStorageKey(week.weekStart, month); const tasks = allocations.filter(a => a.projectId === projectId && a.weekStartDate === storageKey); usedHours += tasks.reduce((sum, t) => sum + Number(t.hoursAssigned), 0); }); usedHours = round2(usedHours); const available = round2(Math.max(0, project.budgetHours - usedHours)); const percentage = project.budgetHours > 0 ? round2((usedHours / project.budgetHours) * 100) : 0; return { used: usedHours, budget: project.budgetHours, available, percentage }; }, [projects, allocations]);
-  const getClientTotalHoursForMonth = useCallback((clientId: string, month: Date) => { const clientProjects = projects.filter(p => p.clientId === clientId); const weeks = getWeeksForMonth(month); let totalUsed = 0; let totalBudget = 0; clientProjects.forEach(project => { totalBudget += Number(project.budgetHours); weeks.forEach(week => { const storageKey = getStorageKey(week.weekStart, month); const tasks = allocations.filter(a => a.projectId === project.id && a.weekStartDate === storageKey); totalUsed += tasks.reduce((sum, t) => sum + Number(t.hoursAssigned), 0); }); }); totalUsed = round2(totalUsed); totalBudget = round2(totalBudget); const percentage = totalBudget > 0 ? round2((totalUsed / totalBudget) * 100) : 0; return { used: totalUsed, budget: totalBudget, percentage }; }, [projects, allocations]);
+  // ✅ PROJECT HOURS ACTUALIZADO (Usado = Real si completado)
+  const getProjectHoursForMonth = useCallback((projectId: string, month: Date) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return { used: 0, budget: 0, available: 0, percentage: 0 };
+
+    const weeks = getWeeksForMonth(month);
+    let usedHours = 0;
+
+    weeks.forEach(week => {
+        const storageKey = getStorageKey(week.weekStart, month);
+        const tasks = allocations.filter(a => a.projectId === projectId && a.weekStartDate === storageKey);
+        
+        usedHours += tasks.reduce((sum, a) => {
+            // Contamos la realidad si está cerrada
+            const hoursToCount = (a.status === 'completed' && (a.hoursActual || 0) > 0) 
+                ? Number(a.hoursActual) 
+                : Number(a.hoursAssigned);
+            return sum + hoursToCount;
+        }, 0);
+    });
+    usedHours = round2(usedHours);
+
+    const available = round2(Math.max(0, project.budgetHours - usedHours));
+    const percentage = project.budgetHours > 0 ? round2((usedHours / project.budgetHours) * 100) : 0;
+
+    return { used: usedHours, budget: project.budgetHours, available, percentage };
+  }, [projects, allocations]);
+
+  const getClientTotalHoursForMonth = useCallback((clientId: string, month: Date) => {
+    const clientProjects = projects.filter(p => p.clientId === clientId);
+    const weeks = getWeeksForMonth(month);
+    let totalUsed = 0;
+    let totalBudget = 0;
+
+    clientProjects.forEach(project => {
+      totalBudget += Number(project.budgetHours);
+      weeks.forEach(week => {
+        const storageKey = getStorageKey(week.weekStart, month);
+        const tasks = allocations.filter(a => a.projectId === project.id && a.weekStartDate === storageKey);
+        // Suma inteligente
+        totalUsed += tasks.reduce((sum, a) => {
+            const hoursToCount = (a.status === 'completed' && (a.hoursActual || 0) > 0) 
+                ? Number(a.hoursActual) 
+                : Number(a.hoursAssigned);
+            return sum + hoursToCount;
+        }, 0);
+      });
+    });
+
+    totalUsed = round2(totalUsed);
+    totalBudget = round2(totalBudget);
+    const percentage = totalBudget > 0 ? round2((totalUsed / totalBudget) * 100) : 0;
+    return { used: totalUsed, budget: totalBudget, percentage };
+  }, [projects, allocations]);
+
   const getProjectById = useCallback((id: string) => projects.find(p => p.id === id), [projects]);
   const getClientById = useCallback((id: string) => clients.find(c => c.id === id), [clients]);
 
