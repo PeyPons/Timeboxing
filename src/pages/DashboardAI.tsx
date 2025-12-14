@@ -24,22 +24,21 @@ export default function DashboardAI() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: '¡Hola! Soy Minguito. Puedes preguntarme por **proyectos**, **clientes**, **empleados**, **capacidad del equipo**, **sugerencias sobre a quién asignar nuevos proyectos** o el estado de sus **objetivos profesionales**.',
+      content: '¡Hola! Soy Minguito, tu Copiloto PM. Puedes preguntarme por **proyectos**, **clientes**, **empleados**, **capacidad del equipo**, **sugerencias sobre a quién asignar nuevos proyectos** o el estado de sus **objetivos profesionales**.',
       timestamp: new Date()
     }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
-  // Referencia para el auto-scroll
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // Referencia ahora apunta al elemento invisible para forzar el scroll
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // ✅ CORRECCIÓN 2: Lógica de auto-scroll
+  // ✅ SOLUCIÓN 2: Lógica de auto-scroll usando scrollIntoView
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    // Si la referencia existe, haz scroll hacia ella
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]); // Depende de mensajes y estado de carga
 
   const handleSendMessage = async () => {
     if (!input.trim()) return;
@@ -67,7 +66,8 @@ export default function DashboardAI() {
         empleados: employees.filter(e => e.isActive).map(e => ({
           nombre: e.name, 
           rol: e.role,
-          capacidad: e.defaultWeeklyCapacity
+          capacidad: e.defaultWeeklyCapacity,
+          proyeccion_profesional: e.professionalGoal // Incluido el campo
         })),
         proyectos: projects.filter(p => p.status === 'active').map(p => ({
           nombre: p.name,
@@ -87,7 +87,6 @@ export default function DashboardAI() {
         }))
       };
 
-      // ✅ CORRECCIÓN 3: Se añade la instrucción del nombre "Minguito"
       const systemPrompt = `
         Eres un Project Manager Senior, **tu nombre es Minguito**. Analiza estos datos de la agencia:
         ${JSON.stringify(dataContext)}
@@ -95,7 +94,8 @@ export default function DashboardAI() {
         Pregunta: ${userMessage}
         
         Instrucciones:
-        - Sé breve y directo.
+        - Sé breve y directo. // Mantenemos esta instrucción para reducir verbosidad
+        - Limita el uso de saltos de línea innecesarios al inicio y al final de tu respuesta.
         - Si preguntan disponibilidad, calcula (Capacidad - Asignado - Ausencias).
         - Usa negritas (**nombre**) y listas con asteriscos para facilitar la lectura.
         - **Siempre responde como Minguito.**
@@ -114,7 +114,8 @@ export default function DashboardAI() {
       const result = await model.generateContent(systemPrompt);
       const response = result.response;
       
-      const text = response.text(); 
+      // ✅ SOLUCIÓN 1: Usamos .trim() para eliminar saltos de línea iniciales y finales
+      const text = response.text().trim(); 
 
       setMessages(prev => [...prev, { role: 'assistant', content: text, timestamp: new Date() }]);
 
@@ -162,7 +163,8 @@ export default function DashboardAI() {
         </CardHeader>
         
         <CardContent className="flex-1 flex flex-col p-0 overflow-hidden bg-slate-50/50 dark:bg-slate-950/50">
-          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+          {/* Quitamos el ref del ScrollArea ya que apuntará al div interno */}
+          <ScrollArea className="flex-1 p-4">
             <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -184,7 +186,6 @@ export default function DashboardAI() {
                         ? 'bg-red-50 border border-red-200 text-red-700'
                         : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-bl-none prose prose-sm dark:prose-invert'}
                   `}>
-                    {/* --- CAMBIO CLAVE AQUÍ --- */}
                     {msg.role === 'user' ? (
                         msg.content // El mensaje del usuario es texto plano
                     ) : (
@@ -200,12 +201,12 @@ export default function DashboardAI() {
                    <Avatar className="h-8 w-8 mt-1">
                       <AvatarFallback className="bg-indigo-50"><Sparkles className="h-4 w-4 animate-pulse text-indigo-400" /></AvatarFallback>
                     </Avatar>
-                    {/* ✅ CORRECCIÓN 3: Se actualiza el mensaje de carga */}
                     <div className="bg-white dark:bg-slate-900 border px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2 text-sm text-muted-foreground shadow-sm">
                       <Loader2 className="h-3 w-3 animate-spin text-indigo-500" /> Minguito está analizando datos de la agencia...
                     </div>
                 </div>
               )}
+              <div className="pt-2" ref={messagesEndRef} /> 
             </div>
           </ScrollArea>
 
