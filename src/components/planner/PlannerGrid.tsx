@@ -93,6 +93,8 @@ export function PlannerGrid() {
         {/* Week Headers */}
         <div className="flex items-center gap-1 sm:gap-2 pb-3 min-w-[600px]">
           <div className="w-28 sm:w-48 flex-shrink-0" />
+          
+          {/* CORRECCIÓN: El contenedor flex solo envuelve las semanas */}
           <div className="flex flex-1 gap-1 sm:gap-2">
             {weeks.map((week, index) => {
               const isPartialWeek = week.effectiveStart && week.effectiveEnd && (
@@ -120,12 +122,13 @@ export function PlannerGrid() {
                 </div>
               );
             })}
-            {/* Monthly Total Column */}
-            <div className="w-16 sm:w-24 flex-shrink-0 text-center">
-              <span className="text-[10px] sm:text-xs font-medium text-primary uppercase tracking-wide">
-                Total
-              </span>
-            </div>
+          </div>
+
+          {/* CORRECCIÓN: La columna Total ahora está fuera del flex container de semanas */}
+          <div className="w-16 sm:w-24 flex-shrink-0 text-center">
+            <span className="text-[10px] sm:text-xs font-medium text-primary uppercase tracking-wide">
+              Total
+            </span>
           </div>
         </div>
 
