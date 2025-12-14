@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Trash2, User } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
 
@@ -16,10 +16,8 @@ interface EmployeeCardProps {
 
 export function EmployeeCard({ employee }: EmployeeCardProps) {
   const { updateEmployee, deleteEmployee, toggleEmployeeActive } = useApp();
-  // Estado local para edición fluida
   const [schedule, setSchedule] = useState<WorkSchedule>(employee.workSchedule);
 
-  // Sincronizar si cambia desde fuera
   useEffect(() => {
     setSchedule(employee.workSchedule);
   }, [employee.workSchedule]);
@@ -32,11 +30,8 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
     }));
   };
 
-  // ESTA ES LA CLAVE: Guardar en base de datos al salir del input (onBlur)
   const saveSchedule = async () => {
-    // Calculamos nueva capacidad total sumando los días
     const newCapacity = Object.values(schedule).reduce((a, b) => a + b, 0);
-    
     await updateEmployee({
       ...employee,
       workSchedule: schedule,
@@ -76,9 +71,8 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Edición de Horario Diario */}
         <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">Horario Semanal (Horas)</Label>
+          <Label className="text-xs text-muted-foreground">Horario Semanal</Label>
           <div className="grid grid-cols-5 gap-2">
             {days.map((day) => (
               <div key={day.key} className="text-center space-y-1">
@@ -90,7 +84,7 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
                   className="h-8 text-center px-1"
                   value={schedule[day.key]}
                   onChange={(e) => handleScheduleChange(day.key, e.target.value)}
-                  onBlur={saveSchedule} // <--- ¡AQUÍ SE GUARDA!
+                  onBlur={saveSchedule}
                 />
               </div>
             ))}
