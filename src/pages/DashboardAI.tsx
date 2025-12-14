@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import ReactMarkdown from 'react-markdown'; // <--- NUEVA IMPORTACIÓN CLAVE
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,8 +30,11 @@ export default function DashboardAI() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Referencia para el auto-scroll
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // ✅ CORRECCIÓN 2: Lógica de auto-scroll
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -84,8 +87,9 @@ export default function DashboardAI() {
         }))
       };
 
+      // ✅ CORRECCIÓN 3: Se añade la instrucción del nombre "Minguito"
       const systemPrompt = `
-        Eres un Project Manager Senior. Analiza estos datos de la agencia:
+        Eres un Project Manager Senior, **tu nombre es Minguito**. Analiza estos datos de la agencia:
         ${JSON.stringify(dataContext)}
 
         Pregunta: ${userMessage}
@@ -94,6 +98,7 @@ export default function DashboardAI() {
         - Sé breve y directo.
         - Si preguntan disponibilidad, calcula (Capacidad - Asignado - Ausencias).
         - Usa negritas (**nombre**) y listas con asteriscos para facilitar la lectura.
+        - **Siempre responde como Minguito.**
       `;
 
       const model = genAI.getGenerativeModel({ 
@@ -195,8 +200,9 @@ export default function DashboardAI() {
                    <Avatar className="h-8 w-8 mt-1">
                       <AvatarFallback className="bg-indigo-50"><Sparkles className="h-4 w-4 animate-pulse text-indigo-400" /></AvatarFallback>
                     </Avatar>
+                    {/* ✅ CORRECCIÓN 3: Se actualiza el mensaje de carga */}
                     <div className="bg-white dark:bg-slate-900 border px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2 text-sm text-muted-foreground shadow-sm">
-                      <Loader2 className="h-3 w-3 animate-spin text-indigo-500" /> Analizando datos de la agencia...
+                      <Loader2 className="h-3 w-3 animate-spin text-indigo-500" /> Minguito está analizando datos de la agencia...
                     </div>
                 </div>
               )}
