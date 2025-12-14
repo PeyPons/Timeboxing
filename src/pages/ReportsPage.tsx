@@ -5,6 +5,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   BarChart3, 
   Users, 
@@ -16,7 +17,7 @@ import {
   ChevronRight,
   CalendarDays,
   CheckCircle2,
-  PieChart
+  Filter
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
@@ -29,6 +30,9 @@ export default function ReportsPage() {
   // 1. Navegación Temporal
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
+  // ✅ 2. Filtro de Empleado
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
+  
   const handlePrevMonth = () => setCurrentMonth(prev => subMonths(prev, 1));
   const handleNextMonth = () => setCurrentMonth(prev => addMonths(prev, 1));
   const handleToday = () => setCurrentMonth(new Date());
@@ -38,38 +42,52 @@ export default function ReportsPage() {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
-  // --- CÁLCULOS GLOBALES ---
+  // --- FILTRADO DE DATOS BASE ---
+  
+  // Filtrar empleados según selección
+  const activeEmployees = useMemo(() => {
+      if (selectedEmployeeId === 'all') return employees.filter(e => e.isActive);
+      return employees.filter(e => e.id === selectedEmployeeId);
+  }, [employees, selectedEmployeeId]);
 
-  // 1. Capacidad Total del Equipo
-  const totalCapacity = useMemo(() => employees.reduce((sum, e) => {
-    return sum + getMonthlyCapacity(year, month, e.workSchedule);
-  }, 0), [employees, year, month]);
-
-  // 2. Asignaciones del mes (Planificado vs Real)
-  const monthStats = useMemo(() => {
-    const relevantAllocations = allocations.filter(a => {
+  // Filtrar asignaciones relevantes (por fecha y por empleado seleccionado)
+  const monthAllocations = useMemo(() => {
+    return allocations.filter(a => {
       const weekStart = parseISO(a.weekStartDate);
-      return weekStart >= monthStart && weekStart <= monthEnd;
+      const inMonth = weekStart >= monthStart && weekStart <= monthEnd;
+      const matchesEmp = selectedEmployeeId === 'all' || a.employeeId === selectedEmployeeId;
+      return inMonth && matchesEmp;
     });
+  }, [allocations, monthStart, monthEnd, selectedEmployeeId]);
 
-    const planned = relevantAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-    const completed = relevantAllocations
+
+  // --- CÁLCULOS GLOBALES SOBRE DATOS FILTRADOS ---
+
+  // 1. Capacidad Total (Solo de los empleados filtrados)
+  const totalCapacity = useMemo(() => activeEmployees.reduce((sum, e) => {
+    return sum + getMonthlyCapacity(year, month, e.workSchedule);
+  }, 0), [activeEmployees, year, month]);
+
+  // 2. Totales Planificado vs Completado
+  const monthStats = useMemo(() => {
+    const planned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+    const completed = monthAllocations
         .filter(a => a.status === 'completed')
         .reduce((sum, a) => sum + a.hoursAssigned, 0);
 
-    return { planned, completed, raw: relevantAllocations };
-  }, [allocations, monthStart, monthEnd]);
+    return { planned, completed };
+  }, [monthAllocations]);
 
   // Tasa de utilización (Planificada)
   const utilizationRate = totalCapacity > 0 ? (monthStats.planned / totalCapacity) * 100 : 0;
   // Tasa de ejecución (Real)
   const executionRate = monthStats.planned > 0 ? (monthStats.completed / monthStats.planned) * 100 : 0;
 
-  // 3. Datos por Empleado (Ordenados por carga)
+  // 3. Datos por Empleado (Para la tabla)
   const employeeData = useMemo(() => {
-    return employees.map(e => {
+    return activeEmployees.map(e => {
       const capacity = getMonthlyCapacity(year, month, e.workSchedule);
-      const empAllocations = monthStats.raw.filter(a => a.employeeId === e.id);
+      const empAllocations = monthAllocations.filter(a => a.employeeId === e.id);
       
       const plannedHours = empAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
       const completedHours = empAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + a.hoursAssigned, 0);
@@ -79,38 +97,49 @@ export default function ReportsPage() {
 
       return { ...e, plannedHours, completedHours, capacity, percentage, available };
     }).sort((a, b) => b.percentage - a.percentage);
-  }, [employees, monthStats, year, month]);
+  }, [activeEmployees, monthAllocations, year, month]);
 
-  // 4. Datos por Proyecto (Top consumidores)
+  // 4. Datos por Proyecto (Solo aquellos donde el empleado filtrado trabaja)
   const projectData = useMemo(() => {
-    const active = projects.filter(p => p.status === 'active');
-    return active.map(p => {
+    // Si hay filtro de empleado, solo mostramos proyectos donde ese empleado tiene horas ESTE MES
+    const relevantProjectIds = new Set(monthAllocations.map(a => a.projectId));
+    
+    // Si no hay filtro (all), mostramos todos los activos, o todos los que tienen actividad
+    const projectsToShow = selectedEmployeeId === 'all' 
+        ? projects.filter(p => p.status === 'active') 
+        : projects.filter(p => relevantProjectIds.has(p.id));
+
+    return projectsToShow.map(p => {
         const client = clients.find(c => c.id === p.clientId);
-        // Reutilizamos la lógica del contexto para coherencia
-        const stats = getProjectHoursForMonth(p.id, currentMonth);
         
-        // Calculamos completado manualmente aquí para este reporte específico
-        const projAllocations = monthStats.raw.filter(a => a.projectId === p.id);
+        // Calculamos horas usadas EN ESTE MES por LOS EMPLEADOS FILTRADOS
+        // (Nota: getProjectHoursForMonth da el total global, aquí queremos el parcial del reporte)
+        const projAllocations = monthAllocations.filter(a => a.projectId === p.id);
+        const used = projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
         const completed = projAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + a.hoursAssigned, 0);
+
+        // El porcentaje de la barra será sobre el presupuesto total, pero mostrando solo la contribución del filtro
+        const percentage = p.budgetHours > 0 ? (used / p.budgetHours) * 100 : 0;
 
         return {
             ...p,
             clientName: client?.name,
             clientColor: client?.color,
-            hoursUsed: stats.used,
+            hoursUsed: used,
             hoursCompleted: completed,
-            budget: stats.budget,
-            percentage: stats.percentage
+            budget: p.budgetHours,
+            percentage: percentage
         };
-    }).sort((a, b) => b.hoursUsed - a.hoursUsed);
-  }, [projects, clients, currentMonth, monthStats]);
+    }).filter(p => selectedEmployeeId === 'all' || p.hoursUsed > 0) // Limpiar vacíos si hay filtro
+      .sort((a, b) => b.hoursUsed - a.hoursUsed);
+  }, [projects, clients, monthAllocations, selectedEmployeeId]);
 
   // KPIs Superiores
   const stats = [
     {
-      title: 'Capacidad Total',
+      title: 'Capacidad',
       value: `${totalCapacity}h`,
-      subtitle: 'Disponibles este mes',
+      subtitle: selectedEmployeeId === 'all' ? 'Total Equipo' : 'Disponible',
       icon: Users,
       color: 'text-indigo-600',
       bgColor: 'bg-indigo-50',
@@ -132,43 +161,65 @@ export default function ReportsPage() {
       bgColor: 'bg-emerald-50',
     },
     {
-      title: 'Riesgo',
-      value: projectData.filter(p => p.percentage > 100).length,
-      subtitle: 'Proyectos excedidos',
-      icon: AlertTriangle,
-      color: 'text-red-600',
-      bgColor: 'bg-red-50',
+      title: 'Proyectos',
+      value: projectData.length,
+      subtitle: 'Activos este mes',
+      icon: FolderOpen,
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-50',
     },
   ];
 
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
       
-      {/* Cabecera con Navegación */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
-                <BarChart3 className="h-8 w-8 text-indigo-600" />
-                Reportes y Métricas
-            </h1>
-            <p className="text-muted-foreground">
-                Análisis de rendimiento y capacidad del equipo.
-            </p>
-        </div>
-
-        <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-lg border shadow-sm">
-            <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
-                <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-2 px-2 min-w-[140px] justify-center font-medium">
-                <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                <span className="capitalize">{format(currentMonth, 'MMMM yyyy', { locale: es })}</span>
+      {/* Cabecera con Navegación y Filtros */}
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
+                    <BarChart3 className="h-8 w-8 text-indigo-600" />
+                    Reportes y Métricas
+                </h1>
+                <p className="text-muted-foreground">
+                    Análisis de rendimiento {selectedEmployeeId !== 'all' ? 'individual' : 'del equipo'}.
+                </p>
             </div>
-            <Button variant="ghost" size="icon" onClick={handleNextMonth}>
-                <ChevronRight className="h-4 w-4" />
-            </Button>
-            <div className="w-px h-6 bg-border mx-1" />
-            <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">Hoy</Button>
+
+            <div className="flex items-center gap-4">
+                {/* Selector de Empleado */}
+                <div className="w-[200px]">
+                    <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                        <SelectTrigger className="bg-white">
+                            <div className="flex items-center gap-2">
+                                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                                <SelectValue placeholder="Filtrar..." />
+                            </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todo el Equipo</SelectItem>
+                            {employees.filter(e => e.isActive).map(emp => (
+                                <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-lg border shadow-sm">
+                    <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
+                        <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="flex items-center gap-2 px-2 min-w-[140px] justify-center font-medium">
+                        <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                        <span className="capitalize">{format(currentMonth, 'MMMM yyyy', { locale: es })}</span>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={handleNextMonth}>
+                        <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <div className="w-px h-6 bg-border mx-1" />
+                    <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">Hoy</Button>
+                </div>
+            </div>
         </div>
       </div>
 
@@ -194,7 +245,7 @@ export default function ReportsPage() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Visión General</TabsTrigger>
-          <TabsTrigger value="team">Equipo y Carga</TabsTrigger>
+          <TabsTrigger value="team">Desglose Carga</TabsTrigger>
           <TabsTrigger value="projects">Proyectos</TabsTrigger>
         </TabsList>
 
@@ -202,10 +253,10 @@ export default function ReportsPage() {
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
             
-            {/* Gráfico de Utilización (Texto + Barras) */}
+            {/* Gráfico de Utilización */}
             <Card className="col-span-4">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /> Eficiencia Global</CardTitle>
+                <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /> Eficiencia {selectedEmployeeId !== 'all' ? 'Personal' : 'Global'}</CardTitle>
                 <CardDescription>Comparativa entre horas disponibles, planificadas y reales.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-8">
@@ -242,11 +293,11 @@ export default function ReportsPage() {
               </CardContent>
             </Card>
 
-            {/* Top Proyectos Consumidores */}
+            {/* Top Proyectos */}
             <Card className="col-span-3">
               <CardHeader>
-                <CardTitle>Top Consumo</CardTitle>
-                <CardDescription>Proyectos con más horas este mes.</CardDescription>
+                <CardTitle>Top Proyectos</CardTitle>
+                <CardDescription>Donde se invierte más tiempo este mes.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -262,6 +313,7 @@ export default function ReportsPage() {
                             <div className="font-bold text-sm tabular-nums">{p.hoursUsed}h</div>
                         </div>
                     ))}
+                    {projectData.length === 0 && <p className="text-sm text-muted-foreground text-center">Sin actividad registrada.</p>}
                 </div>
               </CardContent>
             </Card>
@@ -272,8 +324,8 @@ export default function ReportsPage() {
         <TabsContent value="team" className="space-y-4">
             <Card>
                 <CardHeader>
-                    <CardTitle>Carga de Trabajo por Empleado</CardTitle>
-                    <CardDescription>Identifica quién está sobrecargado y quién tiene disponibilidad.</CardDescription>
+                    <CardTitle>Carga de Trabajo</CardTitle>
+                    <CardDescription>Análisis detallado de horas y disponibilidad.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-6">
@@ -303,7 +355,6 @@ export default function ReportsPage() {
                                         </span>
                                     </div>
                                     <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                        {/* Barra Planificada */}
                                         <div 
                                             className={cn("absolute top-0 left-0 h-full transition-all", 
                                                 emp.percentage > 100 ? "bg-red-500" : 
@@ -311,7 +362,6 @@ export default function ReportsPage() {
                                             )}
                                             style={{ width: `${Math.min(emp.percentage, 100)}%` }}
                                         />
-                                        {/* Barra Completada (Superpuesta, más oscura) */}
                                         <div 
                                             className="absolute top-0 left-0 h-full bg-black/20 transition-all"
                                             style={{ width: `${(emp.completedHours / emp.capacity) * 100}%` }}
@@ -362,7 +412,7 @@ export default function ReportsPage() {
                         <CardContent>
                             <div className="mt-2 space-y-3">
                                 <div className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">Consumo Mes</span>
+                                    <span className="text-muted-foreground">Consumo Mes ({selectedEmployeeId !== 'all' ? 'Filtrado' : 'Total'})</span>
                                     <span className="font-bold">{p.hoursUsed}h</span>
                                 </div>
                                 <Progress value={p.percentage} className={cn("h-2", p.percentage > 100 ? "[&>div]:bg-red-500" : "")} />
@@ -379,6 +429,11 @@ export default function ReportsPage() {
                         </CardContent>
                     </Card>
                 ))}
+                {projectData.length === 0 && (
+                    <div className="col-span-full text-center py-10 text-muted-foreground">
+                        No hay proyectos con actividad para esta selección.
+                    </div>
+                )}
             </div>
         </TabsContent>
       </Tabs>
@@ -386,5 +441,4 @@ export default function ReportsPage() {
   );
 }
 
-// Helper pequeño para redondeo visual
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
