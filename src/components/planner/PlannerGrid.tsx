@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge';
 import { format, max, min, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
+// ✅ IMPORTAR LA IA DE GOOGLE
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export function PlannerGrid() {
@@ -61,7 +62,8 @@ export function PlannerGrid() {
   const filteredEmployees = employees.filter(e => {
     if (!e.isActive) return false;
     if (showOnlyMe) {
-        return e.name.toLowerCase().includes("alex");
+        // En una app real esto sería el ID del usuario. Simulamos filtro por nombre.
+        return e.name.toLowerCase().includes("alex"); 
     }
     if (selectedTeam !== 'all' && e.role !== selectedTeam) return false;
     return true;
@@ -72,60 +74,49 @@ export function PlannerGrid() {
   const handleToday = () => setCurrentMonth(new Date());
   const handleCellClick = (employeeId: string, weekStart: string) => setSelectedCell({ employeeId, weekStart });
 
-  // ✅ FUNCIÓN DE IA REAL CONECTADA A GEMINI
+  // ✅ FUNCIÓN DE IA REAL
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setInsights(null);
 
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
-        setInsights([{ type: 'warning', text: 'Falta la API Key de Gemini en .env' }]);
+        setInsights([{ type: 'warning', text: '⚠️ Falta la API Key en .env' }]);
         setIsAnalyzing(false);
         return;
     }
 
     try {
-        // 1. Preparar datos para la IA
+        // Recopilamos datos anónimos de carga
         const staffData = filteredEmployees.map(e => {
             const load = getEmployeeMonthlyLoad(e.id, year, month);
             return {
-                name: e.name,
                 role: e.role,
-                hours: load.hours,
-                capacity: load.capacity,
-                status: load.status
+                loadPercentage: load.percentage
             };
         });
 
         const prompt = `
-            Actúa como Project Manager. Analiza estos datos de carga de trabajo para ${getMonthName(currentMonth)}:
+            Analiza estos datos de carga de equipo para ${getMonthName(currentMonth)}:
             ${JSON.stringify(staffData)}
             
-            Detecta:
-            1. Sobrecargas críticas.
-            2. Personas con baja carga (oportunidades).
-            3. Balance general.
-
-            Responde ÚNICAMENTE con un JSON válido que sea un array de objetos con este formato:
-            [{"type": "warning" | "success" | "info", "text": "Mensaje corto y directo"}]
-            No uses markdown, solo el JSON raw.
+            Dame 3 insights breves en JSON:
+            [{"type": "warning"|"success"|"info", "text": "..."}]
+            Ejemplos: "Sobrecarga en Diseño", "Capacidad libre en Dev".
         `;
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-        
         const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
+        const text = result.response.text();
         
-        // Limpieza básica por si la IA envuelve en markdown
-        const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsedInsights = JSON.parse(cleanJson);
-
-        setInsights(parsedInsights);
+        // Limpiamos el JSON (a veces la IA mete markdown)
+        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        setInsights(JSON.parse(jsonStr));
 
     } catch (error) {
         console.error("Error IA:", error);
-        setInsights([{ type: 'warning', text: 'Error al conectar con Minguito. Inténtalo de nuevo.' }]);
+        setInsights([{ type: 'warning', text: 'Error al conectar con Minguito.' }]);
     } finally {
         setIsAnalyzing(false);
     }
@@ -135,7 +126,7 @@ export function PlannerGrid() {
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 rounded-lg border shadow-sm overflow-hidden">
-      {/* CABECERA */}
+      {/* Cabecera */}
       <div className="flex flex-col gap-4 border-b bg-card px-4 py-3 z-20 relative">
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -209,7 +200,7 @@ export function PlannerGrid() {
         </div>
       </div>
 
-      {/* GRID */}
+      {/* Grid */}
       <div className="flex-1 overflow-auto custom-scrollbar bg-slate-50/50 dark:bg-slate-900/50">
         <div style={{ minWidth: '1000px' }}>
             <div className="grid sticky top-0 z-10 bg-white dark:bg-slate-950 border-b shadow-sm" style={{ gridTemplateColumns: gridTemplate }}>
