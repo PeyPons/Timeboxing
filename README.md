@@ -6,16 +6,16 @@
 ![Supabase](https://img.shields.io/badge/Supabase-181818?style=for-the-badge&logo=supabase&logoColor=3ECF8E)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
 
-Una aplicación moderna para la gestión de recursos, planificación de equipos y control de horas (Timeboxing). Diseñada para agencias y equipos que necesitan optimizar la asignación de tareas semanales evitando la sobrecarga de trabajo.
+Una aplicación moderna para la gestión de recursos, planificación de equipos y control de horas (*timeboxing*). Diseñada para agencias y equipos que necesitan optimizar la asignación de tareas semanales evitando la sobrecarga de trabajo.
 
-## ✨ Características Principales
+## ✨ Características principales
 
-* **👥 Gestión de Equipo:** Administración de empleados, roles y capacidades semanales.
-* **🗓️ Planificador Visual:** Interfaz intuitiva para asignar proyectos y horas a cada miembro del equipo.
-* **🧠 Asignación Inteligente:** Cálculos automáticos de carga de trabajo, detectando sobrecargas o disponibilidad en tiempo real.
-* **🏖️ Gestión de Ausencias:** Control de vacaciones y bajas que ajusta automáticamente la capacidad disponible del empleado.
-* **📊 Proyectos y Clientes:** Base de datos centralizada de clientes y proyectos con control de presupuestos de horas.
-* **⚡ Edición Rápida:** Formularios modales optimizados para una gestión ágil sin recargas.
+* **👥 Gestión de equipo:** Administración de empleados, roles y capacidades semanales.
+* **🗓️ Planificador visual:** Interfaz intuitiva para asignar proyectos y horas a cada miembro del equipo.
+* **🧠 Asignación inteligente:** Cálculos automáticos de carga de trabajo, detectando sobrecargas o disponibilidad en tiempo real.
+* **🏖️ Gestión de ausencias:** Control de vacaciones y bajas que ajusta automáticamente la capacidad disponible del empleado.
+* **📊 Proyectos y clientes:** Base de datos centralizada de clientes y proyectos con control de presupuestos de horas.
+* **⚡ Edición rápida:** Formularios modales optimizados para una gestión ágil sin recargas.
 
 ## 🛠️ Tecnologías
 
@@ -24,7 +24,7 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
 * **Backend / DB:** Supabase (PostgreSQL + Auth).
 * **Estado:** React Context API + Hooks personalizados.
 
-## 🚀 Instalación y Uso
+## 🚀 Instalación y uso
 
 1.  **Clonar el repositorio**
     ```bash
@@ -39,7 +39,7 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
     bun install
     ```
 
-3.  **Configurar Variables de Entorno**
+3.  **Configurar variables de entorno**
     Crea un archivo `.env` en la raíz del proyecto con tus credenciales de Supabase:
     ```env
     VITE_SUPABASE_URL=tu_url_de_supabase
@@ -51,7 +51,7 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
     npm run dev
     ```
 
-## 🗄️ Estructura de Base de Datos (Supabase)
+## 🗄️ Estructura de base de datos (Supabase)
 
 El proyecto requiere las siguientes tablas en Supabase:
 * `employees`: Datos del personal y configuración horaria.
@@ -63,7 +63,7 @@ El proyecto requiere las siguientes tablas en Supabase:
 
 ## 🤝 Contribución
 
-Las contribuciones son bienvenidas. Por favor, abre un issue primero para discutir lo que te gustaría cambiar.
+Las contribuciones son bienvenidas. Por favor, abre un *issue* primero para discutir lo que te gustaría cambiar.
 
 ---
 Desarrollado con ❤️ por Alexander y sus coleguitas Lovable y Gemini
