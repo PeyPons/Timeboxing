@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Trash2 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
+import { ProfessionalGoalsSheet } from './ProfessionalGoalsSheet';
+import { Trophy } from 'lucide-react';
 
 interface EmployeeCardProps {
   employee: Employee;
