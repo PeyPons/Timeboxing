@@ -50,32 +50,6 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-// ✅ CÁLCULO PROPORCIONAL: Determina cuánto de una semana pertenece al mes
-const getWeekProportionInMonth = (weekStartStr: string, monthStart: Date, monthEnd: Date): number => {
-    const weekStart = new Date(weekStartStr);
-    // Asumimos semana laboral de 5 días (Lunes a Viernes) para el reparto de horas
-    const weekEnd = addDays(weekStart, 4); 
-    
-    // Si la semana no toca el mes, 0
-    if (weekEnd < monthStart || weekStart > monthEnd) return 0;
-    
-    // Si la semana está totalmente dentro, 1
-    if (weekStart >= monthStart && weekEnd <= monthEnd) return 1;
-
-    // Si toca parcialmente, contamos cuántos días laborables caen dentro
-    let daysInMonth = 0;
-    let current = weekStart;
-    for (let i = 0; i < 5; i++) {
-        if (current >= monthStart && current <= monthEnd) {
-            daysInMonth++;
-        }
-        current = addDays(current, 1);
-    }
-    
-    // Retornamos la proporción (ej: 2 días = 0.4)
-    return daysInMonth / 5;
-};
-
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -162,7 +136,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     fetchData();
   }, [fetchData]);
 
-  // CRUD OPERATIONS
+  // --- CRUD OPERATIONS ---
   const addProfessionalGoal = useCallback(async (goal: Omit<ProfessionalGoal, 'id'>) => {
     const { data } = await supabase.from('professional_goals').insert({
       employee_id: goal.employeeId,
@@ -379,6 +353,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let capacity: number;
     const weekStartDate = new Date(weekStart);
     const weekEndDate = addDays(weekStartDate, 6);
+    
     const rangeStart = effectiveStart || weekStartDate;
     const rangeEnd = effectiveEnd || weekEndDate;
     
@@ -409,7 +384,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity, status, percentage };
   }, [employees, allocations, absences, teamEvents]);
 
-  // ✅ AQUÍ ESTÁ EL CAMBIO CRUCIAL PARA LA INDEPENDENCIA MENSUAL
+  // ✅ CORRECCIÓN: SUMA MENSUAL EXACTA USANDO FECHAS
   const getEmployeeMonthlyLoad = useCallback((employeeId: string, year: number, month: number) => {
     const employee = employees.find(e => e.id === employeeId);
     if (!employee) return { hours: 0, capacity: 0, status: 'empty' as LoadStatus, percentage: 0 };
@@ -417,23 +392,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const monthStart = new Date(year, month, 1);
     const monthEnd = new Date(year, month + 1, 0);
 
-    // 1. Buscamos cualquier asignación que toque el mes
-    const relevantAllocations = allocations.filter(a => {
+    // Sumar solo asignaciones cuyo weekStartDate caiga en este mes
+    // Gracias a la lógica de llaves, si una tarea es de "Enero", su fecha será 2025-01-01
+    // Si es de "Diciembre", será 2024-12-29.
+    const monthAllocations = allocations.filter(a => {
       if (a.employeeId !== employeeId) return false;
       const weekStart = new Date(a.weekStartDate);
-      const weekEnd = addDays(weekStart, 6);
-      return weekStart <= monthEnd && weekEnd >= monthStart;
+      return weekStart >= monthStart && weekStart <= monthEnd;
     });
 
-    // 2. Sumamos SOLO la parte proporcional que cae en este mes
-    let totalHours = 0;
-    relevantAllocations.forEach(alloc => {
-        const proportion = getWeekProportionInMonth(alloc.weekStartDate, monthStart, monthEnd);
-        totalHours += (Number(alloc.hoursAssigned) * proportion);
-    });
-    totalHours = round2(totalHours);
-
-    // 3. Resto de cálculos de capacidad (ya correctos)
+    const totalHours = round2(monthAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0));
+    
     let capacity = getMonthlyCapacity(year, month, employee.workSchedule);
     
     const employeeAbsences = absences.filter(a => a.employeeId === employeeId);
@@ -456,7 +425,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity, status, percentage };
   }, [employees, allocations, absences, teamEvents]);
 
-  // ✅ APLICAR PRORRATEO TAMBIÉN A PROYECTOS Y CLIENTES
   const getProjectHoursForMonth = useCallback((projectId: string, month: Date) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return { used: 0, budget: 0, available: 0, percentage: 0 };
@@ -464,20 +432,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
     const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
 
+    // ✅ MISMA LÓGICA DE FILTRO ESTRICTO
     const projectAllocations = allocations.filter(a => {
-        if (a.projectId !== projectId) return false;
-        const weekStart = new Date(a.weekStartDate);
-        const weekEnd = addDays(weekStart, 6);
-        return weekStart <= monthEnd && weekEnd >= monthStart;
+      if (a.projectId !== projectId) return false;
+      const weekStart = new Date(a.weekStartDate);
+      return weekStart >= monthStart && weekStart <= monthEnd;
     });
 
-    let usedHours = 0;
-    projectAllocations.forEach(alloc => {
-        const proportion = getWeekProportionInMonth(alloc.weekStartDate, monthStart, monthEnd);
-        usedHours += (Number(alloc.hoursAssigned) * proportion);
-    });
-    usedHours = round2(usedHours);
-
+    const usedHours = round2(projectAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0));
     const available = round2(Math.max(0, project.budgetHours - usedHours));
     const percentage = project.budgetHours > 0 ? round2((usedHours / project.budgetHours) * 100) : 0;
 
@@ -497,14 +459,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const projectAllocations = allocations.filter(a => {
         if (a.projectId !== project.id) return false;
         const weekStart = new Date(a.weekStartDate);
-        const weekEnd = addDays(weekStart, 6);
-        return weekStart <= monthEnd && weekEnd >= monthStart;
+        return weekStart >= monthStart && weekStart <= monthEnd;
       });
-      
-      projectAllocations.forEach(alloc => {
-          const proportion = getWeekProportionInMonth(alloc.weekStartDate, monthStart, monthEnd);
-          totalUsed += (Number(alloc.hoursAssigned) * proportion);
-      });
+      totalUsed += projectAllocations.reduce((sum, a) => sum + Number(a.hoursAssigned), 0);
     });
 
     totalUsed = round2(totalUsed);
