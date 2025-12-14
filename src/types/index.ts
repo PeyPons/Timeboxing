@@ -50,6 +50,7 @@ export interface Allocation {
   hoursAssigned: number;
   status: 'planned' | 'completed';
   description?: string;
+  taskName?: string;
 }
 
 export type LoadStatus = 'empty' | 'healthy' | 'warning' | 'overload';
