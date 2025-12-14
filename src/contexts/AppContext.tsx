@@ -189,7 +189,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       client_id: project.clientId,
       name: project.name,
       status: project.status,
-      budget_hours: project.budgetHours
+      budget_hours: project.budgetHours,
+      minimum_hours: project.minimumHours // <--- Añadir esto
     }).select().single();
     if (data) {
       setProjects(prev => [...prev, { ...data, clientId: data.client_id, budgetHours: data.budget_hours }]);
@@ -202,7 +203,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       client_id: project.clientId,
       name: project.name,
       status: project.status,
-      budget_hours: project.budgetHours
+      budget_hours: project.budgetHours,
+      minimum_hours: project.minimumHours // <--- Añadir esto
     }).eq('id', project.id);
   }, []);
 
