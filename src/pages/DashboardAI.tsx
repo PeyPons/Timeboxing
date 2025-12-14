@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Bot, Send, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
+import { Bot, Send, Sparkles, Loader2 } from 'lucide-react';
 
+// Inicializar la API de Gemini (asegúrate de que la clave sea correcta en .env)
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
 
 interface Message {
@@ -19,13 +20,11 @@ interface Message {
 }
 
 export default function DashboardAI() {
-  // ✅ AHORA IMPORTAMOS professionalGoals
   const { employees, projects, allocations, absences, clients, professionalGoals } = useApp();
-  
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: '¡Hola! Soy Minguito. Pregúntame sobre la carga de trabajo, proyectos o la proyección profesional del equipo.',
+      content: '¡Hola! Soy Minguito. Pregúntame sobre la carga de trabajo, proyectos o los OKRs del equipo.',
       timestamp: new Date()
     }
   ]);
@@ -42,8 +41,9 @@ export default function DashboardAI() {
   const handleSendMessage = async () => {
     if (!input.trim()) return;
     
+    // Verificación de seguridad de la API Key
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
-        setMessages(prev => [...prev, { role: 'assistant', content: "⚠️ Error: API Key no detectada. Revisa tu archivo .env", timestamp: new Date(), isError: true }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: "⚠️ Error: No detecto la API Key en el archivo .env. Por favor, añádela y reinicia la terminal.", timestamp: new Date(), isError: true }]);
         return;
     }
 
@@ -55,56 +55,65 @@ export default function DashboardAI() {
     try {
       const today = new Date();
       
+      // Construcción del contexto enriquecido con OKRs
       const dataContext = {
-        fecha_hoy: today.toLocaleDateString(),
+        fecha_actual: today.toLocaleDateString(),
         empleados: employees.filter(e => e.isActive).map(e => {
-            // ✅ Cruzar datos de OKRs
+            // Buscamos los objetivos de este empleado
             const goals = professionalGoals.filter(g => g.employeeId === e.id).map(g => ({
-                titulo: g.title,
-                resultados: g.keyResults,
-                progreso: g.progress + '%'
+                objetivo: g.title,
+                resultados_clave: g.keyResults,
+                estado: `${g.progress}% completado`,
+                fecha_fin: g.dueDate
             }));
 
             return {
-                id: e.id,
                 nombre: e.name, 
                 rol: e.role,
-                capacidad: e.defaultWeeklyCapacity,
-                okrs: goals.length > 0 ? goals : "Sin objetivos definidos"
+                capacidad_semanal: e.defaultWeeklyCapacity,
+                okrs_proyeccion: goals.length > 0 ? goals : "Sin objetivos definidos actualmente"
             };
         }),
-        proyectos: projects.filter(p => p.status === 'active').map(p => ({
+        proyectos_activos: projects.filter(p => p.status === 'active').map(p => ({
           nombre: p.name,
-          cliente: clients.find(c => c.id === p.clientId)?.name || 'Sin cliente',
-          presupuesto: p.budgetHours
+          cliente: clients.find(c => c.id === p.clientId)?.name || 'N/A',
+          horas_presupuesto: p.budgetHours
         })),
-        ausencias: absences.filter(a => new Date(a.endDate) >= today).map(a => ({
-          empleado: employees.find(e => e.id === a.employeeId)?.name,
+        eventos_ausencias: absences.filter(a => new Date(a.endDate) >= today).map(a => ({
+          quien: employees.find(e => e.id === a.employeeId)?.name,
           tipo: a.type,
-          fin: a.endDate
+          hasta: a.endDate
         }))
       };
 
       const systemPrompt = `
-        Eres Minguito, un Project Manager Senior.
-        Analiza estos datos (JSON):
+        Actúa como Minguito, el Project Manager de esta agencia.
+        Tienes acceso a los siguientes datos en tiempo real (JSON):
         ${JSON.stringify(dataContext)}
 
-        Pregunta: "${userMessage}"
-        
-        Responde de forma útil, usando Markdown (negritas, listas).
-        Si preguntan por objetivos/proyección, usa el campo "okrs".
+        La pregunta del usuario es: "${userMessage}"
+
+        Instrucciones:
+        1. Responde de forma clara, profesional y empática.
+        2. Si preguntan por una persona, menciona su carga y sus objetivos profesionales (OKRs) para dar contexto de su crecimiento.
+        3. Si detectas conflictos (ej: alguien con mucha carga y muchos objetivos), avísalo.
+        4. Usa formato Markdown (negritas, listas) para que sea legible.
       `;
 
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      // Usamos el modelo flash por rapidez y eficiencia
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const result = await model.generateContent(systemPrompt);
       const text = result.response.text(); 
 
       setMessages(prev => [...prev, { role: 'assistant', content: text, timestamp: new Date() }]);
 
     } catch (error: any) {
-      console.error(error);
-      setMessages(prev => [...prev, { role: 'assistant', content: "Minguito tuvo un error de conexión.", timestamp: new Date(), isError: true }]);
+      console.error("Error IA:", error);
+      let errorMsg = "Minguito tuvo un problema técnico.";
+      if (error.message?.includes("API key")) errorMsg = "Error de API Key. Verifícala.";
+      if (error.message?.includes("400")) errorMsg = "La solicitud fue rechazada por seguridad o formato.";
+      
+      setMessages(prev => [...prev, { role: 'assistant', content: errorMsg, timestamp: new Date(), isError: true }]);
     } finally {
       setIsLoading(false);
     }
@@ -116,14 +125,14 @@ export default function DashboardAI() {
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
           <Sparkles className="h-8 w-8 text-indigo-500" /> Copiloto IA
         </h1>
-        <p className="text-muted-foreground">Tu Project Manager virtual.</p>
+        <p className="text-muted-foreground">Tu asistente de gestión. Conectado a Proyectos, RRHH y OKRs.</p>
       </div>
 
       <Card className="flex-1 flex flex-col overflow-hidden shadow-lg border-indigo-100 dark:border-indigo-900/50">
         <CardHeader className="bg-muted/30 border-b pb-4 py-3">
           <div className="flex items-center gap-2">
             <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs font-medium text-muted-foreground">Sistema Online • Minguito</span>
+            <span className="text-xs font-medium text-muted-foreground">Minguito v2.0 • Online</span>
           </div>
         </CardHeader>
         
@@ -147,7 +156,7 @@ export default function DashboardAI() {
                 <div className="flex gap-3 justify-start">
                    <Avatar className="h-8 w-8 mt-1"><AvatarFallback className="bg-indigo-50"><Sparkles className="h-4 w-4 animate-pulse text-indigo-400" /></AvatarFallback></Avatar>
                     <div className="bg-white dark:bg-slate-900 border px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2 text-sm text-muted-foreground shadow-sm">
-                      <Loader2 className="h-3 w-3 animate-spin text-indigo-500" /> Minguito está analizando...
+                      <Loader2 className="h-3 w-3 animate-spin text-indigo-500" /> Analizando datos...
                     </div>
                 </div>
               )}
@@ -156,7 +165,7 @@ export default function DashboardAI() {
 
           <div className="p-4 bg-background border-t">
             <div className="max-w-3xl mx-auto flex gap-3">
-              <Input placeholder="Pregunta a Minguito..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} className="flex-1" />
+              <Input placeholder="Ej: ¿Cómo va la proyección de Miguel?" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} className="flex-1" />
               <Button onClick={handleSendMessage} disabled={isLoading || !input.trim()} className="bg-indigo-600 hover:bg-indigo-700"><Send className="h-4 w-4" /></Button>
             </div>
           </div>
