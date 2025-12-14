@@ -21,7 +21,10 @@ export function PlannerGrid() {
 
   const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  
+  // ✅ CAMBIO: LÓGICA DE "MES ACTUAL"
   const handleToday = () => setCurrentMonth(new Date());
+  
   const handleCellClick = (employeeId: string, weekStart: string) => setSelectedCell({ employeeId, weekStart });
 
   // 📐 ESTRUCTURA MAESTRA DEL GRID:
@@ -36,7 +39,11 @@ export function PlannerGrid() {
           <h2 className="text-xl font-bold capitalize text-foreground">{getMonthName(currentMonth)}</h2>
           <div className="flex items-center gap-1">
             <Button variant="outline" size="icon" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-            <Button variant="outline" size="sm" onClick={handleToday}><CalendarDays className="h-4 w-4 mr-2" />Hoy</Button>
+            {/* ✅ BOTÓN RENOMBRADO A MES ACTUAL */}
+            <Button variant="outline" size="sm" onClick={handleToday} className="gap-2 h-9">
+                <CalendarDays className="h-4 w-4" />
+                <span className="hidden sm:inline">Mes Actual</span>
+            </Button>
             <Button variant="outline" size="icon" onClick={handleNextMonth}><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
@@ -91,15 +98,14 @@ export function PlannerGrid() {
                     return (
                         <div key={employee.id} className="grid border-b hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors group bg-white dark:bg-slate-950" style={{ gridTemplateColumns: gridTemplate }}>
                             
-                            {/* Pasamos el estilo grid al componente fila o lo renderizamos aquí. 
-                                Para mantener la lógica separada, EmployeeRow renderizará las CELDAS INTERNAS usando un Fragment */}
+                            {/* Componente Row */}
                             <EmployeeRow 
                                 employee={employee} 
                                 weeks={weeks} 
                                 onCellClick={handleCellClick} 
                             />
                             
-                            {/* Celda Total Mensual (Renderizada aquí para estar en el Grid padre) */}
+                            {/* Celda Total Mensual */}
                             <div className="flex items-center justify-center border-l p-2 bg-slate-50/30 dark:bg-slate-900/30">
                                 <div className={cn(
                                     "flex flex-col items-center justify-center w-16 h-12 rounded-lg border-2",
