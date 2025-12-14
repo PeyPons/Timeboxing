@@ -1,9 +1,11 @@
 import { cn } from '@/lib/utils';
-import { LoadStatus } from '@/types';
-import { AlertTriangle, Palmtree, Trophy, CheckCircle2 } from 'lucide-react'; // Añadidos iconos
+import { LoadStatus, Allocation } from '@/types';
+import { AlertTriangle, Palmtree, Trophy } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
 
 interface WeekCellProps {
+  allocations?: Allocation[]; // Recibido para evitar errores de tipo, aunque no usado visualmente
   hours: number;
   capacity: number;
   status: LoadStatus;
@@ -29,7 +31,7 @@ export function WeekCell({
   
   const loadPercentage = percentage ?? (capacity > 0 ? (hours / capacity) * 100 : 0);
   
-  // 🎯 LÓGICA DE GAMIFICACIÓN
+  // 🎯 GAMIFICACIÓN
   const isSweetSpot = loadPercentage >= 85 && loadPercentage <= 95;
 
   const statusClasses = {
@@ -37,7 +39,6 @@ export function WeekCell({
     healthy: 'bg-green-50/50 border-green-200 hover:bg-green-100/50 dark:bg-green-900/10 dark:border-green-900/30',
     warning: 'bg-yellow-50/50 border-yellow-200 hover:bg-yellow-100/50 dark:bg-yellow-900/10 dark:border-yellow-900/30',
     overload: 'bg-red-50/50 border-red-200 hover:bg-red-100/50 dark:bg-red-900/10 dark:border-red-900/30',
-    // ✨ Clase especial para el objetivo cumplido
     sweetSpot: 'bg-indigo-50 border-indigo-300 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-700'
   };
 
@@ -54,10 +55,9 @@ export function WeekCell({
       healthy: 'bg-green-500',
       warning: 'bg-yellow-500',
       overload: 'bg-red-500',
-      sweetSpot: 'bg-indigo-500' // Barra violeta
+      sweetSpot: 'bg-indigo-500'
   };
 
-  // Determinar la clase final
   const currentStatusClass = isSweetSpot ? statusClasses.sweetSpot : statusClasses[status];
   const currentTextClass = isSweetSpot ? textClasses.sweetSpot : textClasses[status];
   const currentBarClass = isSweetSpot ? barColor.sweetSpot : barColor[status];
@@ -75,15 +75,12 @@ export function WeekCell({
             hasAbsence && "border-dashed"
           )}
         >
-          {/* Iconos de estado (Esquinas) */}
           <div className="absolute top-1.5 right-1.5 flex gap-1">
             {status === 'overload' && <AlertTriangle className="h-3.5 w-3.5 text-red-500 animate-pulse" />}
             {hasAbsence && <Palmtree className="h-3.5 w-3.5 text-amber-500" />}
-            {/* 🏆 Trofeo si está en el rango perfecto */}
             {isSweetSpot && <Trophy className="h-3.5 w-3.5 text-indigo-500 animate-bounce-slow" />} 
           </div>
           
-          {/* Centro: Horas / Capacidad */}
           <div className="flex-1 flex flex-col justify-center items-center mt-[-6px]"> 
             {hours > 0 ? (
                 <>
@@ -99,7 +96,6 @@ export function WeekCell({
             )}
           </div>
 
-          {/* Barra de progreso inferior */}
           {hours > 0 && (
             <div className="w-full h-1 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden mt-auto">
                 <div 
@@ -110,7 +106,6 @@ export function WeekCell({
           )}
         </button>
       </TooltipTrigger>
-      
       <TooltipContent side="top" className="text-xs">
         <div className="space-y-1">
           <p className="font-semibold flex items-center gap-2">
@@ -125,5 +120,3 @@ export function WeekCell({
     </Tooltip>
   );
 }
-// Necesitarás importar Badge o quitarlo del Tooltip si no quieres añadir la importación
-import { Badge } from '@/components/ui/badge';
