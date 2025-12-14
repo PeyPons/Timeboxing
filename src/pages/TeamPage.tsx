@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Helmet } from 'react-helmet-async';
+import { WorkSchedule } from '@/types'; // Asegúrate de importar esto
 
 const TeamPage = () => {
   const { employees, addEmployee } = useApp();
@@ -25,32 +26,45 @@ const TeamPage = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newEmployeeName, setNewEmployeeName] = useState('');
   const [newEmployeeRole, setNewEmployeeRole] = useState('');
-  const [newEmployeeCapacity, setNewEmployeeCapacity] = useState(40);
+  
+  // NUEVO: Estado para el horario detallado desde el principio
+  const [newSchedule, setNewSchedule] = useState<WorkSchedule>({
+    monday: 8,
+    tuesday: 8,
+    wednesday: 8,
+    thursday: 8,
+    friday: 8,
+    saturday: 0,
+    sunday: 0
+  });
 
   const activeEmployees = employees.filter(e => e.isActive);
-  const inactiveEmployees = employees.filter(e => !e.isActive);
-  
   const displayedEmployees = showInactive ? employees : activeEmployees;
 
-  // Manejar creación
+  // Calcular capacidad total al vuelo
+  const totalCapacity = Object.values(newSchedule).reduce((a, b) => a + b, 0);
+
   const handleCreateEmployee = () => {
-    if (!newEmployeeName.trim() || !newEmployeeRole.trim()) return;
+    if (!newEmployeeName.trim()) return; // Solo el nombre es obligatorio ahora
 
     addEmployee({
       name: newEmployeeName,
-      role: newEmployeeRole,
-      defaultWeeklyCapacity: newEmployeeCapacity,
-      workSchedule: {
-        monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0
-      },
+      role: newEmployeeRole, // Puede ir vacío
+      defaultWeeklyCapacity: totalCapacity, // Se calcula sola
+      workSchedule: newSchedule, // Se manda el horario detallado
       isActive: true,
       avatarUrl: undefined
     });
 
+    // Resetear formulario
     setNewEmployeeName('');
     setNewEmployeeRole('');
-    setNewEmployeeCapacity(40);
+    setNewSchedule({ monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 });
     setIsDialogOpen(false);
+  };
+
+  const handleScheduleChange = (day: keyof WorkSchedule, val: string) => {
+    setNewSchedule(prev => ({...prev, [day]: Number(val) || 0 }));
   };
 
   return (
@@ -75,17 +89,11 @@ const TeamPage = () => {
             
             <div className="flex items-center gap-4">
               <div className="flex items-center space-x-2 bg-card p-2 rounded-lg border shadow-sm">
-                <Switch 
-                  id="show-inactive" 
-                  checked={showInactive} 
-                  onCheckedChange={setShowInactive} 
-                />
-                <Label htmlFor="show-inactive" className="text-sm font-medium cursor-pointer">
-                  Mostrar inactivos
-                </Label>
+                <Switch id="show-inactive" checked={showInactive} onCheckedChange={setShowInactive} />
+                <Label htmlFor="show-inactive" className="text-sm font-medium cursor-pointer">Mostrar inactivos</Label>
               </div>
 
-              {/* Botón Añadir Empleado */}
+              {/* DIÁLOGO AÑADIR EMPLEADO */}
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
                   <Button className="gap-2 shadow-md hover:shadow-lg transition-all">
@@ -93,13 +101,13 @@ const TeamPage = () => {
                     Añadir Empleado
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="max-w-md">
                   <DialogHeader>
                     <DialogTitle>Nuevo Empleado</DialogTitle>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
-                      <Label htmlFor="name">Nombre</Label>
+                      <Label htmlFor="name">Nombre <span className="text-destructive">*</span></Label>
                       <Input
                         id="name"
                         value={newEmployeeName}
@@ -108,7 +116,7 @@ const TeamPage = () => {
                       />
                     </div>
                     <div className="grid gap-2">
-                      <Label htmlFor="role">Rol / Cargo</Label>
+                      <Label htmlFor="role">Rol / Cargo (Opcional)</Label>
                       <Input
                         id="role"
                         value={newEmployeeRole}
@@ -116,24 +124,45 @@ const TeamPage = () => {
                         placeholder="Ej: SEO Specialist"
                       />
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="capacity">Capacidad Semanal (Horas)</Label>
-                      <Input
-                        id="capacity"
-                        type="number"
-                        value={newEmployeeCapacity}
-                        onChange={(e) => setNewEmployeeCapacity(Number(e.target.value))}
-                      />
+                    
+                    {/* INPUTS DE HORARIO DESGLOSADO */}
+                    <div className="space-y-3 pt-2 border-t">
+                      <div className="flex justify-between items-center">
+                        <Label>Horario Semanal</Label>
+                        <span className="text-xs font-bold text-primary">Total: {totalCapacity}h</span>
+                      </div>
+                      <div className="grid grid-cols-5 gap-2">
+                        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].map((day) => (
+                          <div key={day} className="text-center">
+                            <Label className="text-[10px] uppercase text-muted-foreground">{day.substring(0,3)}</Label>
+                            <Input 
+                              type="number" 
+                              className="h-9 text-center px-1"
+                              value={newSchedule[day as keyof WorkSchedule]}
+                              onChange={(e) => handleScheduleChange(day as keyof WorkSchedule, e.target.value)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 w-1/2 mx-auto">
+                         {/* Fines de semana opcionales */}
+                         {['saturday', 'sunday'].map((day) => (
+                          <div key={day} className="text-center">
+                            <Label className="text-[10px] uppercase text-muted-foreground">{day.substring(0,3)}</Label>
+                            <Input 
+                              type="number" 
+                              className="h-9 text-center px-1 bg-muted/30"
+                              value={newSchedule[day as keyof WorkSchedule]}
+                              onChange={(e) => handleScheduleChange(day as keyof WorkSchedule, e.target.value)}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={handleCreateEmployee}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Crear Empleado
-                    </Button>
+                    <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
+                    <Button onClick={handleCreateEmployee}>Crear Empleado</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -142,26 +171,10 @@ const TeamPage = () => {
 
           <div className="grid gap-6">
             <TeamEventManager />
-
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {displayedEmployees.map((employee) => (
                 <EmployeeCard key={employee.id} employee={employee} />
               ))}
-              
-              {/* Tarjeta de añadir rápido */}
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger asChild>
-                  <button className="flex flex-col items-center justify-center h-[300px] rounded-xl border-2 border-dashed border-muted-foreground/25 bg-muted/30 hover:bg-muted/50 hover:border-primary/50 transition-all gap-4 group">
-                    <div className="h-12 w-12 rounded-full bg-background flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                      <Plus className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors" />
-                    </div>
-                    <div className="text-center">
-                      <h3 className="font-semibold text-foreground">Añadir nuevo miembro</h3>
-                      <p className="text-sm text-muted-foreground">Define rol y capacidad</p>
-                    </div>
-                  </button>
-                </DialogTrigger>
-              </Dialog>
             </div>
           </div>
         </div>
