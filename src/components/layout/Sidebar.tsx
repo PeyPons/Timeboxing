@@ -6,9 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 
 const navigation = [
-  // NUEVO BOTÓN CON IA
-  { name: 'Inicio IA', href: '/', icon: Sparkles },
-  // BOTÓN DEL PLANIFICADOR
+  { name: 'Minguito', href: '/', icon: Sparkles },
   { name: 'Planificador', href: '/planner', icon: Calendar },
   { name: 'Equipo', href: '/team', icon: Users },
   { name: 'Clientes', href: '/clients', icon: Briefcase },
