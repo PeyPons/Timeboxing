@@ -1,16 +1,16 @@
-import { useState } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { useState, useEffect } from 'react';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
-import { Slider } from '@/components/ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useApp } from '@/contexts/AppContext';
 import { ProfessionalGoal } from '@/types';
-import { Plus, Trash2, Pencil, Trophy, Target, Calendar, Link as LinkIcon, ExternalLink } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Plus, Trash2, Target, CheckSquare, Hash } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface ProfessionalGoalsSheetProps {
   open: boolean;
@@ -18,264 +18,296 @@ interface ProfessionalGoalsSheetProps {
   employeeId: string;
 }
 
+// Definimos la estructura de un Resultado Clave (Key Result)
+type KeyResult = {
+  id: string;
+  title: string;
+  type: 'boolean' | 'numeric'; // Checklist o Numérico
+  completed: boolean;          // Para tipo boolean
+  current?: number;            // Para tipo numeric
+  target?: number;             // Para tipo numeric
+};
+
 export function ProfessionalGoalsSheet({ open, onOpenChange, employeeId }: ProfessionalGoalsSheetProps) {
-  const { employees, getEmployeeGoals, addProfessionalGoal, updateProfessionalGoal, deleteProfessionalGoal } = useApp();
+  const { employees, professionalGoals, addProfessionalGoal, updateProfessionalGoal, deleteProfessionalGoal } = useApp();
   const employee = employees.find(e => e.id === employeeId);
-  const goals = getEmployeeGoals(employeeId);
+  
+  const employeeGoals = professionalGoals.filter(g => g.employeeId === employeeId);
 
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<ProfessionalGoal | null>(null);
-
-  // Form States
+  // Estados del formulario
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  
   const [title, setTitle] = useState('');
-  const [keyResults, setKeyResults] = useState('');
-  const [actions, setActions] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const [trainingUrl, setTrainingUrl] = useState('');
-  const [dates, setDates] = useState({ start: '', due: '' });
-  const [progress, setProgress] = useState([0]);
+  
+  // Estado para los Key Results (Checklist inteligente)
+  const [keyResults, setKeyResults] = useState<KeyResult[]>([]);
+  
+  // Estado temporal para añadir un nuevo KR
+  const [newKrTitle, setNewKrTitle] = useState('');
+  const [newKrType, setNewKrType] = useState<'boolean' | 'numeric'>('boolean');
+  const [newKrTarget, setNewKrTarget] = useState('10');
 
-  if (!employee) return null;
+  // Calcular progreso total basado en los Key Results
+  const calculateTotalProgress = (krs: KeyResult[]) => {
+    if (krs.length === 0) return 0;
+    
+    let totalPercentage = 0;
+    
+    krs.forEach(kr => {
+      if (kr.type === 'boolean') {
+        totalPercentage += kr.completed ? 100 : 0;
+      } else {
+        const current = kr.current || 0;
+        const target = kr.target || 1;
+        // Limitamos al 100% por item
+        totalPercentage += Math.min((current / target) * 100, 100);
+      }
+    });
+
+    return Math.round(totalPercentage / krs.length);
+  };
+
+  const currentProgress = calculateTotalProgress(keyResults);
 
   const resetForm = () => {
     setTitle('');
-    setKeyResults('');
-    setActions('');
+    setDueDate('');
     setTrainingUrl('');
-    setDates({ start: '', due: '' });
-    setProgress([0]);
-    setEditingGoal(null);
+    setKeyResults([]);
+    setEditingId(null);
+    setIsAdding(false);
   };
 
-  const startAdd = () => {
-    resetForm();
-    setIsFormOpen(true);
-  };
-
-  const startEdit = (goal: ProfessionalGoal) => {
-    setEditingGoal(goal);
+  const handleEdit = (goal: ProfessionalGoal) => {
     setTitle(goal.title);
-    setKeyResults(goal.keyResults || '');
-    setActions(goal.actions || '');
+    setDueDate(goal.dueDate ? goal.dueDate.toString() : '');
     setTrainingUrl(goal.trainingUrl || '');
-    setDates({ start: goal.startDate || '', due: goal.dueDate || '' });
-    setProgress([goal.progress]);
-    setIsFormOpen(true);
+    
+    // Parseamos el JSONB de key_results. Si es string antiguo, lo intentamos adaptar o resetear
+    try {
+        const parsedKR = typeof goal.keyResults === 'string' 
+            ? JSON.parse(goal.keyResults) 
+            : (goal.keyResults as any) || [];
+        // Pequeña validación por si acaso viene formato antiguo
+        setKeyResults(Array.isArray(parsedKR) ? parsedKR : []);
+    } catch (e) {
+        setKeyResults([]);
+    }
+
+    setEditingId(goal.id);
+    setIsAdding(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title) return;
 
     const goalData = {
-      employeeId,
       title,
-      keyResults,
-      actions,
+      // Guardamos el array de objetos directamente (Supabase lo maneja como JSONB)
+      keyResults: keyResults as any, 
       trainingUrl,
-      startDate: dates.start,
-      dueDate: dates.due,
-      progress: progress[0]
+      startDate: new Date().toISOString().split('T')[0],
+      dueDate: dueDate || undefined,
+      progress: currentProgress // Guardamos el progreso calculado automáticamente
     };
 
-    if (editingGoal) {
-      updateProfessionalGoal({ ...goalData, id: editingGoal.id });
+    if (editingId) {
+      await updateProfessionalGoal({ ...goalData, id: editingId, employeeId } as any);
     } else {
-      addProfessionalGoal(goalData);
+      await addProfessionalGoal({ ...goalData, employeeId } as any);
     }
-    setIsFormOpen(false);
+    
+    resetForm();
   };
 
-  return (
-    <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-full sm:max-w-[600px] overflow-y-auto bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl">
-          <SheetHeader className="pb-6 border-b mb-6">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-600 font-bold text-xl border border-yellow-200">
-                <Trophy className="h-6 w-6" />
-              </div>
-              <div>
-                <SheetTitle className="text-2xl">Proyección Profesional</SheetTitle>
-                <SheetDescription className="text-base">
-                  Plan de carrera de <span className="font-medium text-foreground">{employee.name}</span>
-                </SheetDescription>
-              </div>
-            </div>
-          </SheetHeader>
+  // --- GESTIÓN DE KEY RESULTS ---
 
-          <div className="space-y-6">
-            <Button onClick={startAdd} className="w-full gap-2 bg-slate-900 text-white hover:bg-slate-800">
-              <Plus className="h-4 w-4" /> Definir Nuevo Objetivo
+  const addKeyResult = () => {
+    if (!newKrTitle) return;
+    const newKr: KeyResult = {
+      id: crypto.randomUUID(),
+      title: newKrTitle,
+      type: newKrType,
+      completed: false,
+      current: 0,
+      target: newKrType === 'numeric' ? Number(newKrTarget) : undefined
+    };
+    setKeyResults([...keyResults, newKr]);
+    setNewKrTitle('');
+    setNewKrTarget('10');
+  };
+
+  const toggleKrBoolean = (id: string) => {
+    setKeyResults(prev => prev.map(kr => 
+      kr.id === id ? { ...kr, completed: !kr.completed } : kr
+    ));
+  };
+
+  const updateKrNumeric = (id: string, value: string) => {
+    setKeyResults(prev => prev.map(kr => 
+      kr.id === id ? { ...kr, current: Number(value) } : kr
+    ));
+  };
+
+  const removeKeyResult = (id: string) => {
+    setKeyResults(prev => prev.filter(kr => kr.id !== id));
+  };
+
+  if (!employee) return null;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+        <SheetHeader className="pb-4 border-b">
+          <SheetTitle>Proyección: {employee.name}</SheetTitle>
+          <SheetDescription>Gestión de OKRs y objetivos profesionales.</SheetDescription>
+        </SheetHeader>
+
+        {isAdding ? (
+          <div className="space-y-6 py-6">
+            <div className="space-y-4">
+                <div className="space-y-2">
+                    <Label>Objetivo Principal</Label>
+                    <Input placeholder="Ej: Mejorar skills de liderazgo" value={title} onChange={e => setTitle(e.target.value)} />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Fecha Límite</Label>
+                        <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Enlace Formación (Opcional)</Label>
+                        <Input placeholder="https://..." value={trainingUrl} onChange={e => setTrainingUrl(e.target.value)} />
+                    </div>
+                </div>
+
+                {/* --- SECCIÓN KEY RESULTS (Checklist Inteligente) --- */}
+                <div className="border rounded-lg p-4 bg-slate-50 dark:bg-slate-900 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <Label className="text-indigo-600 flex items-center gap-2">
+                            <Target className="h-4 w-4" /> Resultados Clave (Checklist)
+                        </Label>
+                        <span className="text-xs font-mono font-bold">{currentProgress}% Completado</span>
+                    </div>
+                    
+                    {/* Barra de progreso visual */}
+                    <Progress value={currentProgress} className="h-2" />
+
+                    {/* Lista de KRs */}
+                    <div className="space-y-2">
+                        {keyResults.map(kr => (
+                            <div key={kr.id} className="flex items-center gap-3 bg-white dark:bg-slate-800 p-2 rounded border">
+                                {kr.type === 'boolean' ? (
+                                    <Checkbox checked={kr.completed} onCheckedChange={() => toggleKrBoolean(kr.id)} />
+                                ) : (
+                                    <div className="flex flex-col items-center w-16">
+                                        <Input 
+                                            type="number" 
+                                            className="h-7 text-xs text-center px-1" 
+                                            value={kr.current} 
+                                            onChange={(e) => updateKrNumeric(kr.id, e.target.value)}
+                                        />
+                                        <span className="text-[10px] text-muted-foreground">/ {kr.target}</span>
+                                    </div>
+                                )}
+                                
+                                <span className={`flex-1 text-sm ${kr.completed ? 'line-through text-muted-foreground' : ''}`}>
+                                    {kr.title}
+                                </span>
+                                
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600" onClick={() => removeKeyResult(kr.id)}>
+                                    <Trash2 className="h-3 w-3" />
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Añadir nuevo KR */}
+                    <div className="flex gap-2 items-end pt-2 border-t mt-2">
+                        <div className="w-24">
+                            <Select value={newKrType} onValueChange={(v: any) => setNewKrType(v)}>
+                                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="boolean">Check</SelectItem>
+                                    <SelectItem value="numeric">Numérico</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        
+                        <div className="flex-1 space-y-1">
+                            <Input 
+                                placeholder={newKrType === 'boolean' ? "Ej: Completar curso..." : "Ej: Ventas conseguidas"} 
+                                className="h-8 text-xs" 
+                                value={newKrTitle} 
+                                onChange={e => setNewKrTitle(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && addKeyResult()}
+                            />
+                        </div>
+
+                        {newKrType === 'numeric' && (
+                            <div className="w-16">
+                                <Input 
+                                    type="number" 
+                                    placeholder="Meta" 
+                                    className="h-8 text-xs" 
+                                    value={newKrTarget} 
+                                    onChange={e => setNewKrTarget(e.target.value)} 
+                                />
+                            </div>
+                        )}
+
+                        <Button size="sm" variant="secondary" className="h-8" onClick={addKeyResult}>
+                            <Plus className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={resetForm}>Cancelar</Button>
+                <Button onClick={handleSave}>Guardar Objetivo</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="py-6 space-y-4">
+            <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={() => setIsAdding(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Nuevo Objetivo (OKR)
             </Button>
 
-            {goals.length === 0 ? (
-              <div className="text-center py-12 border-2 border-dashed rounded-xl bg-slate-50/50">
-                <Target className="h-12 w-12 mx-auto text-slate-300 mb-3" />
-                <p className="text-muted-foreground">No hay objetivos definidos aún.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {goals.map((goal) => (
-                  <div key={goal.id} className="group relative bg-white dark:bg-slate-900 border rounded-xl p-5 shadow-sm hover:shadow-md transition-all">
-                    {/* Header: Título y Progreso */}
-                    <div className="flex justify-between items-start gap-4 mb-3">
-                      <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 leading-tight">
-                        {goal.title}
-                      </h3>
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity absolute right-4 top-4 bg-white dark:bg-slate-900 p-1 rounded-lg shadow-sm border">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEdit(goal)}>
-                          <Pencil className="h-4 w-4 text-slate-500" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-500" onClick={() => deleteProfessionalGoal(goal.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Barra de Progreso */}
-                    <div className="mb-4">
-                      <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1.5">
-                        <span>Progreso</span>
-                        <span className={cn(
-                          goal.progress === 100 ? "text-green-600" : "text-blue-600"
-                        )}>{goal.progress}%</span>
-                      </div>
-                      <Progress value={goal.progress} className="h-2.5 bg-slate-100" indicatorClassName={cn(
-                        goal.progress === 100 ? "bg-green-500" : "bg-blue-600"
-                      )} />
-                    </div>
-
-                    {/* Detalles (Grid) */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                      {goal.keyResults && (
-                        <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg">
-                          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Resultados Clave</span>
-                          <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{goal.keyResults}</p>
+            <div className="space-y-4 mt-4">
+                {employeeGoals.length === 0 && <p className="text-center text-muted-foreground text-sm">No hay objetivos definidos.</p>}
+                
+                {employeeGoals.map(goal => (
+                    <div key={goal.id} className="border rounded-lg p-4 space-y-3 bg-card hover:shadow-md transition-shadow">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="font-bold text-base">{goal.title}</h3>
+                                {goal.dueDate && <p className="text-xs text-muted-foreground">Vence: {goal.dueDate.toString()}</p>}
+                            </div>
+                            <div className="flex gap-1">
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(goal)}><div className="h-3 w-3 bg-slate-400 rounded-full" /></Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => deleteProfessionalGoal(goal.id)}><Trash2 className="h-4 w-4" /></Button>
+                            </div>
                         </div>
-                      )}
-                      
-                      {goal.actions && (
-                        <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg">
-                          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Acciones</span>
-                          <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{goal.actions}</p>
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Footer: Fechas y Link */}
-                    <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t text-xs text-slate-500">
-                      {(goal.startDate || goal.dueDate) && (
-                        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                          <Calendar className="h-3.5 w-3.5" />
-                          <span>
-                            {goal.startDate ? new Date(goal.startDate).toLocaleDateString() : 'Inicio'} 
-                            {' → '} 
-                            {goal.dueDate ? new Date(goal.dueDate).toLocaleDateString() : 'Fin'}
-                          </span>
+                        {/* Visualización rápida de KRs en modo lectura */}
+                        <div className="space-y-1">
+                            <div className="flex justify-between text-xs mb-1">
+                                <span>Progreso</span>
+                                <span className="font-bold">{goal.progress}%</span>
+                            </div>
+                            <Progress value={goal.progress} className={`h-2 ${goal.progress === 100 ? 'bg-green-100 [&>div]:bg-green-500' : ''}`} />
                         </div>
-                      )}
-                      
-                      {goal.trainingUrl && (
-                        <a 
-                          href={goal.trainingUrl} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="flex items-center gap-1.5 text-blue-600 hover:underline ml-auto"
-                        >
-                          <LinkIcon className="h-3.5 w-3.5" />
-                          Ver Formación <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
                     </div>
-                  </div>
                 ))}
-              </div>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {/* DIÁLOGO FORMULARIO */}
-      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>{editingGoal ? 'Editar Objetivo' : 'Nuevo Objetivo'}</DialogTitle>
-          </DialogHeader>
-          
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>Objetivo Principal</Label>
-              <Input 
-                placeholder="Ej: Aprender Google Tag Manager" 
-                value={title} 
-                onChange={e => setTitle(e.target.value)} 
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Inicio</Label>
-                <Input type="date" value={dates.start} onChange={e => setDates(prev => ({...prev, start: e.target.value}))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Fecha Límite</Label>
-                <Input type="date" value={dates.due} onChange={e => setDates(prev => ({...prev, due: e.target.value}))} />
-              </div>
-            </div>
-
-            <div className="space-y-4 border rounded-lg p-4 bg-slate-50">
-              <div className="flex justify-between">
-                <Label>Porcentaje de Consecución</Label>
-                <span className="font-bold text-blue-600">{progress[0]}%</span>
-              </div>
-              <Slider 
-                value={progress} 
-                onValueChange={setProgress} 
-                max={100} 
-                step={5} 
-                className="cursor-pointer"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Resultados Clave (KR)</Label>
-              <Textarea 
-                placeholder="Métricas para medir el éxito..." 
-                value={keyResults} 
-                onChange={e => setKeyResults(e.target.value)} 
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Tareas o Acciones</Label>
-              <Textarea 
-                placeholder="Pasos concretos a realizar..." 
-                value={actions} 
-                onChange={e => setActions(e.target.value)} 
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Enlace Formación / Recursos</Label>
-              <div className="relative">
-                <LinkIcon className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  className="pl-9"
-                  placeholder="https://cursos.cro.school..." 
-                  value={trainingUrl} 
-                  onChange={e => setTrainingUrl(e.target.value)} 
-                />
-              </div>
             </div>
           </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>Guardar Objetivo</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
