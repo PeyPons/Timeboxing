@@ -338,9 +338,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                 sortedProjectGroups.map(([projId, projAllocations]) => {
                                   const project = getProjectById(projId);
                                   const client = getClientById(project?.clientId || '');
+                                  
+                                  // Totales del proyecto
                                   const totalProjHours = projAllocations.reduce((sum, a) => sum + (a.status === 'completed' && a.hoursActual ? a.hoursActual : a.hoursAssigned), 0);
 
-                                  // ✅ ORDENACIÓN INTELIGENTE: Completados abajo
                                   const sortedTasks = [...projAllocations].sort((a, b) => {
                                       if (a.status === 'completed' && b.status !== 'completed') return 1;
                                       if (a.status !== 'completed' && b.status === 'completed') return -1;
@@ -409,7 +410,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                             </p>
                                                         )}
                                                         
-                                                        {/* ✅ AVISO PASIVO */}
+                                                        {/* AVISO DE DESVIACIÓN */}
                                                         {isCompleted && isOverBudget && (
                                                             <div className="flex items-center gap-1 text-[9px] text-red-500 mt-1 font-medium animate-in fade-in">
                                                                 <AlertTriangle className="h-3 w-3" />
@@ -418,7 +419,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                         )}
                                                     </div>
 
-                                                    {/* ✅ DOBLE INPUT: REAL vs EST */}
+                                                    {/* DOBLE INPUT: EST vs COMP */}
                                                     <div className="flex flex-col gap-1 items-end">
                                                         <div className="flex items-center gap-1" title="Horas Estimadas">
                                                             <span className="text-[9px] text-muted-foreground uppercase scale-[0.8]">Est</span>
@@ -427,8 +428,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                             </div>
                                                         </div>
 
-                                                        <div className="flex items-center gap-1" title="Horas Reales">
-                                                            <span className={cn("text-[9px] uppercase scale-[0.8]", isOverBudget ? "text-red-500 font-bold" : "text-muted-foreground")}>Real</span>
+                                                        <div className="flex items-center gap-1" title="Horas Computadas">
+                                                            <span className={cn("text-[9px] uppercase scale-[0.8]", isOverBudget ? "text-red-500 font-bold" : "text-muted-foreground")}>Comp</span>
                                                             <Input 
                                                                 type="number" 
                                                                 className={cn(
@@ -486,7 +487,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
         </SheetContent>
       </Sheet>
 
-      {/* MODAL DE CREACIÓN/EDICIÓN SE MANTIENE IGUAL */}
+      {/* DIALOGOS DE EDICIÓN (Mantenidos) */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
           <DialogHeader className="p-6 pb-2">
