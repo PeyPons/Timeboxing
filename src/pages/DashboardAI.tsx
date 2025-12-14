@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
+// IMPORTANTE: Añadimos HarmCategory y HarmBlockThreshold
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+// IMPORTANTE: Añadimos AlertTriangle para el icono de error
 import { Bot, Send, User, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 
 // Inicializar Gemini
@@ -15,7 +17,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  isError?: boolean;
+  isError?: boolean; // Campo para marcar errores visualmente
 }
 
 export default function DashboardAI() {
@@ -43,7 +45,7 @@ export default function DashboardAI() {
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
         setMessages(prev => [...prev, { 
             role: 'assistant', 
-            content: "⚠️ Error: No detecto la API Key en el archivo .env. Asegúrate de tener VITE_GEMINI_API_KEY configurada.", 
+            content: "⚠️ Error: API Key no detectada.", 
             timestamp: new Date(),
             isError: true 
         }]);
@@ -95,10 +97,9 @@ export default function DashboardAI() {
         - Usa negritas para nombres y datos clave.
       `;
 
-      // CONFIGURACIÓN DE SEGURIDAD Y MODELO CORREGIDO
+      // CAMBIO CLAVE: Usamos gemini-pro (Más cuota gratuita)
       const model = genAI.getGenerativeModel({ 
-        // CAMBIO CLAVE AQUÍ: Usamos gemini-2.0-flash, que sabemos que funciona.
-        model: "gemini-2.0-flash", 
+        model: "gemini-pro", 
         safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -117,11 +118,10 @@ export default function DashboardAI() {
     } catch (error: any) {
       console.error("Error AI Detallado:", error);
       
-      let errorMsg = "Lo siento, ha ocurrido un error desconocido.";
+      let errorMsg = "Lo siento, ha ocurrido un error.";
       
-      if (error.message?.includes('API key')) errorMsg = "Error de API Key: Verifica que es válida en el .env";
-      else if (error.message?.includes('blocked')) errorMsg = "⚠️ La respuesta fue bloqueada por los filtros de seguridad de Google. Intenta preguntar de otra forma.";
-      else if (error.message?.includes('404')) errorMsg = "Error: El modelo IA no es accesible con tu clave. Comprueba el nombre del modelo.";
+      if (error.message?.includes('429')) errorMsg = "🛑 LÍMITE DE CUOTA EXCEDIDO (429). Tienes que esperar unos minutos o habilitar la facturación en Google AI Studio para continuar.";
+      else if (error.message?.includes('404')) errorMsg = "Error de modelo. Tu clave no tiene acceso al modelo solicitado. Intenta con gemini-pro.";
       else if (error.message?.includes('fetch')) errorMsg = "Error de conexión. Verifica tu internet.";
       else errorMsg = `Error técnico: ${error.message}`;
 
