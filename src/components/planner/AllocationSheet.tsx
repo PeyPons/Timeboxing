@@ -160,10 +160,11 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        {/* CORRECCIÓN: Quitada la X manual, usamos la del componente. Fondo ajustado */}
         <SheetContent 
             className="w-full sm:max-w-[95vw] overflow-y-auto px-6 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl border-l shadow-2xl pt-10"
         >
+          {/* HE QUITADO EL BOTÓN MANUAL <SheetClose> PARA EVITAR LA DOBLE X */}
+          
           <SheetHeader className="pb-6 border-b mb-6 space-y-4">
             <div className="flex items-center gap-4">
                 <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-2xl shadow-sm border border-primary/20">
@@ -185,7 +186,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 const weekStr = week.weekStart.toISOString().split('T')[0];
                 const weekAllocations = getEmployeeAllocationsForWeek(employeeId, weekStr);
                 
-                // Cálculo de capacidad real (usando días efectivos del mes)
                 const load = getEmployeeLoadForWeek(
                     employeeId, 
                     weekStr, 
@@ -234,7 +234,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                     {load.hours} / {load.capacity}h
                                 </Badge>
                             </div>
-                            {/* Barra de progreso */}
                             <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                                 <div 
                                     className={cn("h-full transition-all duration-500 ease-out", 
