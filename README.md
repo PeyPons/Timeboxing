@@ -1,7 +1,7 @@
 # 📅 Timeboxing Manager
 
 ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
-![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-for-the-badge&logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-B73C9D?style=for-the-badge&logo=vite&logoColor=white)
 ![Supabase](https://img.shields.io/badge/Supabase-181818?style=for-the-badge&logo=supabase&logoColor=3ECF8E)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
@@ -17,6 +17,7 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
 * **👥 Gestión de equipo:** Administración de empleados con horarios personalizados (jornadas irregulares, reducciones, etc.).
 * **🧠 Asignación inteligente:** Cálculos de capacidad en tiempo real que consideran festivos, vacaciones y la duración real del mes.
 * **🏖️ Gestión de ausencias:** Control de vacaciones y bajas que ajusta automáticamente la disponibilidad en el planificador.
+* **🤖 Copiloto IA (Minguito):** Asistente de chat basado en Gemini para analizar la carga de trabajo, disponibilidad y objetivos profesionales del equipo en tiempo real.
 
 ## 🛠️ Tecnologías
 
@@ -24,6 +25,9 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
 * **UI/UX:** Tailwind CSS + Shadcn/ui + Lucide Icons.
 * **Backend / DB:** Supabase (PostgreSQL + Auth).
 * **Estado:** React Context API + Hooks personalizados.
+* **IA:** Google Gemini API (Modelo gemini-2.5-flash).
+
+---
 
 ## 🚀 Instalación y uso
 
@@ -41,11 +45,15 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
     ```
 
 3.  **Configurar variables de entorno**
-    Crea un archivo `.env` en la raíz del proyecto con tus credenciales de Supabase:
+    Crea un archivo `.env` en la raíz del proyecto con tus credenciales de Supabase **y la clave de la IA**:
     ```env
     VITE_SUPABASE_URL=tu_url_de_supabase
     VITE_SUPABASE_ANON_KEY=tu_clave_anonima
+
+    # Clave requerida para el Copiloto IA (Minguito)
+    VITE_GEMINI_API_KEY="TU_CLAVE_AQUÍ" 
     ```
+    **Nota sobre la IA:** Puedes obtener tu clave en Google AI Studio. Si el chat deja de funcionar con un error 429, es posible que necesites habilitar la facturación en tu cuenta de Google para eliminar los límites de uso.
 
 4.  **Ejecutar en desarrollo**
     ```bash
