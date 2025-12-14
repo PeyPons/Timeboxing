@@ -178,7 +178,7 @@ CREATE POLICY "Public Access Allocations" ON public.allocations FOR ALL USING (t
 CREATE POLICY "Public Access Absences" ON public.absences FOR ALL USING (true);
 CREATE POLICY "Public Access Events" ON public.team_events FOR ALL USING (true);
 CREATE POLICY "Public Access Goals" ON public.professional_goals FOR ALL USING (true);
-
+ ```
 
 
 ## 🤝 Contribución
