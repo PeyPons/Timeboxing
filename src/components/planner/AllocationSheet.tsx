@@ -65,7 +65,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const handleNextMonth = () => setViewDate(prev => addMonths(prev, 1));
 
   const startAdd = (weekStartReal: Date) => {
-    // ✅ CLAVE DE ALMACENAMIENTO CORRECTA
+    // ✅ CLAVE AJUSTADA
     const storageKey = getStorageKey(weekStartReal, viewDate);
     setEditingAllocation(null);
     setNewTasks([{ id: crypto.randomUUID(), projectId: '', taskName: '', hours: '', weekDate: storageKey, description: '' }]);
@@ -172,7 +172,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                             <DropdownMenuItem onClick={() => startEditFull(alloc)}><Pencil className="mr-2 h-3.5 w-3.5" /> Editar todo</DropdownMenuItem>
                                                             <DropdownMenuSeparator />
                                                             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Mover a semana...</DropdownMenuLabel>
-                                                            {weeks.map((w, i) => (w.weekStart.toISOString().split('T')[0] !== weekStr && <DropdownMenuItem key={w.weekStart.toISOString()} onClick={() => moveTaskToWeek(alloc, w.weekStart)}><ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Semana {i + 1}</DropdownMenuItem>))}
+                                                            {weeks.map((w, i) => (w.weekStart.toISOString().split('T')[0] !== week.weekStart.toISOString().split('T')[0] && <DropdownMenuItem key={w.weekStart.toISOString()} onClick={() => moveTaskToWeek(alloc, w.weekStart)}><ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Semana {i + 1}</DropdownMenuItem>))}
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
                                                 </div>
