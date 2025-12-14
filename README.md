@@ -58,7 +58,7 @@ Una aplicación moderna para la gestión de recursos, planificación de equipos 
 3.  **Configurar variables de entorno**
     Crea un archivo `.env` en la raíz del proyecto con tus credenciales:
     ```env
-    VITE_SUPABASE_URL="[https://tu-proyecto.supabase.co](https://tu-proyecto.supabase.co)"
+    VITE_SUPABASE_URL="https://tu-proyecto.supabase.co"
     VITE_SUPABASE_ANON_KEY="tu-clave-anonima-publica"
 
     # Clave requerida para el Copiloto IA (Minguito)
