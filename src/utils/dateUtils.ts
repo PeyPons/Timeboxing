@@ -2,18 +2,15 @@ import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, isSameMonth, addDays,
 import { es } from 'date-fns/locale';
 import { WorkSchedule } from '@/types';
 
+// ... (Resto de funciones: getMonthName, formatDateToISO, isCurrentWeek se mantienen igual) ...
 export const getMonthName = (date: Date) => format(date, 'MMMM', { locale: es });
 export const formatDateToISO = (date: Date) => format(date, 'yyyy-MM-dd');
-
 export const isCurrentWeek = (date: Date) => {
     const now = new Date();
     const start = startOfWeek(now, { weekStartsOn: 1 });
     return date.getTime() === start.getTime();
 };
 
-// ✅ FUNCIÓN CRÍTICA: Lógica de "Cajones Estancos"
-// Si estamos en Enero, la semana compartida usa la llave '2025-01-01'.
-// Si estamos en Diciembre, usa '2024-12-29'.
 export const getStorageKey = (weekStart: Date, viewMonth: Date): string => {
     if (isSameMonth(weekStart, viewMonth)) {
         return format(weekStart, 'yyyy-MM-dd');
@@ -25,6 +22,7 @@ export const getStorageKey = (weekStart: Date, viewMonth: Date): string => {
     return format(weekStart, 'yyyy-MM-dd');
 };
 
+// ✅ FUNCIÓN CORREGIDA PARA FILTRAR SEMANAS SIN DÍAS LABORABLES
 export const getWeeksForMonth = (date: Date) => {
   const monthStart = startOfMonth(date);
   const monthEnd = endOfMonth(date);
@@ -41,11 +39,11 @@ export const getWeeksForMonth = (date: Date) => {
     const effectiveStart = currentWeekStart < monthStart ? monthStart : currentWeekStart;
     const effectiveEnd = currentWeekEnd > monthEnd ? monthEnd : currentWeekEnd;
 
-    // ✅ FILTRO: Si la semana solo tiene Sábado/Domingo en este mes, NO la mostramos.
-    // Esto arregla el problema de que Marzo empiece con una semana vacía si el día 1 es Domingo.
+    // Lógica: Comprobamos si en el intervalo visible hay algún día que NO sea fin de semana
     const daysInInterval = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd });
     const hasWorkingDays = daysInInterval.some(day => !isWeekend(day));
 
+    // Solo añadimos la semana si tiene días laborables
     if (hasWorkingDays) {
         weeks.push({
             weekStart: currentWeekStart,
@@ -62,22 +60,15 @@ export const getWeeksForMonth = (date: Date) => {
   return weeks;
 };
 
+// ... (getWorkingDaysInRange y getMonthlyCapacity se mantienen igual) ...
 export const getWorkingDaysInRange = (start: Date, end: Date, schedule: WorkSchedule) => {
     let totalHours = 0;
     let days = 0;
-    let current = new Date(start); 
-    
+    let current = new Date(start);
     if (current > end) return { totalHours: 0, days: 0 };
-
     while (current <= end) {
         const dayOfWeek = current.getDay();
-        const dayKey = dayOfWeek === 0 ? 'sunday' : 
-                       dayOfWeek === 1 ? 'monday' : 
-                       dayOfWeek === 2 ? 'tuesday' : 
-                       dayOfWeek === 3 ? 'wednesday' : 
-                       dayOfWeek === 4 ? 'thursday' : 
-                       dayOfWeek === 5 ? 'friday' : 'saturday';
-        
+        const dayKey = dayOfWeek === 0 ? 'sunday' : dayOfWeek === 1 ? 'monday' : dayOfWeek === 2 ? 'tuesday' : dayOfWeek === 3 ? 'wednesday' : dayOfWeek === 4 ? 'thursday' : dayOfWeek === 5 ? 'friday' : 'saturday';
         // @ts-ignore
         const hours = schedule[dayKey] || 0;
         if (hours > 0) days++;
@@ -89,6 +80,6 @@ export const getWorkingDaysInRange = (start: Date, end: Date, schedule: WorkSche
 
 export const getMonthlyCapacity = (year: number, month: number, schedule: WorkSchedule) => {
     const start = new Date(year, month, 1);
-    const end = new Date(year, month + 1, 0); 
+    const end = new Date(year, month + 1, 0);
     return getWorkingDaysInRange(start, end, schedule).totalHours;
 };
