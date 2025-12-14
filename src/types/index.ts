@@ -48,6 +48,7 @@ export interface Allocation {
   projectId: string;
   weekStartDate: string;
   hoursAssigned: number;
+  hoursActual?: number;
   status: 'planned' | 'completed';
   description?: string;
   taskName?: string;
