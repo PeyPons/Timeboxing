@@ -1,134 +1,108 @@
 import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { EmployeeCard } from '@/components/team/EmployeeCard';
-import { TeamEventManager } from '@/components/team/TeamEventManager';
+import { TeamEventManager } from '@/components/team/TeamEventManager'; // Importamos el componente
 import { Button } from '@/components/ui/button';
-import { Users, UserPlus } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Helmet } from 'react-helmet-async';
-import { WorkSchedule } from '@/types';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog'; // Usaremos Dialog para el popup
+import { Plus, Search, CalendarOff } from 'lucide-react';
 
-const TeamPage = () => {
+export default function TeamPage() {
   const { employees, addEmployee } = useApp();
-  const [showInactive, setShowInactive] = useState(false);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newEmployeeName, setNewEmployeeName] = useState('');
-  const [newEmployeeRole, setNewEmployeeRole] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   
-  const [newSchedule, setNewSchedule] = useState<WorkSchedule>({
-    monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0
-  });
+  // Estado para añadir empleado rápido
+  const [isAddingEmp, setIsAddingEmp] = useState(false);
+  const [newEmpName, setNewEmpName] = useState('');
+  const [newEmpRole, setNewEmpRole] = useState('');
 
-  const activeEmployees = employees.filter(e => e.isActive);
-  const displayedEmployees = showInactive ? employees : activeEmployees;
-  const totalCapacity = Object.values(newSchedule).reduce((a, b) => a + b, 0);
+  const filteredEmployees = employees.filter(e => 
+    e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    e.role.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const handleCreateEmployee = () => {
-    if (!newEmployeeName.trim()) return;
-
-    addEmployee({
-      name: newEmployeeName,
-      role: newEmployeeRole,
-      defaultWeeklyCapacity: totalCapacity,
-      workSchedule: newSchedule,
-      isActive: true,
-      avatarUrl: undefined
+  const handleAddEmployee = async () => {
+    if (!newEmpName) return;
+    await addEmployee({
+        name: newEmpName,
+        role: newEmpRole || 'Sin rol',
+        defaultWeeklyCapacity: 40,
+        workSchedule: { monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 },
+        isActive: true,
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newEmpName}`
     });
-
-    setNewEmployeeName('');
-    setNewEmployeeRole('');
-    setNewSchedule({ monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 });
-    setIsDialogOpen(false);
-  };
-
-  const handleScheduleChange = (day: keyof WorkSchedule, val: string) => {
-    setNewSchedule(prev => ({...prev, [day]: Number(val) || 0 }));
+    setNewEmpName('');
+    setNewEmpRole('');
+    setIsAddingEmp(false);
   };
 
   return (
-    <>
-      <Helmet><title>Equipo | Timeboxing</title></Helmet>
+    <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
       
-      <div className="container mx-auto py-8 px-4 max-w-7xl animate-fade-in">
-        <div className="flex flex-col gap-8">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
-                <Users className="h-8 w-8 text-primary" />
-                Gestión del Equipo
-              </h1>
-              <p className="text-muted-foreground mt-1">{activeEmployees.length} activos / {employees.length} total</p>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <div className="flex items-center space-x-2 bg-card p-2 rounded-lg border shadow-sm">
-                <Switch id="show-inactive" checked={showInactive} onCheckedChange={setShowInactive} />
-                <Label htmlFor="show-inactive" className="text-sm font-medium cursor-pointer">Mostrar inactivos</Label>
-              </div>
-
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      {/* Cabecera Limpia */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Equipo</h1>
+            <p className="text-muted-foreground">Gestiona a tus empleados, sus horarios y proyecciones.</p>
+        </div>
+        
+        {/* ✅ BOTÓN DE EVENTOS (POPUP) */}
+        <div className="flex gap-2">
+            <Dialog>
                 <DialogTrigger asChild>
-                  <Button className="gap-2 shadow-md hover:shadow-lg transition-all">
-                    <UserPlus className="h-4 w-4" /> Añadir Empleado
-                  </Button>
+                    <Button variant="outline" className="gap-2 bg-white dark:bg-slate-900 border-dashed">
+                        <CalendarOff className="h-4 w-4 text-orange-500" />
+                        Gestionar Festivos
+                    </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
-                  <DialogHeader><DialogTitle>Nuevo Empleado</DialogTitle></DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="name">Nombre <span className="text-destructive">*</span></Label>
-                      <Input id="name" value={newEmployeeName} onChange={(e) => setNewEmployeeName(e.target.value)} placeholder="Ej: Marta García" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="role">Rol / Cargo (Opcional)</Label>
-                      <Input id="role" value={newEmployeeRole} onChange={(e) => setNewEmployeeRole(e.target.value)} placeholder="Ej: SEO Specialist" />
-                    </div>
-                    
-                    <div className="space-y-3 pt-2 border-t">
-                      <div className="flex justify-between items-center">
-                        <Label>Horario Semanal</Label>
-                        <span className="text-xs font-bold text-primary">Total: {totalCapacity}h</span>
-                      </div>
-                      <div className="grid grid-cols-5 gap-2">
-                        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].map((day) => (
-                          <div key={day} className="text-center">
-                            <Label className="text-[10px] uppercase text-muted-foreground">{day.substring(0,3)}</Label>
-                            <Input type="number" className="h-9 text-center px-1" value={newSchedule[day as keyof WorkSchedule]} onChange={(e) => handleScheduleChange(day as keyof WorkSchedule, e.target.value)} />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-                    <Button onClick={handleCreateEmployee}>Crear Empleado</Button>
-                  </DialogFooter>
+                <DialogContent className="max-w-2xl">
+                    <TeamEventManager />
                 </DialogContent>
-              </Dialog>
-            </div>
-          </div>
+            </Dialog>
 
-          <div className="grid gap-6">
-            <TeamEventManager />
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {displayedEmployees.map((employee) => (
-                <EmployeeCard key={employee.id} employee={employee} />
-              ))}
-            </div>
-          </div>
+            <Button onClick={() => setIsAddingEmp(!isAddingEmp)} className="bg-indigo-600 hover:bg-indigo-700 gap-2">
+                <Plus className="h-4 w-4" /> Nuevo Empleado
+            </Button>
         </div>
       </div>
-    </>
+
+      {/* Formulario rápido de empleado (si está activo) */}
+      {isAddingEmp && (
+        <div className="bg-slate-50 border rounded-lg p-4 flex gap-4 items-end animate-in fade-in slide-in-from-top-2">
+            <div className="grid gap-1 flex-1">
+                <span className="text-xs font-medium">Nombre</span>
+                <Input value={newEmpName} onChange={e => setNewEmpName(e.target.value)} placeholder="Nombre completo" />
+            </div>
+            <div className="grid gap-1 flex-1">
+                <span className="text-xs font-medium">Rol</span>
+                <Input value={newEmpRole} onChange={e => setNewEmpRole(e.target.value)} placeholder="Ej: Diseñador Senior" />
+            </div>
+            <Button onClick={handleAddEmployee}>Guardar</Button>
+        </div>
+      )}
+
+      {/* Buscador */}
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por nombre o rol..."
+          className="pl-9 max-w-sm bg-white dark:bg-slate-950"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
+      {/* Grid de Empleados */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredEmployees.map((employee) => (
+          <EmployeeCard key={employee.id} employee={employee} />
+        ))}
+        {filteredEmployees.length === 0 && (
+            <div className="col-span-full text-center py-12 text-muted-foreground">
+                No se encontraron empleados que coincidan con tu búsqueda.
+            </div>
+        )}
+      </div>
+    </div>
   );
-};
-export default TeamPage;
+}
