@@ -24,7 +24,7 @@ export default function DashboardAI() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: '¡Hola! Soy Minguito. Pregúntame sobre la carga de trabajo o proyectos.',
+      content: '¡Hola! Soy Minguito. Puedes preguntarme por **proyectos**, **clientes**, **empleados**, **capacidad del equipo**, **sugerencias sobre a quién asignar nuevos proyectos** o el estado de sus **objetivos profesionales**.',
       timestamp: new Date()
     }
   ]);
