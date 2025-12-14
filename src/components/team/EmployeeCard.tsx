@@ -11,6 +11,7 @@ import { useApp } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
 import { ProfessionalGoalsSheet } from './ProfessionalGoalsSheet';
 import { Trophy } from 'lucide-react';
+const [showGoals, setShowGoals] = useState(false);
 
 interface EmployeeCardProps {
   employee: Employee;
