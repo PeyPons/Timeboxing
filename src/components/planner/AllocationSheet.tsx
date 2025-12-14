@@ -49,7 +49,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   
-  // Estado para MÚLTIPLES tareas (Añadir)
   const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
 
   // Estados para UNA tarea (Editar)
@@ -59,7 +58,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
   const [editDescription, setEditDescription] = useState('');
   const [editWeek, setEditWeek] = useState('');
 
-  // Control de Combobox abierto
   const [openComboboxId, setOpenComboboxId] = useState<string | null>(null);
   const [editComboboxOpen, setEditComboboxOpen] = useState(false);
 
@@ -156,7 +154,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
     updateAllocation({ ...allocation, status: newStatus });
   };
 
-  // --- HELPER PARA AGRUPAR POR PROYECTO ---
   const groupAllocationsByProject = (allocations: Allocation[]) => {
     return allocations.reduce((acc, alloc) => {
       const projId = alloc.projectId;
@@ -193,12 +190,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 const load = getEmployeeLoadForWeek(employeeId, weekStr, week.effectiveStart, week.effectiveEnd);
                 const isCurrent = weekStr === weekStart;
 
-                // Agrupamos las tareas de esta semana por proyecto
                 const allocationsByProject = groupAllocationsByProject(weekAllocations);
 
                 return (
                     <div key={weekStr} className={cn("flex flex-col gap-4 p-4 rounded-xl border bg-card transition-all h-full", isCurrent ? "ring-2 ring-indigo-500 ring-offset-2 shadow-lg scale-[1.01]" : "hover:border-indigo-200 hover:shadow-md")}>
-                        {/* Cabecera Semana */}
                         <div className="flex flex-col gap-3 pb-3 border-b">
                             <div className="flex items-center justify-between">
                                 <span className="font-bold text-sm text-foreground/80 uppercase tracking-wider">
@@ -221,7 +216,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                             </div>
                         </div>
 
-                        {/* LISTA DE TAREAS (DISEÑO JERÁRQUICO) */}
                         <div className="flex-1 overflow-y-auto max-h-[65vh] space-y-3 pr-1 custom-scrollbar">
                             {weekAllocations.length === 0 ? (
                                 <div className="h-32 flex flex-col items-center justify-center text-muted-foreground/30 text-xs italic border-2 border-dashed rounded-lg bg-slate-50">
@@ -229,14 +223,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                     <span>Sin tareas asignadas</span>
                                 </div>
                             ) : (
-                                /* Iteramos por PROYECTO */
                                 Object.entries(allocationsByProject).map(([projId, projAllocations]) => {
                                   const project = getProjectById(projId);
                                   const totalProjHours = projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
 
                                   return (
                                     <div key={projId} className="bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden">
-                                        {/* CABECERA PROYECTO */}
                                         <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 border-b flex justify-between items-center">
                                             <div className="flex items-center gap-2 overflow-hidden">
                                                 <FolderKanban className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
@@ -249,7 +241,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                             </span>
                                         </div>
 
-                                        {/* LISTA DE TAREAS DEL PROYECTO */}
                                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                             {projAllocations.map(alloc => {
                                                 const isDone = alloc.status === 'completed';
@@ -301,7 +292,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
         </SheetContent>
       </Sheet>
 
-      {/* DIÁLOGO AÑADIR/EDITAR (Bulk Mode MANTENIDO) */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
           <DialogHeader className="p-6 pb-2">
@@ -311,7 +301,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
 
           <div className="p-6 pt-2">
             {editingAllocation ? (
-              /* --- MODO EDICIÓN SIMPLE --- */
               <div className="grid gap-4 mt-4">
                 <div className="space-y-2 flex flex-col">
                   <Label>Proyecto</Label>
@@ -369,7 +358,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 </div>
               </div>
             ) : (
-              /* --- MODO BULK (LISTADO) --- */
               <div className="space-y-3 mt-4">
                 <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
                     <div className="flex-1 pl-1">Proyecto</div>
@@ -382,7 +370,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
                     {newTasks.map((task) => (
                         <div key={task.id} className="flex gap-2 items-start animate-in fade-in slide-in-from-top-1 duration-200">
-                            {/* Buscador Proyecto */}
                             <div className="flex-1 min-w-0">
                                 <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
                                     <PopoverTrigger asChild>
@@ -431,7 +418,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart }: A
                                     <SelectContent>
                                         {weeks.map((w, i) => (
                                             <SelectItem key={w.weekStart.toISOString()} value={w.weekStart.toISOString().split('T')[0]}>
-                                                Sem {i+1} ({format(w.effectiveStart!, 'd MMM', { locale: es })})
+                                                {/* ✅ CORRECCIÓN VISUAL DE LA FECHA */}
+                                                Sem {i+1} ({format(w.effectiveStart!, 'd', { locale: es })} - {format(w.effectiveEnd!, 'd MMM', { locale: es })})
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
