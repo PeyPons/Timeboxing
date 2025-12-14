@@ -298,12 +298,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       start_date: absence.startDate,
       end_date: absence.endDate,
       type: absence.type,
-      description: absence.description
+      description: absence.description,
+      hours: absence.hours || 0 // ✅ Guardamos las horas
     }).select().single();
+    
     if (data) {
-      setAbsences(prev => [...prev, { ...data, employeeId: data.employee_id, startDate: data.start_date, endDate: data.end_date }]);
+      setAbsences(prev => [...prev, {
+        ...data,
+        employeeId: data.employee_id,
+        startDate: data.start_date,
+        endDate: data.end_date,
+        hours: data.hours // ✅ Mapeamos al estado local
+      }]);
     }
-  }, []);
+    }, []);
 
   const deleteAbsence = useCallback(async (id: string) => {
     setAbsences(prev => prev.filter(a => a.id !== id));
