@@ -1,7 +1,7 @@
 import { Allocation, LoadStatus } from '@/types';
 import { cn } from '@/lib/utils';
 import { TrendingUp, TrendingDown, AlertCircle, AlertTriangle, Palmtree, CalendarOff } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Importar Tooltip
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface WeekCellProps {
   allocations: Allocation[];
@@ -19,7 +19,7 @@ const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, breakdown, onClick }: WeekCellProps) {
   
-  // ... (Toda la lógica de cálculo anterior se mantiene igual) ...
+  // 1. Métricas de Trabajo
   const totalEstimated = round2(allocations.reduce((sum, a) => sum + Number(a.hoursAssigned || 0), 0));
   const totalComputed = round2(allocations.reduce((sum, a) => sum + Number(a.hoursActual || 0), 0));
   
@@ -33,19 +33,18 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
   }
 
   const hasActivity = allocations.length > 0;
-  const isOverload = hours > capacity;
-  const isUnderload = hours < capacity && capacity > 0;
   const hasReductions = breakdown && breakdown.length > 0;
 
-  // ✅ Agrupar horas por proyecto para el Tooltip
-  const projectBreakdown = allocations.reduce((acc, curr) => {
-      // Usamos el nombre de la tarea o idealmente el nombre del proyecto si lo tuviéramos a mano en allocation
-      // Como allocation tiene projectId, idealmente necesitaríamos el nombre del proyecto.
-      // Para simplificar sin pedir datos extra, usaremos el taskName o agruparíamos si tuviéramos el nombre.
-      // Si quieres mostrar proyectos, necesitaríamos pasar el mapa de proyectos o nombres.
-      // Por ahora, mostraremos las 5 tareas principales.
-      return acc;
-  }, {});
+  // ✅ LOGICA DE TOLERANCIA (10% de Margen)
+  // Si tienes 40h, el margen es 4h.
+  // Zona Confort: 36h - 44h (No muestra alertas)
+  const margin = capacity * 0.1; 
+  
+  // Rojo solo si supera el 110%
+  const isOverload = hours > (capacity + margin);
+  
+  // Naranja solo si no llega al 90% (y hay capacidad)
+  const isUnderload = hours < (capacity - margin) && capacity > 0;
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -56,9 +55,7 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
               isCurrentWeek ? "bg-white shadow-sm" : "bg-slate-50/50 hover:bg-white",
               !hasActivity && !hasReductions && "opacity-60 hover:opacity-100"
             )}>
-              {/* ... (Todo el contenido visual de la celda: Semáforo, Bloques, Footer...) ... */}
-              {/* COPIA AQUÍ TODO EL JSX QUE TENÍAS DENTRO DEL DIV PRINCIPAL */}
-              
+              {/* Semáforo (Mantiene lógica original para consistencia global, o puedes ajustarlo también) */}
               <div className={cn("absolute top-1 right-1 w-2 h-2 rounded-full transition-colors",
                   status === 'overload' ? "bg-red-500" :
                   status === 'warning' ? "bg-amber-400" :
@@ -66,6 +63,7 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
                   "bg-slate-200"
               )} />
 
+              {/* --- SECCIÓN TRABAJO --- */}
               {hasActivity ? (
                 <div className="flex flex-col gap-1.5 mt-1">
                     <div className="flex justify-between items-center text-[11px] text-slate-500">
@@ -95,6 +93,7 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
                 </div>
               )}
 
+              {/* --- SECCIÓN REDUCCIONES --- */}
               {hasReductions && (
                 <div className="mt-2 space-y-1">
                     {breakdown.map((item, idx) => (
@@ -112,15 +111,17 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
                 </div>
               )}
 
+              {/* --- FOOTER (TOTALES CON TOLERANCIA) --- */}
               <div className="mt-auto pt-2 border-t flex justify-end">
                  <div className={cn(
                      "text-xs font-bold flex items-center gap-1.5 transition-colors duration-300",
                      isOverload ? "text-red-600" : 
                      isUnderload ? "text-amber-600" : 
-                     "text-slate-400"
+                     "text-slate-400" // Color "Tranquilo" si está dentro del 10% de margen
                  )}>
                      {isOverload && <AlertCircle className="h-3.5 w-3.5" />}
                      {isUnderload && <AlertTriangle className="h-3 w-3 opacity-80" />} 
+                     
                      {hours}/{capacity}h
                  </div>
               </div>
@@ -128,7 +129,6 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
             </div>
         </TooltipTrigger>
         
-        {/* ✅ CONTENIDO DEL TOOLTIP: Resumen rápido */}
         <TooltipContent className="text-xs bg-slate-900 text-white border-slate-800 p-2 shadow-xl">
             <div className="font-bold mb-1 pb-1 border-b border-slate-700">Resumen Tareas</div>
             {allocations.length > 0 ? (
