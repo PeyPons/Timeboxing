@@ -9,12 +9,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'; // ✅ Importar Tooltip
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Info } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Info, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -55,11 +55,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     if (open) setViewDate(viewDateContext || new Date(weekStart));
   }, [open, weekStart, viewDateContext]);
 
+  // Estados de Interfaz
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   
-  const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
 
+  const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineNameValue, setInlineNameValue] = useState('');
   const inlineInputRef = useRef<HTMLInputElement>(null);
@@ -236,16 +238,28 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4 bg-background/50 p-1.5 rounded-lg border shadow-sm">
-                    <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
-                        <ChevronLeft className="h-5 w-5" />
-                    </Button>
-                    <span className="text-lg font-bold capitalize w-48 text-center select-none">
-                        {monthLabel}
-                    </span>
-                    <Button variant="ghost" size="icon" onClick={handleNextMonth}>
-                        <ChevronRight className="h-5 w-5" />
-                    </Button>
+                <div className="flex items-center gap-4">
+                    <div className="relative w-48 hidden sm:block">
+                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input 
+                            placeholder="Buscar tarea..." 
+                            className="pl-8 h-9 text-xs bg-background/50" 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="flex items-center gap-4 bg-background/50 p-1.5 rounded-lg border shadow-sm">
+                        <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
+                            <ChevronLeft className="h-5 w-5" />
+                        </Button>
+                        <span className="text-lg font-bold capitalize w-48 text-center select-none">
+                            {monthLabel}
+                        </span>
+                        <Button variant="ghost" size="icon" onClick={handleNextMonth}>
+                            <ChevronRight className="h-5 w-5" />
+                        </Button>
+                    </div>
                 </div>
             </div>
           </SheetHeader>
@@ -255,10 +269,19 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
             {weeks.map((week, index) => {
                 const weekStr = week.weekStart.toISOString().split('T')[0];
                 const storageKey = getStorageKey(week.weekStart, viewDate);
-                const weekAllocations = getEmployeeAllocationsForWeek(employeeId, storageKey);
-                // ✅ Obtenemos el desglose (breakdown)
-                const load = getEmployeeLoadForWeek(employeeId, storageKey, week.effectiveStart, week.effectiveEnd);
                 
+                // 1. Obtener todas las asignaciones
+                let weekAllocations = getEmployeeAllocationsForWeek(employeeId, storageKey);
+                
+                if (searchTerm) {
+                    weekAllocations = weekAllocations.filter(a => {
+                        const proj = getProjectById(a.projectId);
+                        const matchText = (a.taskName + (proj?.name || '')).toLowerCase();
+                        return matchText.includes(searchTerm.toLowerCase());
+                    });
+                }
+
+                const load = getEmployeeLoadForWeek(employeeId, storageKey, week.effectiveStart, week.effectiveEnd);
                 const isCurrent = isSameMonth(viewDate, new Date()) && new Date() >= week.weekStart && new Date() <= week.weekEnd;
                 const sortedProjectGroups = groupAndSortAllocations(weekAllocations);
 
@@ -278,7 +301,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                     {format(week.effectiveStart!, 'd MMM', { locale: es })} - {format(week.effectiveEnd!, 'd MMM', { locale: es })}
                                 </span>
                                 
-                                {/* ✅ TOOLTIP PARA MOSTRAR EL DESGLOSE DE CAPACIDAD */}
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <Badge variant="outline" className={cn("font-mono text-xs px-2 py-0.5 h-auto cursor-help", load.status === 'overload' ? "bg-red-50 text-red-600 border-red-200" : "bg-green-50 text-green-600 border-green-200")}>
@@ -313,13 +335,19 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                             {weekAllocations.length === 0 ? (
                                 <div className="h-24 flex flex-col items-center justify-center text-muted-foreground/30 text-sm italic border-2 border-dashed rounded-lg bg-slate-50/50">
                                     <Clock className="h-6 w-6 mb-2 opacity-20" />
-                                    <span>Libre</span>
+                                    <span>{searchTerm ? 'Sin coincidencias' : 'Libre'}</span>
                                 </div>
                             ) : (
                                 sortedProjectGroups.map(([projId, projAllocations]) => {
                                   const project = getProjectById(projId);
                                   const client = getClientById(project?.clientId || '');
                                   const totalProjHours = projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+
+                                  const sortedTasks = [...projAllocations].sort((a, b) => {
+                                      if (a.status === 'completed' && b.status !== 'completed') return 1;
+                                      if (a.status !== 'completed' && b.status === 'completed') return -1;
+                                      return 0;
+                                  });
 
                                   return (
                                     <div key={projId} className="bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden">
@@ -341,28 +369,65 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                         </div>
 
                                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                            {projAllocations.map(alloc => (
-                                                <div key={alloc.id} className="group flex items-center gap-3 p-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                                            {sortedTasks.map(alloc => (
+                                                <div 
+                                                    key={alloc.id} 
+                                                    className={cn(
+                                                        "group flex items-center gap-3 p-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors",
+                                                        // Efecto visual para tareas completadas
+                                                        alloc.status === 'completed' && "bg-slate-50/50 opacity-60"
+                                                    )}
+                                                >
                                                     <Checkbox checked={alloc.status === 'completed'} onCheckedChange={() => toggleStatus(alloc)} className="h-4 w-4 mt-0.5 rounded-sm" />
+                                                    
                                                     <div className="flex-1 min-w-0" onDoubleClick={() => startInlineEdit(alloc)}>
                                                         <div className="flex justify-between items-center gap-2">
                                                             {inlineEditingId === alloc.id ? (
-                                                                <Input ref={inlineInputRef} value={inlineNameValue} onChange={(e) => setInlineNameValue(e.target.value)} onBlur={() => saveInlineEdit(alloc)} onKeyDown={(e) => e.key === 'Enter' && saveInlineEdit(alloc)} className="h-6 text-xs px-1 py-0 w-full" />
+                                                                <Input 
+                                                                    ref={inlineInputRef}
+                                                                    value={inlineNameValue}
+                                                                    onChange={(e) => setInlineNameValue(e.target.value)}
+                                                                    onBlur={() => saveInlineEdit(alloc)}
+                                                                    onKeyDown={(e) => e.key === 'Enter' && saveInlineEdit(alloc)}
+                                                                    className="h-6 text-xs px-1 py-0 w-full"
+                                                                />
                                                             ) : (
-                                                                <span className={cn("text-xs font-medium leading-tight text-slate-700 dark:text-slate-300 truncate cursor-text", alloc.status === 'completed' && "line-through opacity-50")} title="Doble clic para editar nombre">{alloc.taskName || 'General'}</span>
+                                                                <span 
+                                                                    className={cn("text-xs font-medium leading-tight text-slate-700 dark:text-slate-300 truncate cursor-text", alloc.status === 'completed' && "line-through opacity-50")}
+                                                                    title="Doble clic para editar nombre"
+                                                                >
+                                                                    {alloc.taskName || 'General'}
+                                                                </span>
                                                             )}
                                                             <span className="text-[10px] font-bold text-slate-600 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{alloc.hoursAssigned}h</span>
                                                         </div>
-                                                        {alloc.description && !inlineEditingId && <p className="text-[10px] text-slate-400 truncate mt-0.5">{alloc.description}</p>}
+                                                        {alloc.description && !inlineEditingId && (
+                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                                                                {alloc.description}
+                                                            </p>
+                                                        )}
                                                     </div>
+
                                                     <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 text-slate-400 hover:text-indigo-600"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 text-slate-400 hover:text-indigo-600">
+                                                                <MoreHorizontal className="h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
                                                             <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                                                            <DropdownMenuItem onClick={() => startEditFull(alloc)}><Pencil className="mr-2 h-3.5 w-3.5" /> Editar todo</DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => startEditFull(alloc)}>
+                                                                <Pencil className="mr-2 h-3.5 w-3.5" /> Editar todo
+                                                            </DropdownMenuItem>
                                                             <DropdownMenuSeparator />
                                                             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Mover a semana...</DropdownMenuLabel>
-                                                            {weeks.map((w, i) => (w.weekStart.toISOString().split('T')[0] !== weekStr && <DropdownMenuItem key={w.weekStart.toISOString()} onClick={() => moveTaskToWeek(alloc, w.weekStart)}><ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Semana {i + 1}</DropdownMenuItem>))}
+                                                            {weeks.map((w, i) => (
+                                                                w.weekStart.toISOString().split('T')[0] !== weekStr && (
+                                                                    <DropdownMenuItem key={w.weekStart.toISOString()} onClick={() => moveTaskToWeek(alloc, w.weekStart)}>
+                                                                        <ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Semana {i + 1}
+                                                                    </DropdownMenuItem>
+                                                                )
+                                                            ))}
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
                                                 </div>
@@ -381,36 +446,159 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
         </SheetContent>
       </Sheet>
 
+      {/* DIÁLOGOS DE EDICIÓN MANTENIDOS IGUAL QUE ANTES (Copiados del archivo anterior para integridad) */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
-          <DialogHeader className="p-6 pb-2"><DialogTitle>{editingAllocation ? 'Editar Tarea' : 'Añadir Tareas'}</DialogTitle><DialogDescription>{editingAllocation ? `Editando tarea de ${employee.name}` : 'Añade múltiples tareas rápidamente.'}</DialogDescription></DialogHeader>
+          <DialogHeader className="p-6 pb-2">
+            <DialogTitle>{editingAllocation ? 'Editar Tarea' : 'Añadir Tareas'}</DialogTitle>
+            <DialogDescription>{editingAllocation ? `Editando tarea de ${employee.name}` : 'Añade múltiples tareas rápidamente.'}</DialogDescription>
+          </DialogHeader>
+
           <div className="p-6 pt-2">
             {editingAllocation ? (
               <div className="grid gap-4 mt-4">
-                <div className="space-y-2 flex flex-col"><Label>Proyecto</Label><Popover open={editComboboxOpen} onOpenChange={setEditComboboxOpen}><PopoverTrigger asChild><Button variant="outline" role="combobox" className="justify-between w-full">{editProjectId ? activeProjects.find((p) => p.id === editProjectId)?.name : "Seleccionar proyecto..."}<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" /></Button></PopoverTrigger><PopoverContent className="w-[400px] p-0" align="start"><Command><CommandInput placeholder="Buscar proyecto..." /><CommandList><CommandEmpty>No encontrado.</CommandEmpty><CommandGroup className="max-h-[300px] overflow-y-auto">{activeProjects.map((project) => (<CommandItem key={project.id} value={project.name} onSelect={() => { setEditProjectId(project.id); setEditComboboxOpen(false); }}><Check className={cn("mr-2 h-4 w-4", editProjectId === project.id ? "opacity-100" : "opacity-0")} />{project.name}</CommandItem>))}</CommandGroup></CommandList></Command></PopoverContent></Popover></div>
-                <div className="space-y-2"><Label>Nombre de la Tarea</Label><Input placeholder="Ej: Maquetación, Diseño..." value={editTaskName} onChange={(e) => setEditTaskName(e.target.value)} /></div>
-                <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Horas</Label><Input type="number" value={editHours} onChange={(e) => setEditHours(e.target.value)} step="0.5" /></div><div className="space-y-2"><Label>Semana</Label><Select value={editWeek} onValueChange={setEditWeek}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{weeks.map((w, i) => (<SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>Sem {i + 1} ({format(w.effectiveStart!, 'd MMM', { locale: es })} - {format(w.effectiveEnd!, 'd MMM', { locale: es })})</SelectItem>))}</SelectContent></Select></div></div>
-                <div className="space-y-2"><Label>Descripción (Opcional)</Label><Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} /></div>
+                <div className="space-y-2 flex flex-col">
+                  <Label>Proyecto</Label>
+                  <Popover open={editComboboxOpen} onOpenChange={setEditComboboxOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="justify-between w-full">
+                        {editProjectId ? activeProjects.find((p) => p.id === editProjectId)?.name : "Seleccionar proyecto..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar proyecto..." />
+                        <CommandList>
+                            <CommandEmpty>No encontrado.</CommandEmpty>
+                            <CommandGroup className="max-h-[300px] overflow-y-auto">
+                            {activeProjects.map((project) => (
+                                <CommandItem key={project.id} value={project.name} onSelect={() => { setEditProjectId(project.id); setEditComboboxOpen(false); }}>
+                                <Check className={cn("mr-2 h-4 w-4", editProjectId === project.id ? "opacity-100" : "opacity-0")} />
+                                {project.name}
+                                </CommandItem>
+                            ))}
+                            </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2">
+                    <Label>Nombre de la Tarea</Label>
+                    <Input placeholder="Ej: Maquetación, Diseño..." value={editTaskName} onChange={(e) => setEditTaskName(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Horas</Label>
+                        <Input type="number" value={editHours} onChange={(e) => setEditHours(e.target.value)} step="0.5" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Semana</Label>
+                        <Select value={editWeek} onValueChange={setEditWeek}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                {weeks.map((w, i) => (
+                                    <SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>
+                                        Sem {i + 1} ({format(w.effectiveStart!, 'd MMM', { locale: es })} - {format(w.effectiveEnd!, 'd MMM', { locale: es })})
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Label>Descripción (Opcional)</Label>
+                    <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} />
+                </div>
               </div>
             ) : (
               <div className="space-y-3 mt-4">
-                <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2"><div className="flex-1 pl-1">Proyecto</div><div className="flex-1 pl-1">Tarea</div><div className="w-20 mx-2 text-center">Horas</div><div className="w-36">Semana</div><div className="w-8"></div></div>
+                <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
+                    <div className="flex-1 pl-1">Proyecto</div>
+                    <div className="flex-1 pl-1">Tarea</div>
+                    <div className="w-20 mx-2 text-center">Horas</div>
+                    <div className="w-36">Semana</div>
+                    <div className="w-8"></div>
+                </div>
+                
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
                     {newTasks.map((task) => (
                         <div key={task.id} className="flex gap-2 items-start animate-in fade-in slide-in-from-top-1 duration-200">
-                            <div className="flex-1 min-w-0"><Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}><PopoverTrigger asChild><Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal bg-muted/30 hover:bg-muted/50 border-input/50", !task.projectId && "text-muted-foreground")}><span className="truncate">{task.projectId ? activeProjects.find((p) => p.id === task.projectId)?.name : "Buscar..."}</span></Button></PopoverTrigger><PopoverContent className="w-[300px] p-0" align="start"><Command><CommandInput placeholder="Buscar..." /><CommandList><CommandEmpty>No hay.</CommandEmpty><CommandGroup className="max-h-[200px] overflow-y-auto">{activeProjects.map((project) => (<CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}><Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />{project.name}</CommandItem>))}</CommandGroup></CommandList></Command></PopoverContent></Popover></div>
-                            <Input className="flex-1 h-10 px-2 bg-muted/30 border-input/50" placeholder="Nombre tarea..." value={task.taskName} onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} />
-                            <Input type="number" className="w-20 h-10 text-center px-1 font-mono bg-muted/30 border-input/50" placeholder="0" value={task.hours} onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} step="0.5" />
-                            <div className="w-36"><Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}><SelectTrigger className="h-10 px-2 bg-muted/30 border-input/50"><SelectValue /></SelectTrigger><SelectContent>{weeks.map((w, i) => (<SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>Sem {i+1} ({format(w.effectiveStart!, 'd', { locale: es })})</SelectItem>))}</SelectContent></Select></div>
-                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => removeTaskRow(task.id)} disabled={newTasks.length === 1}><X className="h-4 w-4" /></Button>
+                            <div className="flex-1 min-w-0">
+                                <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal bg-muted/30 hover:bg-muted/50 border-input/50", !task.projectId && "text-muted-foreground")}>
+                                            <span className="truncate">{task.projectId ? activeProjects.find((p) => p.id === task.projectId)?.name : "Buscar..."}</span>
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="Buscar..." />
+                                            <CommandList>
+                                                <CommandEmpty>No hay.</CommandEmpty>
+                                                <CommandGroup className="max-h-[200px] overflow-y-auto">
+                                                    {activeProjects.map((project) => (
+                                                        <CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}>
+                                                            <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
+                                                            {project.name}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                            <Input 
+                                className="flex-1 h-10 px-2 bg-muted/30 border-input/50" 
+                                placeholder="Nombre tarea..." 
+                                value={task.taskName} 
+                                onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} 
+                            />
+
+                            <Input 
+                                type="number" 
+                                className="w-20 h-10 text-center px-1 font-mono bg-muted/30 border-input/50" 
+                                placeholder="0" 
+                                value={task.hours} 
+                                onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} 
+                                step="0.5"
+                            />
+
+                            <div className="w-36">
+                                <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
+                                    <SelectTrigger className="h-10 px-2 bg-muted/30 border-input/50"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        {weeks.map((w, i) => (
+                                            <SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>
+                                                Sem {i+1} ({format(w.effectiveStart!, 'd', { locale: es })})
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => removeTaskRow(task.id)} disabled={newTasks.length === 1}>
+                                <X className="h-4 w-4" />
+                            </Button>
                         </div>
                     ))}
                 </div>
-                <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed h-10 hover:bg-primary/5 hover:text-primary hover:border-primary/30"><Plus className="h-4 w-4 mr-2" /> Añadir otra fila</Button>
+
+                <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed h-10 hover:bg-primary/5 hover:text-primary hover:border-primary/30">
+                    <Plus className="h-4 w-4 mr-2" /> Añadir otra fila
+                </Button>
               </div>
             )}
           </div>
-          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t"><Button variant="ghost" onClick={() => setIsFormOpen(false)}>Cancelar</Button><Button onClick={handleSave}>{editingAllocation ? 'Guardar Cambios' : `Guardar ${newTasks.filter(t => t.projectId && t.hours).length} Tareas`}</Button></DialogFooter>
+          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t">
+            <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSave}>
+                {editingAllocation ? 'Guardar Cambios' : `Guardar ${newTasks.filter(t => t.projectId && t.hours).length} Tareas`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
