@@ -24,7 +24,8 @@ export function EmployeeRow({ employee, weeks, onCellClick }: EmployeeRowProps) 
     .slice(0, 2);
 
   return (
-    <div className="flex items-center gap-1 sm:gap-2 py-2 animate-fade-in">
+    // CAMBIO AQUI: Añadido 'flex-1 min-w-0' para que ocupe todo el espacio y alinee con el header
+    <div className="flex flex-1 min-w-0 items-center gap-1 sm:gap-2 py-2 animate-fade-in">
       {/* Employee Info - Fixed Width */}
       <div className="flex w-28 sm:w-48 flex-shrink-0 items-center gap-2 sm:gap-3 pr-2 sm:pr-4">
         <Avatar className="h-8 w-8 sm:h-10 sm:w-10 border-2 border-primary/20">
