@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai"; // <--- IMPORTANTE: Nuevos imports
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Bot, Send, User, Sparkles, Loader2, AlertTriangle } from 'lucide-react'; // <--- Icono de alerta
+import { Bot, Send, User, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 
 // Inicializar Gemini
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
@@ -15,7 +15,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  isError?: boolean; // <--- Nuevo campo para marcar errores visualmente
+  isError?: boolean;
 }
 
 export default function DashboardAI() {
@@ -40,7 +40,6 @@ export default function DashboardAI() {
   const handleSendMessage = async () => {
     if (!input.trim()) return;
     
-    // Check de seguridad básico antes de enviar
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
         setMessages(prev => [...prev, { 
             role: 'assistant', 
@@ -61,7 +60,6 @@ export default function DashboardAI() {
       
       const dataContext = {
         fecha_hoy: today.toLocaleDateString(),
-        // Simplificamos claves para ahorrar tokens y reducir ruido
         empleados: employees.filter(e => e.isActive).map(e => ({
           nombre: e.name, 
           rol: e.role,
@@ -97,9 +95,10 @@ export default function DashboardAI() {
         - Usa negritas para nombres y datos clave.
       `;
 
-      // CONFIGURACIÓN DE SEGURIDAD: Permisiva para evitar bloqueos falsos
+      // CONFIGURACIÓN DE SEGURIDAD Y MODELO CORREGIDO
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
+        // CAMBIO CLAVE AQUÍ: Usamos gemini-2.0-flash, que sabemos que funciona.
+        model: "gemini-2.0-flash", 
         safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -111,7 +110,6 @@ export default function DashboardAI() {
       const result = await model.generateContent(systemPrompt);
       const response = result.response;
       
-      // Intentamos leer el texto. Si fue bloqueado, esto lanzará error o devolverá null.
       const text = response.text(); 
 
       setMessages(prev => [...prev, { role: 'assistant', content: text, timestamp: new Date() }]);
@@ -119,11 +117,11 @@ export default function DashboardAI() {
     } catch (error: any) {
       console.error("Error AI Detallado:", error);
       
-      // Mensaje de error inteligente según lo que haya pasado
       let errorMsg = "Lo siento, ha ocurrido un error desconocido.";
       
       if (error.message?.includes('API key')) errorMsg = "Error de API Key: Verifica que es válida en el .env";
       else if (error.message?.includes('blocked')) errorMsg = "⚠️ La respuesta fue bloqueada por los filtros de seguridad de Google. Intenta preguntar de otra forma.";
+      else if (error.message?.includes('404')) errorMsg = "Error: El modelo IA no es accesible con tu clave. Comprueba el nombre del modelo.";
       else if (error.message?.includes('fetch')) errorMsg = "Error de conexión. Verifica tu internet.";
       else errorMsg = `Error técnico: ${error.message}`;
 
