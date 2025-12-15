@@ -6,7 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import { AppProvider } from "@/contexts/AppContext";
 import { AppLayout } from "@/components/layout/AppLayout";
-import DashboardAI from "./pages/DashboardAI"; // <--- IMPORTANTE
+import DashboardAI from "./pages/DashboardAI";
+import ClientReportsPage from '@/pages/ClientReportsPage';
 import Index from "./pages/Index";
 import TeamPage from "./pages/TeamPage";
 import ClientsPage from "./pages/ClientsPage";
@@ -37,6 +38,7 @@ const App = () => (
                 <Route path="/clients" element={<ClientsPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/informes-clientes" element={<ClientReportsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
