@@ -143,7 +143,7 @@ export default function DashboardAI() {
           errorMsg = "Error: El modelo de IA no está disponible o ha cambiado de versión. Revisa DashboardAI.tsx.";
       } else if (error.message?.includes("429")) {
           // ✅ MENSAJE AMIGABLE PARA LÍMITE DE CUOTA
-          errorMsg = "⏳ **Minguito está descansando.** He alcanzado el límite de consultas por minuto de la versión gratuita. Por favor, espera un momento y vuelve a preguntar.";
+          errorMsg = "⏳ **Minguito está descansando.** He alcanzado el límite de consultas por minuto de la API. Por favor, espera un momento y vuelve a preguntar.";
       } else if (error.message?.includes("API key")) {
           errorMsg = "Error: Verifica tu API Key en el archivo .env.";
       }
