@@ -17,8 +17,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Filter,
-  Zap,
-  Briefcase
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
@@ -338,7 +337,8 @@ export default function ReportsPage() {
                 <CardContent>
                     <div className="space-y-6">
                         {employeeData.map(emp => (
-                            <div key={emp.id} className="grid grid-cols-12 gap-4 items-center group hover:bg-slate-50 p-3 rounded-lg transition-colors border border-transparent hover:border-slate-100">
+                            // SOLUCIÓN AL BUG: Añadir currentMonth.toISOString() a la key fuerza el renderizado completo al cambiar de mes
+                            <div key={emp.id + currentMonth.toISOString()} className="grid grid-cols-12 gap-4 items-center group hover:bg-slate-50 p-3 rounded-lg transition-colors border border-transparent hover:border-slate-100">
                                 <div className="col-span-4 md:col-span-3 flex items-center gap-3">
                                     <div className="h-9 w-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs border border-indigo-200">
                                         {emp.name.substring(0, 2).toUpperCase()}
@@ -353,9 +353,22 @@ export default function ReportsPage() {
                                     {/* Barra de Planificación */}
                                     <div className="flex justify-between text-xs">
                                         <span className="text-slate-500">Ocupación Planificada</span>
-                                        <span className={cn("font-medium", emp.percentage > 100 ? "text-red-600" : "text-slate-700")}>{emp.percentage.toFixed(0)}%</span>
+                                        {/* Forzamos clase con lógica estricta */}
+                                        <span className={cn("font-medium", emp.percentage > 100 ? "text-red-600 font-bold" : "text-slate-700")}>
+                                            {emp.percentage.toFixed(0)}%
+                                        </span>
                                     </div>
-                                    <Progress value={emp.percentage} className={cn("h-1.5", emp.percentage > 100 ? "[&>div]:bg-red-500" : "bg-slate-100")} />
+                                    
+                                    <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                        {/* Barra de Progreso Colorizada */}
+                                        <div 
+                                            className={cn("absolute top-0 left-0 h-full", 
+                                                emp.percentage > 100 ? "bg-red-500" : 
+                                                emp.percentage > 85 ? "bg-amber-500" : "bg-blue-500"
+                                            )}
+                                            style={{ width: `${Math.min(emp.percentage, 100)}%` }}
+                                        />
+                                    </div>
                                     
                                     {/* Métricas Real vs Comp */}
                                     <div className="flex items-center gap-3 mt-1 pt-1">
@@ -384,7 +397,8 @@ export default function ReportsPage() {
                 {projectData.map(p => {
                     const gain = p.hoursComputed - p.hoursReal;
                     return (
-                        <Card key={p.id} className={cn("border-l-4", p.percentage > 100 ? "border-l-red-500" : "border-l-indigo-500")}>
+                        // SOLUCIÓN AL BUG: Añadir currentMonth.toISOString() aquí también
+                        <Card key={p.id + currentMonth.toISOString()} className={cn("border-l-4", p.percentage > 100 ? "border-l-red-500" : "border-l-indigo-500")}>
                             <CardHeader className="pb-2 bg-slate-50/50 pt-3">
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="space-y-0.5">
@@ -402,7 +416,9 @@ export default function ReportsPage() {
                             <CardContent className="pt-4 space-y-3">
                                 <div className="flex justify-between items-end">
                                     <span className="text-xs text-muted-foreground font-medium">Planificado</span>
-                                    <span className="text-sm font-bold text-indigo-600">{p.hoursPlanned}h</span>
+                                    <span className={cn("text-sm font-bold", p.percentage > 100 ? "text-red-600" : "text-indigo-600")}>
+                                        {p.hoursPlanned}h
+                                    </span>
                                 </div>
                                 <Progress value={p.percentage} className={cn("h-1.5", p.percentage > 100 ? "[&>div]:bg-red-500" : "")} />
                                 
