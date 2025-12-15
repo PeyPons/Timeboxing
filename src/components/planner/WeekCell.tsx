@@ -6,7 +6,7 @@ interface WeekCellProps {
   allocations: Allocation[];
   hours: number;
   capacity: number;
-  status: LoadStatus; // Mantenemos el prop por compatibilidad, pero recalculamos visualmente aquí
+  status: LoadStatus;
   percentage: number;
   isCurrentWeek: boolean;
   baseCapacity: number;
@@ -18,7 +18,6 @@ const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export function WeekCell({ allocations, hours, capacity, isCurrentWeek, breakdown, onClick }: WeekCellProps) {
   
-  // 1. Métricas Internas
   const totalEst = round2(allocations.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0));
   
   const completedTasks = allocations.filter(a => a.status === 'completed');
@@ -28,26 +27,30 @@ export function WeekCell({ allocations, hours, capacity, isCurrentWeek, breakdow
   const balance = round2(totalComp - totalReal);
   const hasActivity = allocations.length > 0;
   
-  // 2. LÓGICA DE SEMÁFORO (90% - 110%)
+  // Lógica Semáforo (90-110%)
   const ratio = capacity > 0 ? (hours / capacity) : 0;
-  
-  // Definición de estados según tu criterio:
-  const isOverload = ratio > 1.1;       // > 110% (Rojo)
-  const isUnderload = ratio < 0.9 && capacity > 0; // < 90% (Naranja)
-  const isHealthy = ratio >= 0.9 && ratio <= 1.1 && capacity > 0; // 90-110% (Verde)
+  const isOverload = ratio > 1.1;       
+  const isUnderload = ratio < 0.9 && capacity > 0; 
+  const isHealthy = ratio >= 0.9 && ratio <= 1.1 && capacity > 0;
 
   const hasReductions = breakdown && breakdown.length > 0;
 
   return (
     <div onClick={onClick} className={cn(
-      "h-full min-h-[140px] p-2 transition-all cursor-pointer border border-transparent hover:border-indigo-300 rounded-md relative flex flex-col group",
-      isCurrentWeek ? "bg-white shadow-sm" : "bg-slate-50/50 hover:bg-white",
+      "h-full min-h-[140px] p-2 transition-all cursor-pointer border rounded-md relative flex flex-col group tabular-nums",
+      // HEATMAP DE FONDO
+      isOverload ? "bg-red-50/80 border-red-100 hover:bg-red-50" :
+      isUnderload ? "bg-amber-50/50 border-amber-100 hover:bg-amber-50" :
+      isHealthy ? "bg-emerald-50/30 border-emerald-100 hover:bg-emerald-50" :
+      isCurrentWeek ? "bg-white border-indigo-200 shadow-sm" : "bg-slate-50/50 border-transparent hover:bg-white hover:border-indigo-200",
+      
       !hasActivity && !hasReductions && "opacity-60 hover:opacity-100"
     )}>
       
       {/* SECCIÓN DATOS */}
       {hasActivity ? (
         <div className="flex flex-col gap-1.5 mt-1 flex-1">
+            {/* Si hay completadas, Est. se ve más clarito */}
             <div className={cn("flex justify-between items-center text-[10px]", completedTasks.length > 0 ? "text-slate-400" : "text-slate-600 font-medium")}>
                 <span>Est.</span>
                 <span className="font-mono">{totalEst}h</span>
@@ -103,13 +106,13 @@ export function WeekCell({ allocations, hours, capacity, isCurrentWeek, breakdow
         </div>
       )}
 
-      {/* FOOTER: TOTAL COLOREADO */}
-      <div className="mt-auto pt-1.5 border-t flex justify-end">
+      {/* FOOTER TOTAL */}
+      <div className="mt-auto pt-1.5 border-t border-black/5 flex justify-end">
          <div className={cn(
              "text-[10px] font-bold flex items-center gap-1.5 transition-colors duration-300",
              isOverload ? "text-red-600" : 
-             isUnderload ? "text-amber-500" : 
-             isHealthy ? "text-emerald-600" : // VERDE si está en rango
+             isUnderload ? "text-amber-600" : 
+             isHealthy ? "text-emerald-600" : 
              "text-slate-400"
          )}>
              {isOverload && <AlertCircle className="h-3 w-3" />}
