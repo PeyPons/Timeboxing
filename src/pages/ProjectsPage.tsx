@@ -23,7 +23,6 @@ import {
   Pencil,
   Search,
   HeartPulse,
-  Euro,
   ExternalLink,
   ChevronsUpDown,
   Check,
@@ -31,12 +30,13 @@ import {
   Target,
   FileCheck,
   Clock,
-  MessageSquare
+  Plus,
+  Trash2,
+  Euro
 } from 'lucide-react';
 import { Project } from '@/types';
 import { cn } from '@/lib/utils';
 
-// Helper para redondeo
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export default function ProjectsPage() {
@@ -44,22 +44,21 @@ export default function ProjectsPage() {
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Filtros
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
   const [openEmployeeCombo, setOpenEmployeeCombo] = useState(false);
 
-  // Edición
+  // Estados Edición General
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-  
-  // Formulario Edición
   const [editName, setEditName] = useState('');
   const [editBudget, setEditBudget] = useState('');
   const [editStatus, setEditStatus] = useState<'active' | 'archived' | 'completed'>('active');
   const [editHealth, setEditHealth] = useState<'healthy' | 'needs_attention' | 'at_risk'>('healthy');
   const [editFee, setEditFee] = useState('');
   const [editNps, setEditNps] = useState('');
+
+  // Estados Edición OKRs
+  const [newOkr, setNewOkr] = useState('');
 
   const handlePrevMonth = () => setCurrentMonth(prev => subMonths(prev, 1));
   const handleNextMonth = () => setCurrentMonth(prev => addMonths(prev, 1));
@@ -82,6 +81,42 @@ export default function ProjectsPage() {
     });
   }, [projects, searchTerm, selectedEmployeeId, allocations, currentMonth]);
 
+  // --- LÓGICA DE CHECKLIST MENSUAL ---
+  const handleToggleDeliverable = async (project: Project, itemKey: string) => {
+      const monthKey = format(currentMonth, 'yyyy-MM');
+      const currentLog = project.deliverables_log || {};
+      const monthItems = currentLog[monthKey] || [];
+
+      let newMonthItems;
+      if (monthItems.includes(itemKey)) {
+          newMonthItems = monthItems.filter(i => i !== itemKey);
+      } else {
+          newMonthItems = [...monthItems, itemKey];
+      }
+
+      const newLog = {
+          ...currentLog,
+          [monthKey]: newMonthItems
+      };
+
+      await updateProject({ ...project, deliverables_log: newLog });
+  };
+
+  // --- LÓGICA DE OKRS ---
+  const handleAddOkr = async (project: Project) => {
+      if (!newOkr.trim()) return;
+      const currentOkrs = project.okrs || [];
+      await updateProject({ ...project, okrs: [...currentOkrs, newOkr.trim()] });
+      setNewOkr('');
+  };
+
+  const handleDeleteOkr = async (project: Project, index: number) => {
+      const currentOkrs = project.okrs || [];
+      const newOkrs = currentOkrs.filter((_, i) => i !== index);
+      await updateProject({ ...project, okrs: newOkrs });
+  };
+
+  // --- LÓGICA EDICIÓN ---
   const handleEditClick = (project: Project) => {
     setEditingProject(project);
     setEditName(project.name);
@@ -210,6 +245,7 @@ export default function ProjectsPage() {
         {filteredProjects.map((project) => {
           const client = clients.find(c => c.id === project.clientId);
           
+          // Cálculos Operativos
           let monthTasks = allocations.filter(a => {
              const taskDate = parseISO(a.weekStartDate);
              return a.projectId === project.id && isSameMonth(taskDate, currentMonth);
@@ -228,10 +264,15 @@ export default function ProjectsPage() {
           const assignedPct = budget > 0 ? (totalAssigned / budget) * 100 : 0;
           const completedPct = budget > 0 ? (totalCompleted / budget) * 100 : 0;
 
+          // Cálculo Financiero
           const fee = project.monthlyFee || 0;
           const internalCostRate = 25; 
           const currentCost = totalCompleted * internalCostRate;
           const profitMargin = fee - currentCost;
+
+          // Datos de Checklist Mensual
+          const monthKey = format(currentMonth, 'yyyy-MM');
+          const completedDeliverables = project.deliverables_log?.[monthKey] || [];
 
           return (
             <Card key={project.id} className={cn("overflow-hidden border-l-4 shadow-sm hover:shadow-md transition-shadow", 
@@ -276,14 +317,14 @@ export default function ProjectsPage() {
                             <Clock className="h-3.5 w-3.5 mr-2" /> Operativa
                         </TabsTrigger>
                         <TabsTrigger value="estrategia" className="text-xs data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none h-10 px-4">
-                            <Target className="h-3.5 w-3.5 mr-2" /> OKRs y Estrategia
+                            <Target className="h-3.5 w-3.5 mr-2" /> Estrategia (OKRs)
                         </TabsTrigger>
                         <TabsTrigger value="gestion" className="text-xs data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none h-10 px-4">
-                            <FileCheck className="h-3.5 w-3.5 mr-2" /> Gestión Mensual
+                            <FileCheck className="h-3.5 w-3.5 mr-2" /> Entregables
                         </TabsTrigger>
                     </TabsList>
 
-                    {/* VISTA OPERATIVA (Horas y Tareas) */}
+                    {/* VISTA OPERATIVA */}
                     <TabsContent value="operativa" className="p-4 space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
@@ -301,83 +342,92 @@ export default function ProjectsPage() {
                                 <Progress value={completedPct} className="h-2 bg-emerald-100 [&>div]:bg-emerald-500" />
                             </div>
                         </div>
-
-                        <div className="border rounded-md bg-slate-50/50 overflow-hidden">
-                            <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase flex justify-between">
-                                <span>Últimas Tareas</span>
-                                <span>Horas</span>
-                            </div>
-                            {monthTasks.length > 0 ? (
+                        {monthTasks.length > 0 ? (
+                            <div className="border rounded-md bg-slate-50/50 overflow-hidden text-xs">
                                 <div className="divide-y divide-slate-100">
                                     {monthTasks.slice(0, 3).map(task => (
-                                        <div key={task.id} className="px-3 py-2 flex justify-between text-xs items-center bg-white">
+                                        <div key={task.id} className="px-3 py-2 flex justify-between items-center bg-white">
                                             <span className="truncate max-w-[80%]">{task.taskName}</span>
                                             <span className="font-mono text-slate-500">{task.hoursAssigned}h</span>
                                         </div>
                                     ))}
                                 </div>
-                            ) : (
-                                <div className="p-3 text-center text-xs text-muted-foreground italic">Sin tareas este mes</div>
+                            </div>
+                        ) : (
+                            <div className="p-3 text-center text-xs text-muted-foreground italic bg-slate-50 rounded border border-dashed">Sin tareas este mes</div>
+                        )}
+                    </TabsContent>
+
+                    {/* VISTA ESTRATEGIA (OKRs Dinámicos) */}
+                    <TabsContent value="estrategia" className="p-4 space-y-4">
+                        <div className="space-y-2">
+                            {(project.okrs || []).map((okr, idx) => (
+                                <div key={idx} className="flex items-start gap-2 bg-slate-50 p-2 rounded border border-slate-100 group">
+                                    <Target className="h-4 w-4 text-indigo-500 mt-0.5 shrink-0" />
+                                    <span className="text-xs text-slate-700 flex-1">{okr}</span>
+                                    <button onClick={() => handleDeleteOkr(project, idx)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                            {(project.okrs?.length || 0) === 0 && (
+                                <p className="text-xs text-slate-400 italic text-center py-2">No hay objetivos definidos.</p>
                             )}
                         </div>
-                    </TabsContent>
-
-                    {/* VISTA ESTRATEGIA (OKRs) - Simulado basado en Excel */}
-                    <TabsContent value="estrategia" className="p-4 space-y-3">
-                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Objetivos Trimestrales (Q1)</div>
-                        {/* Mock Data para visualizar concepto */}
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="flex items-center gap-2"><Target className="h-3 w-3 text-indigo-500"/> KWR Top 3</span>
-                                <span className="font-mono font-bold">12 / 15</span>
-                            </div>
-                            <Progress value={80} className="h-1.5 bg-slate-100 [&>div]:bg-indigo-500" />
-                            
-                            <div className="flex items-center justify-between text-sm mt-2">
-                                <span className="flex items-center gap-2"><Target className="h-3 w-3 text-indigo-500"/> Tráfico Orgánico</span>
-                                <span className="font-mono font-bold">+15%</span>
-                            </div>
-                            <Progress value={45} className="h-1.5 bg-slate-100 [&>div]:bg-indigo-500" />
-                        </div>
                         
-                        <div className="mt-4 pt-3 border-t">
-                            <div className="flex items-start gap-2">
-                                <MessageSquare className="h-3 w-3 text-slate-400 mt-0.5" />
-                                <p className="text-xs text-slate-600 italic">"Cliente quiere foco en KWR de marca este mes. Ojo con la canibalización."</p>
-                            </div>
+                        <div className="flex gap-2 pt-2 border-t">
+                            <Input 
+                                placeholder="Añadir objetivo (ej: +20% KWR TOP 3)" 
+                                className="h-8 text-xs" 
+                                value={newOkr}
+                                onChange={e => setNewOkr(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleAddOkr(project)}
+                            />
+                            <Button size="sm" className="h-8 bg-slate-900" onClick={() => handleAddOkr(project)}>
+                                <Plus className="h-3.5 w-3.5" />
+                            </Button>
                         </div>
                     </TabsContent>
 
-                    {/* VISTA GESTIÓN (Entregables) - Simulado */}
+                    {/* VISTA ENTREGABLES (Checklist Mensual) */}
                     <TabsContent value="gestion" className="p-4">
-                        <div className="space-y-3">
-                            <div className="flex items-center space-x-2">
-                                <Checkbox id={`meet-${project.id}`} />
-                                <label htmlFor={`meet-${project.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                    Reunión Mensual Realizada
-                                </label>
+                        <div className="space-y-4">
+                            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex justify-between">
+                                <span>Entregables {format(currentMonth, 'MMMM', { locale: es })}</span>
+                                <span className="text-slate-400 font-normal normal-case">Se reinician mensualmente</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                                <Checkbox id={`report-${project.id}`} />
-                                <label htmlFor={`report-${project.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                    Informe Enviado
-                                </label>
+                            <div className="space-y-3">
+                                {[
+                                    { key: 'meeting', label: 'Reunión Mensual Realizada' },
+                                    { key: 'report', label: 'Informe Enviado' },
+                                    { key: 'nps', label: 'Encuesta NPS Enviada' }
+                                ].map((item) => (
+                                    <div key={item.key} className="flex items-center space-x-2 p-2 rounded hover:bg-slate-50 transition-colors">
+                                        <Checkbox 
+                                            id={`${item.key}-${project.id}`} 
+                                            checked={completedDeliverables.includes(item.key)}
+                                            onCheckedChange={() => handleToggleDeliverable(project, item.key)}
+                                        />
+                                        <label 
+                                            htmlFor={`${item.key}-${project.id}`} 
+                                            className={cn("text-sm font-medium leading-none cursor-pointer", 
+                                                completedDeliverables.includes(item.key) ? "text-slate-900" : "text-slate-500"
+                                            )}
+                                        >
+                                            {item.label}
+                                        </label>
+                                    </div>
+                                ))}
                             </div>
-                            <div className="flex items-center space-x-2">
-                                <Checkbox id={`nps-${project.id}`} />
-                                <label htmlFor={`nps-${project.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                    Encuesta NPS Enviada
-                                </label>
-                            </div>
+                            
+                            {project.npsLink && (
+                                <div className="mt-4 pt-3 border-t">
+                                    <a href={project.npsLink} target="_blank" rel="noreferrer" className="text-xs flex items-center gap-1 text-indigo-600 hover:underline">
+                                        <ExternalLink className="h-3 w-3" /> Ver Informe de Satisfacción
+                                    </a>
+                                </div>
+                            )}
                         </div>
-                        
-                        {project.npsLink && (
-                            <div className="mt-4 pt-3 border-t">
-                                <a href={project.npsLink} target="_blank" rel="noreferrer" className="text-xs flex items-center gap-1 text-indigo-600 hover:underline">
-                                    <ExternalLink className="h-3 w-3" /> Ver Informe de Satisfacción
-                                </a>
-                            </div>
-                        )}
                     </TabsContent>
                 </Tabs>
               </CardContent>
@@ -386,7 +436,7 @@ export default function ProjectsPage() {
         })}
       </div>
 
-      {/* Dialogo Edición (Mismo que tenías, necesario para que funcione el lápiz) */}
+      {/* Dialogo Edición */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="max-w-2xl">
             <DialogHeader>
