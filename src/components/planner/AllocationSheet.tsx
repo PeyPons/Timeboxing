@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-// AQUI ESTABA EL ERROR: Faltaba importar Dialog y sus partes
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
 import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatProjectName } from '@/lib/utils'; // IMPORTAR LA NUEVA FUNCIÓN
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -55,21 +54,16 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     if (open) setViewDate(viewDateContext || new Date(weekStart));
   }, [open, weekStart, viewDateContext]);
 
-  // Estados Generales
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-
-  // UX: Retrasar ordenamiento al completar
   const [recentlyToggled, setRecentlyToggled] = useState<Set<string>>(new Set());
 
-  // Estados Creación Múltiple
   const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineNameValue, setInlineNameValue] = useState('');
   const inlineInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados Edición Completa
   const [editProjectId, setEditProjectId] = useState('');
   const [editTaskName, setEditTaskName] = useState('');
   const [editHours, setEditHours] = useState('');
@@ -97,7 +91,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const handlePrevMonth = () => setViewDate(prev => subMonths(prev, 1));
   const handleNextMonth = () => setViewDate(prev => addMonths(prev, 1));
 
-  // --- LÓGICA DE CREACIÓN ---
   const startAdd = (weekStartReal: Date) => {
     const storageKey = getStorageKey(weekStartReal, viewDate);
     setEditingAllocation(null);
@@ -156,39 +149,21 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setIsFormOpen(false);
   };
 
-  // --- LÓGICA DE CIERRE DE TAREA ---
   const toggleTaskCompletion = (allocation: Allocation) => {
       const isCompleting = allocation.status !== 'completed';
-      
-      // UX: Congelar orden temporalmente
-      setRecentlyToggled(prev => {
-          const newSet = new Set(prev);
-          newSet.add(allocation.id);
-          return newSet;
-      });
-
+      setRecentlyToggled(prev => { const newSet = new Set(prev); newSet.add(allocation.id); return newSet; });
       updateAllocation({
           ...allocation,
           status: isCompleting ? 'completed' : 'planned',
           hoursActual: isCompleting ? allocation.hoursAssigned : 0,
           hoursComputed: isCompleting ? allocation.hoursAssigned : 0
       });
-
-      // UX: Descongelar a los 30s
-      setTimeout(() => {
-          setRecentlyToggled(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(allocation.id);
-              return newSet;
-          });
-      }, 30000);
+      setTimeout(() => { setRecentlyToggled(prev => { const newSet = new Set(prev); newSet.delete(allocation.id); return newSet; }); }, 30000);
   };
 
   const updateInlineHours = (allocation: Allocation, field: 'hoursActual' | 'hoursComputed', value: string) => {
       const numValue = parseFloat(value) || 0;
-      if (allocation[field] !== numValue) {
-          updateAllocation({ ...allocation, [field]: numValue });
-      }
+      if (allocation[field] !== numValue) { updateAllocation({ ...allocation, [field]: numValue }); }
   };
 
   const startEditFull = (allocation: Allocation) => {
@@ -201,22 +176,9 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setIsFormOpen(true);
   };
 
-  const startInlineEdit = (allocation: Allocation) => {
-    setInlineEditingId(allocation.id);
-    setInlineNameValue(allocation.taskName || '');
-  };
-
-  const saveInlineEdit = (allocation: Allocation) => {
-    if (inlineNameValue.trim() !== allocation.taskName) {
-        updateAllocation({ ...allocation, taskName: inlineNameValue });
-    }
-    setInlineEditingId(null);
-  };
-
-  const moveTaskToWeek = (allocation: Allocation, targetWeekStartReal: Date) => {
-    const targetKey = getStorageKey(targetWeekStartReal, viewDate);
-    updateAllocation({ ...allocation, weekStartDate: targetKey });
-  };
+  const startInlineEdit = (allocation: Allocation) => { setInlineEditingId(allocation.id); setInlineNameValue(allocation.taskName || ''); };
+  const saveInlineEdit = (allocation: Allocation) => { if (inlineNameValue.trim() !== allocation.taskName) { updateAllocation({ ...allocation, taskName: inlineNameValue }); } setInlineEditingId(null); };
+  const moveTaskToWeek = (allocation: Allocation, targetWeekStartReal: Date) => { const targetKey = getStorageKey(targetWeekStartReal, viewDate); updateAllocation({ ...allocation, weekStartDate: targetKey }); };
 
   const groupAndSortAllocations = (allocations: Allocation[]) => {
     const grouped = allocations.reduce((acc, alloc) => {
@@ -227,18 +189,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     }, {} as Record<string, Allocation[]>);
 
     return Object.entries(grouped).sort(([projIdA, allocsA], [projIdB, allocsB]) => {
-      // UX: Si está en 'recentlyToggled', fingimos que no está completa para el orden
       const isAllCompletedA = allocsA.every(a => a.status === 'completed' && !recentlyToggled.has(a.id));
       const isAllCompletedB = allocsB.every(a => a.status === 'completed' && !recentlyToggled.has(a.id));
-
       if (isAllCompletedA && !isAllCompletedB) return 1;
       if (!isAllCompletedA && isAllCompletedB) return -1;
-
       const totalHoursA = allocsA.reduce((sum, a) => sum + a.hoursAssigned, 0);
       const totalHoursB = allocsB.reduce((sum, a) => sum + a.hoursAssigned, 0);
-
       if (totalHoursB !== totalHoursA) return totalHoursB - totalHoursA;
-      
       const projA = getProjectById(projIdA);
       const projB = getProjectById(projIdB);
       return (projA?.name || '').localeCompare(projB?.name || '');
@@ -368,7 +325,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                   return (
                                     <div key={projId} className={cn("bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden transition-opacity", isProjCompleted ? "opacity-70 grayscale-[0.3]" : "opacity-100")}>
                                         <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 border-b flex justify-between items-center">
-                                            <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={project?.name}>{project?.name || 'Desc.'}</span>
+                                            {/* AQUÍ USAMOS FORMAT PROJECT NAME */}
+                                            <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={project?.name}>
+                                                {formatProjectName(project?.name || 'Desc.')}
+                                            </span>
                                             <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">{totalProjHours}h</span>
                                         </div>
 
@@ -500,7 +460,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                   <Popover open={editComboboxOpen} onOpenChange={setEditComboboxOpen}>
                     <PopoverTrigger asChild>
                       <Button variant="outline" role="combobox" className="justify-between w-full">
-                        {editProjectId ? activeProjects.find((p) => p.id === editProjectId)?.name : "Seleccionar proyecto..."}
+                        {editProjectId ? formatProjectName(activeProjects.find((p) => p.id === editProjectId)?.name || '') : "Seleccionar proyecto..."}
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
@@ -513,7 +473,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                             {activeProjects.map((project) => (
                                 <CommandItem key={project.id} value={project.name} onSelect={() => { setEditProjectId(project.id); setEditComboboxOpen(false); }}>
                                 <Check className={cn("mr-2 h-4 w-4", editProjectId === project.id ? "opacity-100" : "opacity-0")} />
-                                {project.name}
+                                {/* AQUÍ TAMBIÉN USAMOS LA MÁSCARA */}
+                                {formatProjectName(project.name)}
                                 </CommandItem>
                             ))}
                             </CommandGroup>
@@ -567,7 +528,9 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                 <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
                                     <PopoverTrigger asChild>
                                         <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal bg-muted/30 hover:bg-muted/50 border-input/50", !task.projectId && "text-muted-foreground")}>
-                                            <span className="truncate">{task.projectId ? activeProjects.find((p) => p.id === task.projectId)?.name : "Buscar..."}</span>
+                                            <span className="truncate">
+                                                {task.projectId ? formatProjectName(activeProjects.find((p) => p.id === task.projectId)?.name || '') : "Buscar..."}
+                                            </span>
                                         </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-[300px] p-0" align="start">
@@ -579,7 +542,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                     {activeProjects.map((project) => (
                                                         <CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}>
                                                             <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
-                                                            {project.name}
+                                                            {formatProjectName(project.name)}
                                                         </CommandItem>
                                                     ))}
                                                 </CommandGroup>
