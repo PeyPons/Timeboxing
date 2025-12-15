@@ -10,22 +10,25 @@ import {
   BarChart3, 
   Users, 
   Clock, 
-  AlertTriangle, 
   TrendingUp, 
   FolderOpen,
   ChevronLeft,
   ChevronRight,
   CalendarDays,
   CheckCircle2,
-  Filter
+  Filter,
+  Zap,
+  Briefcase
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
+const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
 export default function ReportsPage() {
-  const { employees, clients, projects, allocations, getProjectHoursForMonth } = useApp();
+  const { employees, clients, projects, allocations } = useApp();
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
@@ -57,35 +60,36 @@ export default function ReportsPage() {
     return sum + getMonthlyCapacity(year, month, e.workSchedule);
   }, 0), [activeEmployees, year, month]);
 
+  // --- CÁLCULOS PRINCIPALES ---
   const monthStats = useMemo(() => {
-    // ✅ CORRECCIÓN: Aplicamos round2 AL FINAL de la suma para limpiar decimales locos
     const planned = round2(monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
     
-    const completed = round2(monthAllocations
-        .filter(a => a.status === 'completed')
-        .reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0));
+    // Solo sumamos Real y Computado de tareas completadas
+    const completedTasks = monthAllocations.filter(a => a.status === 'completed');
+    
+    const real = round2(completedTasks.reduce((sum, a) => sum + (a.hoursActual || 0), 0));
+    const computed = round2(completedTasks.reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
 
-    return { planned, completed };
+    return { planned, real, computed };
   }, [monthAllocations]);
 
   const utilizationRate = totalCapacity > 0 ? (monthStats.planned / totalCapacity) * 100 : 0;
-  const executionRate = monthStats.planned > 0 ? (monthStats.completed / monthStats.planned) * 100 : 0;
+  // Rentabilidad: Qué porcentaje de lo Realmente trabajado hemos podido Computar
+  const profitabilityRate = monthStats.real > 0 ? (monthStats.computed / monthStats.real) * 100 : 0;
 
   const employeeData = useMemo(() => {
     return activeEmployees.map(e => {
       const capacity = getMonthlyCapacity(year, month, e.workSchedule);
       const empAllocations = monthAllocations.filter(a => a.employeeId === e.id);
+      const completedTasks = empAllocations.filter(a => a.status === 'completed');
       
-      // ✅ CORRECCIÓN AQUÍ TAMBIÉN
       const plannedHours = round2(empAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
-      const completedHours = round2(empAllocations
-        .filter(a => a.status === 'completed')
-        .reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0));
+      const realHours = round2(completedTasks.reduce((sum, a) => sum + (a.hoursActual || 0), 0));
+      const computedHours = round2(completedTasks.reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
       
       const percentage = capacity > 0 ? (plannedHours / capacity) * 100 : 0;
-      const available = round2(Math.max(0, capacity - plannedHours));
 
-      return { ...e, plannedHours, completedHours, capacity, percentage, available };
+      return { ...e, plannedHours, realHours, computedHours, capacity, percentage };
     }).sort((a, b) => b.percentage - a.percentage);
   }, [activeEmployees, monthAllocations, year, month]);
 
@@ -98,10 +102,11 @@ export default function ReportsPage() {
     return projectsToShow.map(p => {
         const client = clients.find(c => c.id === p.clientId);
         const projAllocations = monthAllocations.filter(a => a.projectId === p.id);
+        const completedTasks = projAllocations.filter(a => a.status === 'completed');
         
-        // ✅ Y AQUÍ TAMBIÉN
         const planned = round2(projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
-        const real = round2(projAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0));
+        const real = round2(completedTasks.reduce((sum, a) => sum + (a.hoursActual || 0), 0));
+        const computed = round2(completedTasks.reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
 
         const percentage = p.budgetHours > 0 ? (planned / p.budgetHours) * 100 : 0;
 
@@ -111,6 +116,7 @@ export default function ReportsPage() {
             clientColor: client?.color,
             hoursPlanned: planned,
             hoursReal: real,
+            hoursComputed: computed,
             budget: p.budgetHours,
             percentage: percentage
         };
@@ -124,38 +130,39 @@ export default function ReportsPage() {
       value: `${totalCapacity}h`,
       subtitle: selectedEmployeeId === 'all' ? 'Total Equipo' : 'Disponible',
       icon: Users,
-      color: 'text-indigo-600',
-      bgColor: 'bg-indigo-50',
+      color: 'text-slate-600',
+      bgColor: 'bg-slate-100',
     },
     {
       title: 'Planificado',
       value: `${monthStats.planned}h`,
       subtitle: `${utilizationRate.toFixed(0)}% ocupación`,
       icon: Clock,
+      color: 'text-indigo-600',
+      bgColor: 'bg-indigo-50',
+    },
+    {
+      title: 'Real (Incurrido)',
+      value: `${monthStats.real}h`,
+      subtitle: `Trabajo de reloj`,
+      icon: Zap,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
     },
     {
       title: 'Computado',
-      value: `${monthStats.completed}h`,
-      subtitle: `Coste real`,
+      value: `${monthStats.computed}h`,
+      subtitle: 'Facturable',
       icon: CheckCircle2,
       color: 'text-emerald-600',
       bgColor: 'bg-emerald-50',
-    },
-    {
-      title: 'Proyectos',
-      value: projectData.length,
-      subtitle: 'Activos este mes',
-      icon: FolderOpen,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
     },
   ];
 
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
       
+      {/* HEADER */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
@@ -204,6 +211,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {/* KPI CARDS */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.title} className="hover:shadow-md transition-shadow">
@@ -221,10 +229,11 @@ export default function ReportsPage() {
         ))}
       </div>
 
+      {/* TABS CONTENT */}
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Visión General</TabsTrigger>
-          <TabsTrigger value="team">Desglose Carga</TabsTrigger>
+          <TabsTrigger value="team">Desglose Equipo</TabsTrigger>
           <TabsTrigger value="projects">Proyectos</TabsTrigger>
         </TabsList>
 
@@ -233,38 +242,57 @@ export default function ReportsPage() {
             
             <Card className="col-span-4">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /> Eficiencia</CardTitle>
-                <CardDescription>Comparativa entre horas disponibles, planificadas y computadas.</CardDescription>
+                <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /> Eficiencia & Rentabilidad</CardTitle>
+                <CardDescription>Análisis de ocupación y conversión de horas reales a facturables.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-8">
                 <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                        <span className="font-medium">Ocupación (Planificado vs Capacidad)</span>
-                        <span>{utilizationRate.toFixed(1)}%</span>
+                        <span className="font-medium text-slate-700">Ocupación (Planificado vs Capacidad)</span>
+                        <span className="font-bold">{utilizationRate.toFixed(1)}%</span>
                     </div>
                     <Progress value={utilizationRate} className="h-3 bg-slate-100" />
                 </div>
                 
                 <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                        <span className="font-medium text-emerald-700">Coste Real (Computado vs Planificado)</span>
-                        <span className="text-emerald-700 font-bold">{executionRate.toFixed(1)}%</span>
+                        <span className="font-medium text-emerald-700">Rentabilidad (Computado vs Real)</span>
+                        <div className="flex gap-2 text-xs items-center">
+                            <span className="text-blue-600">Real: {monthStats.real}h</span>
+                            <span className="text-slate-300">|</span>
+                            <span className="text-emerald-700 font-bold">{profitabilityRate.toFixed(1)}% Ratio</span>
+                        </div>
                     </div>
-                    <Progress value={executionRate} className="h-3 bg-emerald-100 [&>div]:bg-emerald-500" />
+                    {/* Barra doble: Fondo azul (Real), Frente verde (Computado) */}
+                    <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden relative">
+                         {/* Usamos width 100% como base si hay horas reales */}
+                        <div className="absolute top-0 left-0 h-full bg-blue-200 w-full" />
+                        <div 
+                            className="absolute top-0 left-0 h-full bg-emerald-500 transition-all" 
+                            style={{ width: `${Math.min(profitabilityRate, 100)}%` }} 
+                        />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground text-right pt-1">
+                        Si la barra verde no llena la azul, estamos trabajando más de lo que facturamos.
+                    </p>
                 </div>
 
-                <div className="pt-4 grid grid-cols-3 gap-4 text-center border-t">
+                <div className="pt-4 grid grid-cols-4 gap-2 text-center border-t">
                     <div>
-                        <div className="text-2xl font-bold text-slate-700">{totalCapacity}h</div>
-                        <div className="text-xs text-muted-foreground uppercase tracking-wider">Capacidad</div>
+                        <div className="text-xl font-bold text-slate-400">{totalCapacity}</div>
+                        <div className="text-[10px] uppercase font-bold text-slate-400">Capacidad</div>
                     </div>
                     <div>
-                        <div className="text-2xl font-bold text-blue-600">{monthStats.planned}h</div>
-                        <div className="text-xs text-muted-foreground uppercase tracking-wider">Planificado</div>
+                        <div className="text-xl font-bold text-indigo-600">{monthStats.planned}</div>
+                        <div className="text-[10px] uppercase font-bold text-indigo-600">Plan</div>
                     </div>
                     <div>
-                        <div className="text-2xl font-bold text-emerald-600">{monthStats.completed}h</div>
-                        <div className="text-xs text-muted-foreground uppercase tracking-wider">Computado</div>
+                        <div className="text-xl font-bold text-blue-600">{monthStats.real}</div>
+                        <div className="text-[10px] uppercase font-bold text-blue-600">Real</div>
+                    </div>
+                     <div>
+                        <div className="text-xl font-bold text-emerald-600">{monthStats.computed}</div>
+                        <div className="text-[10px] uppercase font-bold text-emerald-600">Comp.</div>
                     </div>
                 </div>
               </CardContent>
@@ -272,24 +300,29 @@ export default function ReportsPage() {
 
             <Card className="col-span-3">
               <CardHeader>
-                <CardTitle>Top Proyectos</CardTitle>
-                <CardDescription>Donde se invierte más tiempo este mes.</CardDescription>
+                <CardTitle>Top Proyectos (Planificado)</CardTitle>
+                <CardDescription>Mayor inversión de tiempo prevista este mes.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                     {projectData.slice(0, 5).map(p => (
-                        <div key={p.id} className="flex items-center">
-                            <div className="h-9 w-9 rounded-full flex items-center justify-center border bg-white shadow-sm mr-4 shrink-0">
-                                <FolderOpen className="h-4 w-4 text-slate-500" />
+                        <div key={p.id} className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="h-8 w-8 rounded flex items-center justify-center border bg-slate-50 shrink-0">
+                                    <FolderOpen className="h-4 w-4 text-slate-500" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-medium leading-none truncate w-32 md:w-40" title={p.name}>{p.name}</p>
+                                    <p className="text-xs text-muted-foreground truncate">{p.clientName}</p>
+                                </div>
                             </div>
-                            <div className="flex-1 space-y-1 min-w-0">
-                                <p className="text-sm font-medium leading-none truncate">{p.name}</p>
-                                <p className="text-xs text-muted-foreground truncate">{p.clientName}</p>
+                            <div className="text-right">
+                                <div className="font-bold text-sm">{p.hoursPlanned}h</div>
+                                <div className="text-[10px] text-muted-foreground">de {p.budget}h</div>
                             </div>
-                            <div className="font-bold text-sm tabular-nums">{p.hoursPlanned}h</div>
                         </div>
                     ))}
-                    {projectData.length === 0 && <p className="text-sm text-muted-foreground text-center">Sin actividad registrada.</p>}
+                    {projectData.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin actividad registrada.</p>}
                 </div>
               </CardContent>
             </Card>
@@ -299,15 +332,15 @@ export default function ReportsPage() {
         <TabsContent value="team" className="space-y-4">
             <Card>
                 <CardHeader>
-                    <CardTitle>Carga de Trabajo Real</CardTitle>
-                    <CardDescription>Comparativa de horas planificadas vs horas computadas reales.</CardDescription>
+                    <CardTitle>Desglose por Empleado</CardTitle>
+                    <CardDescription>Comparativa detallada: ¿Cuánto se planificó vs cuánto se trabajó y computó?</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-6">
                         {employeeData.map(emp => (
-                            <div key={emp.id} className="grid grid-cols-12 gap-4 items-center group hover:bg-slate-50 p-2 rounded-lg transition-colors">
+                            <div key={emp.id} className="grid grid-cols-12 gap-4 items-center group hover:bg-slate-50 p-3 rounded-lg transition-colors border border-transparent hover:border-slate-100">
                                 <div className="col-span-4 md:col-span-3 flex items-center gap-3">
-                                    <div className="h-8 w-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                                    <div className="h-9 w-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs border border-indigo-200">
                                         {emp.name.substring(0, 2).toUpperCase()}
                                     </div>
                                     <div className="min-w-0">
@@ -316,36 +349,28 @@ export default function ReportsPage() {
                                     </div>
                                 </div>
 
-                                <div className="col-span-5 md:col-span-7 space-y-1">
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span className={cn(
-                                            emp.percentage > 100 ? "text-red-600 font-bold" : "text-muted-foreground"
-                                        )}>
-                                            {emp.percentage.toFixed(0)}% Planificado
-                                        </span>
-                                        <span className="text-emerald-600 text-[10px]">
-                                            {emp.completedHours > 0 && `Comp: ${emp.completedHours}h`}
-                                        </span>
+                                <div className="col-span-5 md:col-span-6 space-y-1.5">
+                                    {/* Barra de Planificación */}
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-slate-500">Ocupación Planificada</span>
+                                        <span className={cn("font-medium", emp.percentage > 100 ? "text-red-600" : "text-slate-700")}>{emp.percentage.toFixed(0)}%</span>
                                     </div>
-                                    <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                        <div 
-                                            className={cn("absolute top-0 left-0 h-full transition-all", 
-                                                emp.percentage > 100 ? "bg-red-500" : 
-                                                emp.percentage > 85 ? "bg-amber-500" : "bg-blue-500"
-                                            )}
-                                            style={{ width: `${Math.min(emp.percentage, 100)}%` }}
-                                        />
-                                        <div 
-                                            className="absolute top-0 left-0 h-full bg-black/20 transition-all"
-                                            style={{ width: `${(emp.completedHours / emp.capacity) * 100}%` }}
-                                        />
+                                    <Progress value={emp.percentage} className={cn("h-1.5", emp.percentage > 100 ? "[&>div]:bg-red-500" : "bg-slate-100")} />
+                                    
+                                    {/* Métricas Real vs Comp */}
+                                    <div className="flex items-center gap-3 mt-1 pt-1">
+                                        <div className="text-[10px] flex items-center gap-1 bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100">
+                                            <Zap className="h-3 w-3" /> Real: <strong>{emp.realHours}h</strong>
+                                        </div>
+                                        <div className="text-[10px] flex items-center gap-1 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
+                                            <CheckCircle2 className="h-3 w-3" /> Comp: <strong>{emp.computedHours}h</strong>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="col-span-3 md:col-span-2 text-right">
-                                    <span className="text-xs text-muted-foreground font-mono">
-                                        {emp.plannedHours}/{emp.capacity}h
-                                    </span>
+                                <div className="col-span-3 md:col-span-3 text-right">
+                                    <div className="text-lg font-bold text-slate-700">{emp.plannedHours}h</div>
+                                    <div className="text-xs text-muted-foreground">de {emp.capacity}h disponibles</div>
                                 </div>
                             </div>
                         ))}
@@ -356,45 +381,54 @@ export default function ReportsPage() {
 
         <TabsContent value="projects" className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {projectData.map(p => (
-                    <Card key={p.id} className={cn("border-l-4", p.percentage > 100 ? "border-l-red-500" : "border-l-indigo-500")}>
-                        <CardHeader className="pb-2">
-                            <div className="flex justify-between items-start">
-                                <div className="space-y-1">
-                                    <CardTitle className="text-base truncate" title={p.name}>{p.name}</CardTitle>
-                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                        <div className="h-2 w-2 rounded-full" style={{ backgroundColor: p.clientColor }} />
-                                        {p.clientName}
+                {projectData.map(p => {
+                    const gain = p.hoursComputed - p.hoursReal;
+                    return (
+                        <Card key={p.id} className={cn("border-l-4", p.percentage > 100 ? "border-l-red-500" : "border-l-indigo-500")}>
+                            <CardHeader className="pb-2 bg-slate-50/50 pt-3">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="space-y-0.5">
+                                        <div className="flex items-center gap-2">
+                                            <CardTitle className="text-sm truncate max-w-[180px]" title={p.name}>{p.name}</CardTitle>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: p.clientColor }} />
+                                            {p.clientName}
+                                        </div>
+                                    </div>
+                                    <Badge variant="outline" className="text-[10px] font-mono">{p.budget}h Presup.</Badge>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="pt-4 space-y-3">
+                                <div className="flex justify-between items-end">
+                                    <span className="text-xs text-muted-foreground font-medium">Planificado</span>
+                                    <span className="text-sm font-bold text-indigo-600">{p.hoursPlanned}h</span>
+                                </div>
+                                <Progress value={p.percentage} className={cn("h-1.5", p.percentage > 100 ? "[&>div]:bg-red-500" : "")} />
+                                
+                                <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t">
+                                    <div className="bg-blue-50 rounded p-1.5 text-center">
+                                        <div className="text-[10px] text-blue-600 font-bold uppercase">Real</div>
+                                        <div className="text-sm font-mono text-blue-700">{p.hoursReal}h</div>
+                                    </div>
+                                    <div className="bg-emerald-50 rounded p-1.5 text-center">
+                                        <div className="text-[10px] text-emerald-600 font-bold uppercase">Comp.</div>
+                                        <div className="text-sm font-mono text-emerald-700">{p.hoursComputed}h</div>
                                     </div>
                                 </div>
-                                {p.percentage > 100 && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="mt-2 space-y-3">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">Planificado</span>
-                                    <span className="font-bold">{p.hoursPlanned}h</span>
-                                </div>
-                                <Progress value={p.percentage} className={cn("h-2", p.percentage > 100 ? "[&>div]:bg-red-500" : "")} />
                                 
-                                <div className="flex justify-between items-center text-xs pt-2 border-t mt-2">
-                                    <span className="text-muted-foreground">Presupuesto: {p.budget}h</span>
-                                    {p.hoursReal > 0 && (
-                                        <span className="flex items-center gap-1 text-emerald-600 font-medium">
-                                            <CheckCircle2 className="h-3 w-3" /> Comp: {p.hoursReal}h
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
+                                {Math.abs(gain) > 0.01 && (
+                                    <div className={cn("text-[10px] text-center font-medium py-1 rounded", gain > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800")}>
+                                        Diferencia: {gain > 0 ? '+' : ''}{parseFloat(gain.toFixed(2))}h
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    );
+                })}
             </div>
         </TabsContent>
       </Tabs>
     </div>
   );
 }
-
-const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
