@@ -1,100 +1,89 @@
-import { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
-import { Calendar, Users, Briefcase, BarChart3, Settings, Layers, Menu, Sparkles } from 'lucide-react';
+import { 
+  LayoutDashboard, 
+  FolderKanban, 
+  Users, 
+  BarChart3, 
+  Settings, 
+  Sparkles,
+  Briefcase,
+  FileDown
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-
-const navigation = [
-  { name: 'Minguito', href: '/', icon: Sparkles },
-  { name: 'Planificador', href: '/planner', icon: Calendar },
-  { name: 'Equipo', href: '/team', icon: Users },
-  { name: 'Clientes', href: '/clients', icon: Briefcase },
-  { name: 'Proyectos', href: '/projects', icon: Layers },
-  { name: 'Reportes', href: '/reports', icon: BarChart3 },
-];
-
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  return (
-    <>
-      <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary">
-          <Calendar className="h-5 w-5 text-sidebar-primary-foreground" />
-        </div>
-        <div>
-          <h1 className="text-lg font-semibold text-sidebar-foreground">Timeboxing</h1>
-          <p className="text-xs text-sidebar-foreground/60">Gestión de equipo</p>
-        </div>
-      </div>
-
-      <nav className="flex-1 space-y-1 px-3 py-4">
-        {navigation.map((item) => (
-          <NavLink
-            key={item.name}
-            to={item.href}
-            end={item.href === '/'}
-            onClick={onNavigate}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-              "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            )}
-            activeClassName="bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground shadow-glow"
-          >
-            <item.icon className="h-5 w-5" />
-            {item.name}
-          </NavLink>
-        ))}
-      </nav>
-
-      <div className="border-t border-sidebar-border p-3">
-        <NavLink
-          to="/settings"
-          onClick={onNavigate}
-          className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-            "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-          activeClassName="bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
-        >
-          <Settings className="h-5 w-5" />
-          Configuración
-        </NavLink>
-      </div>
-    </>
-  );
-}
 
 export function Sidebar() {
-  const [open, setOpen] = useState(false);
+  const location = useLocation();
 
   return (
-    <>
-      {/* Mobile Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex h-14 items-center justify-between border-b bg-sidebar px-4 lg:hidden">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-            <Calendar className="h-4 w-4 text-sidebar-primary-foreground" />
+    <aside className="w-64 bg-slate-900 text-white flex flex-col h-screen fixed left-0 top-0 border-r border-slate-800 z-50">
+      
+      {/* Header del Sidebar */}
+      <div className="h-16 flex items-center px-6 border-b border-slate-800 bg-slate-950/50">
+        <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
+          <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center">
+            <LayoutDashboard className="h-5 w-5 text-white" />
           </div>
-          <span className="font-semibold text-sidebar-foreground">Timeboxing</span>
+          <span className="text-slate-100">Timeboxing</span>
         </div>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="text-sidebar-foreground">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0 bg-sidebar border-sidebar-border">
-            <div className="flex h-full flex-col">
-              <SidebarContent onNavigate={() => setOpen(false)} />
-            </div>
-          </SheetContent>
-        </Sheet>
-      </header>
+      </div>
 
-      {/* Desktop Sidebar */}
-      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col bg-sidebar text-sidebar-foreground lg:flex">
-        <SidebarContent />
-      </aside>
-    </>
+      {/* Navegación Principal */}
+      <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
+          Gestión
+        </div>
+        
+        <NavLink to="/" icon={LayoutDashboard} active={location.pathname === '/'}>
+          Planificador
+        </NavLink>
+
+        <NavLink to="/projects" icon={FolderKanban} active={location.pathname === '/projects'}>
+          Proyectos
+        </NavLink>
+
+        <NavLink to="/clients" icon={Briefcase} active={location.pathname === '/clients'}>
+          Clientes
+        </NavLink>
+
+        <NavLink to="/team" icon={Users} active={location.pathname === '/team'}>
+          Equipo
+        </NavLink>
+
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
+          Análisis
+        </div>
+
+        <NavLink to="/reports" icon={BarChart3} active={location.pathname === '/reports'}>
+          Reportes
+        </NavLink>
+
+        {/* ✅ NUEVO ENLACE A INFORMES DE CLIENTES */}
+        <NavLink to="/informes-clientes" icon={FileDown} active={location.pathname === '/informes-clientes'}>
+          Informes Clientes
+        </NavLink>
+
+        <NavLink to="/dashboard-ai" icon={Sparkles} active={location.pathname === '/dashboard-ai'}>
+          Copiloto IA
+        </NavLink>
+      </nav>
+
+      {/* Footer del Sidebar */}
+      <div className="p-4 border-t border-slate-800 bg-slate-950/30">
+        <NavLink to="/settings" icon={Settings} active={location.pathname === '/settings'}>
+          Configuración
+        </NavLink>
+        
+        <div className="mt-4 px-2 flex items-center gap-3">
+          <div className="h-8 w-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold border border-indigo-500/30">
+            AD
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <p className="text-sm font-medium text-slate-200 truncate">Admin User</p>
+            <p className="text-xs text-slate-500 truncate">admin@agencia.com</p>
+          </div>
+        </div>
+      </div>
+    </aside>
   );
 }
