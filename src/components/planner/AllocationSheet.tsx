@@ -14,7 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -155,14 +155,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setIsFormOpen(false);
   };
 
-  // --- LÓGICA DE CIERRE DE TAREA (INLINE - OPCIÓN A) ---
+  // --- LÓGICA DE CIERRE DE TAREA (INLINE) ---
   const toggleTaskCompletion = (allocation: Allocation) => {
       const isCompleting = allocation.status !== 'completed';
-      
       updateAllocation({
           ...allocation,
           status: isCompleting ? 'completed' : 'planned',
-          // Smart Defaults: Si completamos, copiamos lo estimado. Si no, reseteamos a 0.
           hoursActual: isCompleting ? allocation.hoursAssigned : 0,
           hoursComputed: isCompleting ? allocation.hoursAssigned : 0
       });
@@ -170,12 +168,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
 
   const updateInlineHours = (allocation: Allocation, field: 'hoursActual' | 'hoursComputed', value: string) => {
       const numValue = parseFloat(value) || 0;
-      // Solo actualizamos si el valor cambió para evitar llamadas innecesarias
       if (allocation[field] !== numValue) {
-          updateAllocation({
-              ...allocation,
-              [field]: numValue
-          });
+          updateAllocation({ ...allocation, [field]: numValue });
       }
   };
 
@@ -207,6 +201,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     updateAllocation({ ...allocation, weekStartDate: targetKey });
   };
 
+  // --- NUEVA LÓGICA DE ORDENACIÓN (MEJORADA) ---
   const groupAndSortAllocations = (allocations: Allocation[]) => {
     const grouped = allocations.reduce((acc, alloc) => {
       const projId = alloc.projectId;
@@ -215,12 +210,27 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       return acc;
     }, {} as Record<string, Allocation[]>);
 
-    return Object.entries(grouped).sort(([projIdA], [projIdB]) => {
+    return Object.entries(grouped).sort(([projIdA, allocsA], [projIdB, allocsB]) => {
+      // 1. Verificar si el proyecto está totalmente completado
+      const isAllCompletedA = allocsA.every(a => a.status === 'completed');
+      const isAllCompletedB = allocsB.every(a => a.status === 'completed');
+
+      // Si A está completo y B no, A va al fondo (retorna 1)
+      if (isAllCompletedA && !isAllCompletedB) return 1;
+      // Si B está completo y A no, B va al fondo (A sube, retorna -1)
+      if (!isAllCompletedA && isAllCompletedB) return -1;
+
+      // 2. Si ambos están igual (ambos pendientes o ambos completos), ordenar por Horas Asignadas (Mayor a Menor)
+      const totalHoursA = allocsA.reduce((sum, a) => sum + a.hoursAssigned, 0);
+      const totalHoursB = allocsB.reduce((sum, a) => sum + a.hoursAssigned, 0);
+
+      if (totalHoursB !== totalHoursA) {
+          return totalHoursB - totalHoursA; // Descendente (Más horas arriba)
+      }
+
+      // 3. Empate técnico: Alfabéticamente por nombre de proyecto
       const projA = getProjectById(projIdA);
       const projB = getProjectById(projIdB);
-      const budgetA = projA?.budgetHours || 0;
-      const budgetB = projB?.budgetHours || 0;
-      if (budgetB !== budgetA) return budgetB - budgetA;
       return (projA?.name || '').localeCompare(projB?.name || '');
     });
   };
@@ -283,6 +293,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 const isCurrent = isSameMonth(viewDate, new Date()) && new Date() >= week.weekStart && new Date() <= week.weekEnd;
                 const sortedProjectGroups = groupAndSortAllocations(weekAllocations);
 
+                // --- CALCULO DE BENEFICIO SEMANAL (Header Resumen) ---
+                const weekCompleted = weekAllocations.filter(a => a.status === 'completed');
+                const weekReal = weekCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
+                const weekComp = weekCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
+                const weekGain = weekComp - weekReal;
+
                 return (
                     <div key={weekStr} className={cn("flex flex-col gap-3 p-3 rounded-xl border bg-card transition-all h-full min-h-[300px]", isCurrent ? "ring-2 ring-indigo-500 ring-offset-2 shadow-lg scale-[1.01]" : "hover:border-indigo-200 hover:shadow-md")}>
                         <div className="flex flex-col gap-2 pb-2 border-b">
@@ -292,26 +308,38 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                     <Plus className="h-4 w-4" />
                                 </Button>
                             </div>
+                            
+                            {/* --- NUEVO: RESUMEN DE HORAS (CAPACIDAD + BENEFICIO) --- */}
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground font-medium bg-muted px-2 py-0.5 rounded">
                                     {format(week.effectiveStart!, 'd MMM', { locale: es })} - {format(week.effectiveEnd!, 'd MMM', { locale: es })}
                                 </span>
                                 
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Badge variant="outline" className={cn("font-mono text-xs px-2 py-0.5 h-auto cursor-help", load.status === 'overload' ? "bg-red-50 text-red-600 border-red-200" : "bg-green-50 text-green-600 border-green-200")}>
-                                            {load.hours}/{load.capacity}h
+                                <div className="flex items-center gap-1">
+                                    {/* Indicador de Beneficio Semanal (Si hay tareas completas) */}
+                                    {weekCompleted.length > 0 && Math.abs(weekGain) > 0.01 && (
+                                        <Badge variant="outline" className={cn("text-[9px] px-1 h-5 mr-1 font-mono border-0", weekGain > 0 ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50")}>
+                                            {weekGain > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                                            {weekGain > 0 ? '+' : ''}{parseFloat(weekGain.toFixed(1))}h
                                         </Badge>
-                                    </TooltipTrigger>
-                                    <TooltipContent align="end" className="text-xs p-3 space-y-1">
-                                        <div className="font-bold border-b pb-1 mb-1">Desglose de Capacidad</div>
-                                        <div className="flex justify-between gap-4"><span>Capacidad Base:</span><span className="font-mono">{load.baseCapacity}h</span></div>
-                                        {load.breakdown.map((item, i) => (
-                                            <div key={i} className="flex justify-between gap-4 text-red-400"><span>{item.reason}:</span><span className="font-mono">-{item.hours}h</span></div>
-                                        ))}
-                                        <div className="flex justify-between gap-4 border-t pt-1 mt-1 font-bold"><span>Disponible:</span><span className="font-mono">{load.capacity}h</span></div>
-                                    </TooltipContent>
-                                </Tooltip>
+                                    )}
+
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Badge variant="outline" className={cn("font-mono text-xs px-2 py-0.5 h-auto cursor-help", load.status === 'overload' ? "bg-red-50 text-red-600 border-red-200" : "bg-green-50 text-green-600 border-green-200")}>
+                                                {load.hours}/{load.capacity}h
+                                            </Badge>
+                                        </TooltipTrigger>
+                                        <TooltipContent align="end" className="text-xs p-3 space-y-1">
+                                            <div className="font-bold border-b pb-1 mb-1">Desglose de Capacidad</div>
+                                            <div className="flex justify-between gap-4"><span>Capacidad Base:</span><span className="font-mono">{load.baseCapacity}h</span></div>
+                                            {load.breakdown.map((item, i) => (
+                                                <div key={i} className="flex justify-between gap-4 text-red-400"><span>{item.reason}:</span><span className="font-mono">-{item.hours}h</span></div>
+                                            ))}
+                                            <div className="flex justify-between gap-4 border-t pt-1 mt-1 font-bold"><span>Disponible:</span><span className="font-mono">{load.capacity}h</span></div>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </div>
                             </div>
                             <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                 <div className={cn("h-full transition-all duration-500 ease-out", load.status === 'overload' ? "bg-red-500" : "bg-green-500")} style={{ width: `${Math.min(load.percentage, 100)}%` }} />
@@ -329,9 +357,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                   const project = getProjectById(projId);
                                   const client = getClientById(project?.clientId || '');
                                   const totalProjHours = projAllocations.reduce((sum, a) => sum + (a.status === 'completed' ? (a.hoursComputed || a.hoursAssigned) : a.hoursAssigned), 0);
+                                  const isProjCompleted = projAllocations.every(a => a.status === 'completed');
 
                                   return (
-                                    <div key={projId} className="bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden">
+                                    <div key={projId} className={cn("bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden transition-opacity", isProjCompleted ? "opacity-70 grayscale-[0.3]" : "opacity-100")}>
                                         <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 border-b flex justify-between items-center">
                                             <div className="flex items-center gap-2 overflow-hidden">
                                                 <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: client?.color || '#cbd5e1' }} title={client?.name} />
@@ -346,17 +375,16 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                             {projAllocations.map(alloc => {
                                                 const isCompleted = alloc.status === 'completed';
-                                                // Cálculos de desviación
                                                 const real = alloc.hoursActual || 0;
                                                 const computed = alloc.hoursComputed || 0;
                                                 const gain = computed - real;
 
                                                 return (
-                                                <div key={alloc.id} className={cn("group flex items-start gap-2 p-2 hover:bg-slate-50/80 transition-colors", isCompleted && "bg-slate-50/50 opacity-90")}>
+                                                <div key={alloc.id} className={cn("group flex items-start gap-2 p-2 hover:bg-slate-50/80 transition-colors", isCompleted && "bg-slate-50/50")}>
                                                     <Checkbox 
                                                         checked={isCompleted} 
                                                         onCheckedChange={() => toggleTaskCompletion(alloc)} 
-                                                        className="h-4 w-4 mt-1 rounded-sm" 
+                                                        className="h-4 w-4 mt-1 rounded-sm shrink-0" 
                                                     />
                                                     
                                                     <div className="flex-1 min-w-0">
@@ -371,13 +399,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                     className="h-6 text-xs px-1 py-0 w-full"
                                                                 />
                                                             ) : (
-                                                                <div className="flex justify-between items-start">
-                                                                    <span className={cn("text-xs font-medium leading-tight text-slate-700 truncate cursor-text", isCompleted && "line-through opacity-50")}>
+                                                                <div className="flex justify-between items-start gap-1">
+                                                                    <span className={cn("text-xs font-medium leading-tight text-slate-700 break-words cursor-text", isCompleted && "line-through opacity-50")}>
                                                                         {alloc.taskName || 'Tarea'}
                                                                     </span>
                                                                     <DropdownMenu>
                                                                         <DropdownMenuTrigger asChild>
-                                                                            <Button variant="ghost" size="icon" className="h-5 w-5 -mt-1 -mr-1 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-indigo-600">
+                                                                            <Button variant="ghost" size="icon" className="h-5 w-5 -mt-1 -mr-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-slate-400 hover:text-indigo-600">
                                                                                 <MoreHorizontal className="h-3 w-3" />
                                                                             </Button>
                                                                         </DropdownMenuTrigger>
@@ -401,17 +429,16 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                         )}
 
                                                         {/* INFO HORAS: EST | REAL | COMP */}
-                                                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                                            {/* Estimado siempre visible */}
-                                                            <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                                        {/* Fix Layout: Añadido flex-wrap y shrink-0 a los elementos para que no se deformen */}
+                                                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                                            <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
                                                                 <span className="text-[9px] text-slate-500 font-bold">EST</span>
                                                                 <span className="text-[10px] font-mono font-medium">{alloc.hoursAssigned}h</span>
                                                             </div>
 
                                                             {isCompleted && (
                                                                 <>
-                                                                    {/* INPUT REAL INLINE */}
-                                                                    <div className="flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 transition-colors focus-within:ring-1 focus-within:ring-blue-300" title="Horas Reales Invertidas">
+                                                                    <div className="flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 transition-colors focus-within:ring-1 focus-within:ring-blue-300 shrink-0" title="Horas Reales Invertidas">
                                                                         <span className="text-[9px] text-blue-600 font-bold cursor-default">REAL</span>
                                                                         <input
                                                                             type="number"
@@ -423,8 +450,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                         />
                                                                     </div>
                                                                     
-                                                                    {/* INPUT COMPUTADO INLINE */}
-                                                                    <div className="flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 transition-colors focus-within:ring-1 focus-within:ring-emerald-300" title="Horas Computadas al Cliente">
+                                                                    <div className="flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 transition-colors focus-within:ring-1 focus-within:ring-emerald-300 shrink-0" title="Horas Computadas al Cliente">
                                                                         <span className="text-[9px] text-emerald-600 font-bold cursor-default">COMP</span>
                                                                          <input
                                                                             type="number"
@@ -436,9 +462,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                         />
                                                                     </div>
                                                                     
-                                                                    {/* Badge de Ganancia/Perdida */}
                                                                     {gain !== 0 && (
-                                                                        <Badge variant="outline" className={cn("text-[9px] h-4 px-1 ml-auto", gain > 0 ? "text-emerald-600 border-emerald-200 bg-emerald-50" : "text-red-600 border-red-200 bg-red-50")}>
+                                                                        <Badge variant="outline" className={cn("text-[9px] h-4 px-1 ml-auto shrink-0", gain > 0 ? "text-emerald-600 border-emerald-200 bg-emerald-50" : "text-red-600 border-red-200 bg-red-50")}>
                                                                             {gain > 0 ? '+' : ''}{parseFloat(gain.toFixed(2))}h
                                                                         </Badge>
                                                                     )}
