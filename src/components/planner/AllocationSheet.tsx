@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, FolderKanban, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Info, Search, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, AlertTriangle, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -55,23 +55,33 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     if (open) setViewDate(viewDateContext || new Date(weekStart));
   }, [open, weekStart, viewDateContext]);
 
+  // Estados Generales
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Estados Creación Múltiple
   const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
+  
+  // Estados Edición Inline Nombre
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineNameValue, setInlineNameValue] = useState('');
   const inlineInputRef = useRef<HTMLInputElement>(null);
 
+  // Estados Edición Completa
   const [editProjectId, setEditProjectId] = useState('');
   const [editTaskName, setEditTaskName] = useState('');
   const [editHours, setEditHours] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editWeek, setEditWeek] = useState('');
-
   const [openComboboxId, setOpenComboboxId] = useState<string | null>(null);
   const [editComboboxOpen, setEditComboboxOpen] = useState(false);
+
+  // --- NUEVO: Estado para Diálogo de Cierre de Tarea ---
+  const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+  const [taskToComplete, setTaskToComplete] = useState<Allocation | null>(null);
+  const [closeHoursReal, setCloseHoursReal] = useState('');
+  const [closeHoursComputed, setCloseHoursComputed] = useState('');
 
   const employee = employees.find(e => e.id === employeeId);
   const weeks = useMemo(() => getWeeksForMonth(viewDate), [viewDate]);
@@ -80,15 +90,11 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const monthLabel = `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} - ${format(viewDate, 'yyyy')}`;
 
   const activeProjects = useMemo(() => 
-    projects
-      .filter(p => p.status === 'active')
-      .sort((a, b) => a.name.localeCompare(b.name)),
+    projects.filter(p => p.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
   [projects]);
 
   useEffect(() => {
-    if (inlineEditingId && inlineInputRef.current) {
-        inlineInputRef.current.focus();
-    }
+    if (inlineEditingId && inlineInputRef.current) inlineInputRef.current.focus();
   }, [inlineEditingId]);
 
   if (!employee) return null;
@@ -96,16 +102,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const handlePrevMonth = () => setViewDate(prev => subMonths(prev, 1));
   const handleNextMonth = () => setViewDate(prev => addMonths(prev, 1));
 
+  // --- LÓGICA DE CREACIÓN ---
   const startAdd = (weekStartReal: Date) => {
     const storageKey = getStorageKey(weekStartReal, viewDate);
     setEditingAllocation(null);
     setNewTasks([{
       id: crypto.randomUUID(),
-      projectId: '',
-      taskName: '',
-      hours: '',
-      weekDate: storageKey,
-      description: ''
+      projectId: '', taskName: '', hours: '', weekDate: storageKey, description: ''
     }]);
     setIsFormOpen(true);
   };
@@ -116,10 +119,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setNewTasks(prev => [...prev, {
       id: crypto.randomUUID(),
       projectId: lastTask ? lastTask.projectId : '', 
-      taskName: '',
-      hours: '',
-      weekDate: lastTask ? lastTask.weekDate : defaultKey,
-      description: ''
+      taskName: '', hours: '', weekDate: lastTask ? lastTask.weekDate : defaultKey, description: ''
     }]);
   };
 
@@ -130,39 +130,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
 
   const updateTaskRow = (id: string, field: keyof NewTaskRow, value: string) => {
     setNewTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
-  };
-
-  const startEditFull = (allocation: Allocation) => {
-    setEditingAllocation(allocation);
-    setEditProjectId(allocation.projectId);
-    setEditTaskName(allocation.taskName || '');
-    setEditHours(allocation.hoursAssigned.toString());
-    setEditDescription(allocation.description || '');
-    setEditWeek(allocation.weekStartDate);
-    setIsFormOpen(true);
-  };
-
-  const startInlineEdit = (allocation: Allocation) => {
-    setInlineEditingId(allocation.id);
-    setInlineNameValue(allocation.taskName || '');
-  };
-
-  const saveInlineEdit = (allocation: Allocation) => {
-    if (inlineNameValue.trim() !== allocation.taskName) {
-        updateAllocation({
-            ...allocation,
-            taskName: inlineNameValue
-        });
-    }
-    setInlineEditingId(null);
-  };
-
-  const moveTaskToWeek = (allocation: Allocation, targetWeekStartReal: Date) => {
-    const targetKey = getStorageKey(targetWeekStartReal, viewDate);
-    updateAllocation({
-        ...allocation,
-        weekStartDate: targetKey
-    });
   };
 
   const handleSave = () => {
@@ -185,7 +152,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
             taskName: task.taskName,
             weekStartDate: task.weekDate,
             hoursAssigned: parseFloat(task.hours),
-            status: 'planned',
+            status: 'planned', // SIEMPRE NACE COMO PLANNED
             description: task.description,
           });
         }
@@ -194,9 +161,70 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setIsFormOpen(false);
   };
 
-  const toggleStatus = (allocation: Allocation) => {
-    const newStatus = allocation.status === 'completed' ? 'planned' : 'completed';
-    updateAllocation({ ...allocation, status: newStatus });
+  // --- LÓGICA DE CIERRE DE TAREA (NUEVO) ---
+  const initiateTaskCompletion = (allocation: Allocation) => {
+      // Si ya estaba completa y le damos al check, la pasamos a planned (deshacer)
+      if (allocation.status === 'completed') {
+          updateAllocation({ 
+              ...allocation, 
+              status: 'planned',
+              hoursActual: 0, 
+              hoursComputed: 0 
+          });
+          return;
+      }
+
+      // Si está pendiente, abrimos diálogo
+      setTaskToComplete(allocation);
+      // Por defecto sugerimos lo estimado, pero el usuario lo cambia manual
+      setCloseHoursReal(allocation.hoursAssigned.toString());
+      setCloseHoursComputed(allocation.hoursAssigned.toString());
+      setIsCompleteDialogOpen(true);
+  };
+
+  const confirmTaskCompletion = () => {
+      if (!taskToComplete) return;
+      
+      const real = parseFloat(closeHoursReal) || 0;
+      const computed = parseFloat(closeHoursComputed) || 0;
+
+      updateAllocation({
+          ...taskToComplete,
+          status: 'completed',
+          hoursActual: real,      // REAL MANUAL
+          hoursComputed: computed // COMPUTADO MANUAL
+      });
+
+      setIsCompleteDialogOpen(false);
+      setTaskToComplete(null);
+  };
+
+  // --- LÓGICA DE EDICIÓN ---
+  const startEditFull = (allocation: Allocation) => {
+    setEditingAllocation(allocation);
+    setEditProjectId(allocation.projectId);
+    setEditTaskName(allocation.taskName || '');
+    setEditHours(allocation.hoursAssigned.toString());
+    setEditDescription(allocation.description || '');
+    setEditWeek(allocation.weekStartDate);
+    setIsFormOpen(true);
+  };
+
+  const startInlineEdit = (allocation: Allocation) => {
+    setInlineEditingId(allocation.id);
+    setInlineNameValue(allocation.taskName || '');
+  };
+
+  const saveInlineEdit = (allocation: Allocation) => {
+    if (inlineNameValue.trim() !== allocation.taskName) {
+        updateAllocation({ ...allocation, taskName: inlineNameValue });
+    }
+    setInlineEditingId(null);
+  };
+
+  const moveTaskToWeek = (allocation: Allocation, targetWeekStartReal: Date) => {
+    const targetKey = getStorageKey(targetWeekStartReal, viewDate);
+    updateAllocation({ ...allocation, weekStartDate: targetKey });
   };
 
   const groupAndSortAllocations = (allocations: Allocation[]) => {
@@ -248,15 +276,9 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                     </div>
 
                     <div className="flex items-center gap-4 bg-background/50 p-1.5 rounded-lg border shadow-sm">
-                        <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
-                            <ChevronLeft className="h-5 w-5" />
-                        </Button>
-                        <span className="text-lg font-bold capitalize w-48 text-center select-none">
-                            {monthLabel}
-                        </span>
-                        <Button variant="ghost" size="icon" onClick={handleNextMonth}>
-                            <ChevronRight className="h-5 w-5" />
-                        </Button>
+                        <Button variant="ghost" size="icon" onClick={handlePrevMonth}><ChevronLeft className="h-5 w-5" /></Button>
+                        <span className="text-lg font-bold capitalize w-48 text-center select-none">{monthLabel}</span>
+                        <Button variant="ghost" size="icon" onClick={handleNextMonth}><ChevronRight className="h-5 w-5" /></Button>
                     </div>
                 </div>
             </div>
@@ -269,7 +291,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 const storageKey = getStorageKey(week.weekStart, viewDate);
                 
                 let weekAllocations = getEmployeeAllocationsForWeek(employeeId, storageKey);
-                
                 if (searchTerm) {
                     weekAllocations = weekAllocations.filter(a => {
                         const proj = getProjectById(a.projectId);
@@ -286,9 +307,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                     <div key={weekStr} className={cn("flex flex-col gap-3 p-3 rounded-xl border bg-card transition-all h-full min-h-[300px]", isCurrent ? "ring-2 ring-indigo-500 ring-offset-2 shadow-lg scale-[1.01]" : "hover:border-indigo-200 hover:shadow-md")}>
                         <div className="flex flex-col gap-2 pb-2 border-b">
                             <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-foreground/80 uppercase tracking-wider">
-                                    Semana {index + 1}
-                                </span>
+                                <span className="font-bold text-sm text-foreground/80 uppercase tracking-wider">Semana {index + 1}</span>
                                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-indigo-100 hover:text-indigo-700 rounded-full transition-colors" onClick={() => startAdd(week.weekStart)}>
                                     <Plus className="h-4 w-4" />
                                 </Button>
@@ -306,20 +325,11 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                     </TooltipTrigger>
                                     <TooltipContent align="end" className="text-xs p-3 space-y-1">
                                         <div className="font-bold border-b pb-1 mb-1">Desglose de Capacidad</div>
-                                        <div className="flex justify-between gap-4">
-                                            <span>Capacidad Base:</span>
-                                            <span className="font-mono">{load.baseCapacity}h</span>
-                                        </div>
+                                        <div className="flex justify-between gap-4"><span>Capacidad Base:</span><span className="font-mono">{load.baseCapacity}h</span></div>
                                         {load.breakdown.map((item, i) => (
-                                            <div key={i} className="flex justify-between gap-4 text-red-400">
-                                                <span>{item.reason}:</span>
-                                                <span className="font-mono">-{item.hours}h</span>
-                                            </div>
+                                            <div key={i} className="flex justify-between gap-4 text-red-400"><span>{item.reason}:</span><span className="font-mono">-{item.hours}h</span></div>
                                         ))}
-                                        <div className="flex justify-between gap-4 border-t pt-1 mt-1 font-bold">
-                                            <span>Disponible:</span>
-                                            <span className="font-mono">{load.capacity}h</span>
-                                        </div>
+                                        <div className="flex justify-between gap-4 border-t pt-1 mt-1 font-bold"><span>Disponible:</span><span className="font-mono">{load.capacity}h</span></div>
                                     </TooltipContent>
                                 </Tooltip>
                             </div>
@@ -338,15 +348,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                 sortedProjectGroups.map(([projId, projAllocations]) => {
                                   const project = getProjectById(projId);
                                   const client = getClientById(project?.clientId || '');
-                                  
-                                  // Totales del proyecto
-                                  const totalProjHours = projAllocations.reduce((sum, a) => sum + (a.status === 'completed' && a.hoursActual ? a.hoursActual : a.hoursAssigned), 0);
-
-                                  const sortedTasks = [...projAllocations].sort((a, b) => {
-                                      if (a.status === 'completed' && b.status !== 'completed') return 1;
-                                      if (a.status !== 'completed' && b.status === 'completed') return -1;
-                                      return 0;
-                                  });
+                                  const totalProjHours = projAllocations.reduce((sum, a) => sum + (a.status === 'completed' ? (a.hoursComputed || a.hoursAssigned) : a.hoursAssigned), 0);
 
                                   return (
                                     <div key={projId} className="bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden">
@@ -354,38 +356,31 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                             <div className="flex items-center gap-2 overflow-hidden">
                                                 <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: client?.color || '#cbd5e1' }} title={client?.name} />
                                                 <div className="flex flex-col min-w-0">
-                                                    <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={project?.name}>
-                                                        {project?.name || 'Desc.'}
-                                                    </span>
-                                                    <span className="text-[9px] text-slate-400 truncate leading-none">
-                                                        {client?.name || 'Sin cliente'}
-                                                    </span>
+                                                    <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={project?.name}>{project?.name || 'Desc.'}</span>
+                                                    <span className="text-[9px] text-slate-400 truncate leading-none">{client?.name || 'Sin cliente'}</span>
                                                 </div>
                                             </div>
-                                            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">
-                                                {totalProjHours}h
-                                            </span>
+                                            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">{totalProjHours}h</span>
                                         </div>
 
                                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                            {sortedTasks.map(alloc => {
+                                            {projAllocations.map(alloc => {
                                                 const isCompleted = alloc.status === 'completed';
-                                                const actual = alloc.hoursActual || 0;
-                                                const estimated = alloc.hoursAssigned;
-                                                const isOverBudget = actual > estimated;
+                                                // Cálculos de desviación
+                                                const real = alloc.hoursActual || 0;
+                                                const computed = alloc.hoursComputed || 0;
+                                                const gain = computed - real;
 
                                                 return (
-                                                <div 
-                                                    key={alloc.id} 
-                                                    className={cn(
-                                                        "group flex items-center gap-3 p-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors",
-                                                        isCompleted && "bg-slate-50/50 opacity-80"
-                                                    )}
-                                                >
-                                                    <Checkbox checked={isCompleted} onCheckedChange={() => toggleStatus(alloc)} className="h-4 w-4 mt-0.5 rounded-sm" />
+                                                <div key={alloc.id} className={cn("group flex items-start gap-2 p-2 hover:bg-slate-50/80 transition-colors", isCompleted && "bg-slate-50/50 opacity-90")}>
+                                                    <Checkbox 
+                                                        checked={isCompleted} 
+                                                        onCheckedChange={() => initiateTaskCompletion(alloc)} 
+                                                        className="h-4 w-4 mt-1 rounded-sm" 
+                                                    />
                                                     
-                                                    <div className="flex-1 min-w-0" onDoubleClick={() => startInlineEdit(alloc)}>
-                                                        <div className="flex justify-between items-center gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div onDoubleClick={() => startInlineEdit(alloc)}>
                                                             {inlineEditingId === alloc.id ? (
                                                                 <Input 
                                                                     ref={inlineInputRef}
@@ -396,83 +391,65 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                     className="h-6 text-xs px-1 py-0 w-full"
                                                                 />
                                                             ) : (
-                                                                <span 
-                                                                    className={cn("text-xs font-medium leading-tight text-slate-700 dark:text-slate-300 truncate cursor-text", isCompleted && "line-through opacity-50")}
-                                                                    title="Doble clic para editar nombre"
-                                                                >
-                                                                    {alloc.taskName || 'General'}
-                                                                </span>
+                                                                <div className="flex justify-between items-start">
+                                                                    <span className={cn("text-xs font-medium leading-tight text-slate-700 truncate cursor-text", isCompleted && "line-through opacity-50")}>
+                                                                        {alloc.taskName || 'Tarea'}
+                                                                    </span>
+                                                                    <DropdownMenu>
+                                                                        <DropdownMenuTrigger asChild>
+                                                                            <Button variant="ghost" size="icon" className="h-5 w-5 -mt-1 -mr-1 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-indigo-600">
+                                                                                <MoreHorizontal className="h-3 w-3" />
+                                                                            </Button>
+                                                                        </DropdownMenuTrigger>
+                                                                        <DropdownMenuContent align="end">
+                                                                            <DropdownMenuItem onClick={() => startEditFull(alloc)}><Pencil className="mr-2 h-3.5 w-3.5" /> Editar todo</DropdownMenuItem>
+                                                                            <DropdownMenuSeparator />
+                                                                            <DropdownMenuLabel className="text-xs font-normal">Mover a semana...</DropdownMenuLabel>
+                                                                            {weeks.map((w, i) => w.weekStart.toISOString().split('T')[0] !== weekStr && (
+                                                                                <DropdownMenuItem key={w.weekStart.toISOString()} onClick={() => moveTaskToWeek(alloc, w.weekStart)}>
+                                                                                    <ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Semana {i + 1}
+                                                                                </DropdownMenuItem>
+                                                                            ))}
+                                                                        </DropdownMenuContent>
+                                                                    </DropdownMenu>
+                                                                </div>
                                                             )}
                                                         </div>
-                                                        {alloc.description && !inlineEditingId && (
-                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                                                {alloc.description}
-                                                            </p>
-                                                        )}
                                                         
-                                                        {/* AVISO DE DESVIACIÓN */}
-                                                        {isCompleted && isOverBudget && (
-                                                            <div className="flex items-center gap-1 text-[9px] text-red-500 mt-1 font-medium animate-in fade-in">
-                                                                <AlertTriangle className="h-3 w-3" />
-                                                                <span>+{parseFloat((actual - estimated).toFixed(2))}h extra</span>
-                                                            </div>
+                                                        {alloc.description && !inlineEditingId && (
+                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">{alloc.description}</p>
                                                         )}
-                                                    </div>
 
-                                                    {/* DOBLE INPUT: EST vs COMP */}
-                                                    <div className="flex flex-col gap-1 items-end">
-                                                        <div className="flex items-center gap-1" title="Horas Estimadas">
-                                                            <span className="text-[9px] text-muted-foreground uppercase scale-[0.8]">Est</span>
-                                                            <div className="w-10 h-5 flex items-center justify-center bg-slate-100 rounded text-[10px] font-bold text-slate-500">
-                                                                {estimated}
+                                                        {/* INFO HORAS: EST | REAL | COMP */}
+                                                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                            {/* Estimado siempre visible */}
+                                                            <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                                                <span className="text-[9px] text-slate-500 font-bold">EST</span>
+                                                                <span className="text-[10px] font-mono font-medium">{alloc.hoursAssigned}h</span>
                                                             </div>
-                                                        </div>
 
-                                                        <div className="flex items-center gap-1" title="Horas Computadas">
-                                                            <span className={cn("text-[9px] uppercase scale-[0.8]", isOverBudget ? "text-red-500 font-bold" : "text-muted-foreground")}>Comp</span>
-                                                            <Input 
-                                                                type="number" 
-                                                                className={cn(
-                                                                    "w-10 h-5 px-0 text-center text-[10px] font-bold border-0 ring-1 ring-slate-200 focus-visible:ring-indigo-500",
-                                                                    isOverBudget && "text-red-600 bg-red-50 ring-red-200",
-                                                                    !isOverBudget && isCompleted && "text-green-600 bg-green-50 ring-green-200"
-                                                                )}
-                                                                value={alloc.hoursActual || ''}
-                                                                placeholder="-"
-                                                                onChange={(e) => {
-                                                                    const val = parseFloat(e.target.value);
-                                                                    updateAllocation({ ...alloc, hoursActual: isNaN(val) ? 0 : val });
-                                                                }}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                            />
+                                                            {isCompleted && (
+                                                                <>
+                                                                    <div className="flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100" title="Horas Reales Invertidas">
+                                                                        <span className="text-[9px] text-blue-600 font-bold">REAL</span>
+                                                                        <span className="text-[10px] font-mono font-medium text-blue-700">{real}h</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" title="Horas Computadas al Cliente">
+                                                                        <span className="text-[9px] text-emerald-600 font-bold">COMP</span>
+                                                                        <span className="text-[10px] font-mono font-medium text-emerald-700">{computed}h</span>
+                                                                    </div>
+                                                                    {/* Badge de Ganancia/Perdida */}
+                                                                    {gain !== 0 && (
+                                                                        <Badge variant="outline" className={cn("text-[9px] h-4 px-1 ml-auto", gain > 0 ? "text-emerald-600 border-emerald-200 bg-emerald-50" : "text-red-600 border-red-200 bg-red-50")}>
+                                                                            {gain > 0 ? '+' : ''}{parseFloat(gain.toFixed(2))}h
+                                                                        </Badge>
+                                                                    )}
+                                                                </>
+                                                            )}
                                                         </div>
                                                     </div>
-
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 text-slate-400 hover:text-indigo-600">
-                                                                <MoreHorizontal className="h-4 w-4" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end">
-                                                            <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                                                            <DropdownMenuItem onClick={() => startEditFull(alloc)}>
-                                                                <Pencil className="mr-2 h-3.5 w-3.5" /> Editar todo
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Mover a semana...</DropdownMenuLabel>
-                                                            {weeks.map((w, i) => (
-                                                                w.weekStart.toISOString().split('T')[0] !== weekStr && (
-                                                                    <DropdownMenuItem key={w.weekStart.toISOString()} onClick={() => moveTaskToWeek(alloc, w.weekStart)}>
-                                                                        <ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Semana {i + 1}
-                                                                    </DropdownMenuItem>
-                                                                )
-                                                            ))}
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
                                                 </div>
-                                            );
-                                            })}
+                                            );})}
                                         </div>
                                     </div>
                                   );
@@ -487,7 +464,58 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
         </SheetContent>
       </Sheet>
 
-      {/* DIALOGOS DE EDICIÓN (Mantenidos) */}
+      {/* DIÁLOGO DE CIERRE DE TAREA */}
+      <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
+        <DialogContent className="max-w-sm">
+            <DialogHeader>
+                <DialogTitle>Finalizar Tarea</DialogTitle>
+                <DialogDescription>
+                    Indica el tiempo real invertido y cuánto computará al cliente.
+                </DialogDescription>
+            </DialogHeader>
+            
+            <div className="grid gap-4 py-2">
+                <div className="p-3 bg-slate-50 rounded-lg border text-sm">
+                    <span className="text-muted-foreground">Tarea:</span> 
+                    <span className="font-medium text-slate-900 ml-2">{taskToComplete?.taskName}</span>
+                    <div className="mt-1 text-xs text-muted-foreground">Estimado original: {taskToComplete?.hoursAssigned}h</div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label className="text-xs font-bold text-blue-600 uppercase">Horas Reales</Label>
+                        <Input 
+                            type="number" 
+                            value={closeHoursReal} 
+                            onChange={e => setCloseHoursReal(e.target.value)}
+                            className="font-mono text-center font-bold"
+                            autoFocus
+                        />
+                        <p className="text-[10px] text-muted-foreground">Tiempo de reloj invertido.</p>
+                    </div>
+                    <div className="space-y-2">
+                        <Label className="text-xs font-bold text-emerald-600 uppercase">Computables</Label>
+                        <Input 
+                            type="number" 
+                            value={closeHoursComputed} 
+                            onChange={e => setCloseHoursComputed(e.target.value)}
+                            className="font-mono text-center font-bold"
+                        />
+                        <p className="text-[10px] text-muted-foreground">Lo que cuenta al cliente.</p>
+                    </div>
+                </div>
+            </div>
+
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCompleteDialogOpen(false)}>Cancelar</Button>
+                <Button onClick={confirmTaskCompletion} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+                    <Check className="h-4 w-4" /> Completar
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOGOS DE EDICIÓN / CREACIÓN (Se mantienen igual) */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
           <DialogHeader className="p-6 pb-2">
