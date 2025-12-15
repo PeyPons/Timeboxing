@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { EmployeeRow } from './EmployeeRow';
 import { AllocationSheet } from './AllocationSheet';
-import { getWeeksForMonth, getMonthName, isCurrentWeek } from '@/utils/dateUtils';
+import { getWeeksForMonth, getMonthName, isCurrentWeek, getStorageKey } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, User, Loader2, Briefcase, ChevronsUpDown, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, User, Loader2, Briefcase, ChevronsUpDown, Check, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -61,20 +61,89 @@ export function PlannerGrid() {
   
   const handleCellClick = (employeeId: string, weekStart: Date) => setSelectedCell({ employeeId, weekStart });
 
+  // --- LÓGICA MINGUITO OPTIMIZADA ---
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setInsights(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) { setInsights([{ type: 'warning', text: '⚠️ Falta API Key' }]); setIsAnalyzing(false); return; }
+    
+    if (!apiKey) {
+        setInsights([{ type: 'warning', text: '⚠️ Minguito necesita su API Key para hablar.' }]);
+        setIsAnalyzing(false);
+        return;
+    }
+
     try {
-        const staffData = filteredEmployees.map(e => ({ name: e.name, role: e.role, load: getEmployeeMonthlyLoad(e.id, year, month).percentage }));
-        const prompt = `Analiza carga ${getMonthName(currentMonth)}: ${JSON.stringify(staffData)}. JSON array: [{"type":"warning"|"success"|"info","text":"..."}]`;
+        // 1. PRE-PROCESADO DE DATOS (Filtrado quirúrgico)
+        const relevantData = filteredEmployees.map(e => {
+            // Buscamos solo tareas completadas de este mes con desviaciones > 0.5h
+            const empAllocations = allocations.filter(a => 
+                a.employeeId === e.id && 
+                a.status === 'completed' &&
+                isSameMonth(parseISO(a.weekStartDate), currentMonth)
+            );
+
+            const problematicTasks = empAllocations.filter(a => {
+                const real = a.hoursActual || 0;
+                const comp = a.hoursComputed || 0;
+                // Desviación: Si trabajó más de lo computado (Pérdida) o mucho más de lo estimado
+                const loss = real - comp; 
+                return loss > 0.5; // Umbral de "dolor": 30 min perdidos
+            }).map(a => `${a.taskName}: Perdió ${Math.round((a.hoursActual! - a.hoursComputed!) * 10) / 10}h`);
+
+            const goodTasks = empAllocations.filter(a => {
+                const real = a.hoursActual || 0;
+                const comp = a.hoursComputed || 0;
+                const gain = comp - real;
+                return gain > 0.5; // Umbral de "gloria": 30 min ganados
+            }).map(a => `${a.taskName}: Ganó ${Math.round((a.hoursComputed! - a.hoursActual!) * 10) / 10}h`);
+
+            if (problematicTasks.length === 0 && goodTasks.length === 0) return null;
+
+            return {
+                Name: e.name,
+                Problemas: problematicTasks,
+                Victorias: goodTasks
+            };
+        }).filter(item => item !== null); // Quitamos empleados sin novedades
+
+        if (relevantData.length === 0) {
+            setInsights([{ type: 'info', text: 'Todo parece tranquilo este mes. Sin desviaciones graves > 30min.' }]);
+            setIsAnalyzing(false);
+            return;
+        }
+
+        // 2. PROMPT CON PERSONALIDAD (Minguito Mode)
+        const prompt = `
+            Eres Minguito, un Project Manager veterano, sarcástico y obsesionado con la RENTABILIDAD.
+            No te andas con rodeos. Si alguien pierde dinero, lo dices claro. Si alguien lo hace bien, le das una palmada seca.
+            
+            Analiza estos datos de desviaciones (Rentabilidad = Computado - Real).
+            Datos: ${JSON.stringify(relevantData)}
+            
+            Tu misión:
+            1. Detecta quién está "tirando el dinero" (Problemas).
+            2. Detecta quién está "facturando aire" (Victorias, eso es bueno).
+            3. Dame 3 frases cortas y directas (tipo bala) en JSON.
+            
+            Formato respuesta JSON estrictamente:
+            [{"type":"warning"|"success"|"info", "text":"Frase de Minguito aquí"}]
+        `;
+
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const result = await model.generateContent(prompt);
-        const json = JSON.parse(result.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
-        setInsights(json);
-    } catch (e) { setInsights([{ type: 'warning', text: 'Error IA' }]); } finally { setIsAnalyzing(false); }
+        const text = result.response.text();
+        const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        setInsights(JSON.parse(jsonString));
+
+    } catch (e: any) {
+        console.error(e);
+        setInsights([{ type: 'warning', text: 'Minguito se ha mareado (Error API).' }]);
+    } finally {
+        setIsAnalyzing(false);
+    }
   };
 
   const gridTemplate = `250px repeat(${weeks.length}, minmax(0, 1fr)) 100px`;
@@ -96,19 +165,56 @@ export function PlannerGrid() {
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNextMonth}><ChevronRight className="h-4 w-4" /></Button>
                 </div>
             </div>
+            
             <Popover>
-                <PopoverTrigger asChild><Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 h-9 shadow-sm"><Sparkles className="h-4 w-4" /><span className="hidden sm:inline">Insights IA</span></Button></PopoverTrigger>
+                <PopoverTrigger asChild>
+                    <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 h-9 shadow-sm">
+                        <Sparkles className="h-4 w-4" />
+                        <span className="hidden sm:inline">Insights Minguito</span>
+                    </Button>
+                </PopoverTrigger>
                 <PopoverContent className="w-80 p-0" align="end">
-                    <div className="bg-indigo-50 p-3 border-b flex items-center gap-2"><Sparkles className="h-4 w-4 text-indigo-600" /><span className="font-semibold text-sm">Sugerencias:</span></div>
+                    <div className="bg-indigo-50 dark:bg-indigo-900/30 p-3 border-b flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-indigo-600" />
+                        <span className="font-semibold text-sm">Análisis de Minguito:</span>
+                    </div>
                     <div className="p-4">
-                        {!isAnalyzing && !insights && <div className="text-center"><Button size="sm" onClick={handleAnalyze}>Analizar</Button></div>}
-                        {isAnalyzing && <div className="text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-indigo-600" /></div>}
-                        {insights && <div className="space-y-2">{insights.map((i, k) => <div key={k} className={cn("text-xs p-2 rounded border", i.type==='warning'?"bg-amber-50 border-amber-200":i.type==='success'?"bg-green-50 border-green-200":"bg-blue-50 border-blue-200")}>{i.text}</div>)}</div>}
+                        {!isAnalyzing && !insights && (
+                            <div className="text-center py-2">
+                                <p className="text-xs text-muted-foreground mb-3">Analizo desviaciones {'>'} 30min.</p>
+                                <Button size="sm" onClick={handleAnalyze} className="w-full bg-indigo-600 text-white">
+                                    ¡Dale caña!
+                                </Button>
+                            </div>
+                        )}
+                        {isAnalyzing && (
+                            <div className="text-center py-4 flex flex-col items-center gap-2">
+                                <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+                                <span className="text-xs text-muted-foreground">Juzgando al equipo...</span>
+                            </div>
+                        )}
+                        {insights && (
+                            <div className="space-y-2">
+                                {insights.map((i, k) => (
+                                    <div key={k} className={cn("text-xs p-2 rounded border font-medium", 
+                                        i.type==='warning' ? "bg-red-50 border-red-200 text-red-800" : 
+                                        i.type==='success' ? "bg-emerald-50 border-emerald-200 text-emerald-800" : 
+                                        "bg-blue-50 border-blue-200 text-blue-800"
+                                    )}>
+                                        {i.text}
+                                    </div>
+                                ))}
+                                <Button size="sm" variant="ghost" className="w-full text-xs h-7 mt-2" onClick={handleAnalyze}>
+                                    <RefreshCw className="h-3 w-3 mr-2" /> Otra opinión
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </PopoverContent>
             </Popover>
         </div>
         
+        {/* ... (Resto de filtros se mantienen igual) ... */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
              <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
