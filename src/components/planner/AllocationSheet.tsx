@@ -14,7 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, Check, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, AlertTriangle, Save } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -76,12 +76,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const [editWeek, setEditWeek] = useState('');
   const [openComboboxId, setOpenComboboxId] = useState<string | null>(null);
   const [editComboboxOpen, setEditComboboxOpen] = useState(false);
-
-  // --- NUEVO: Estado para Diálogo de Cierre de Tarea ---
-  const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
-  const [taskToComplete, setTaskToComplete] = useState<Allocation | null>(null);
-  const [closeHoursReal, setCloseHoursReal] = useState('');
-  const [closeHoursComputed, setCloseHoursComputed] = useState('');
 
   const employee = employees.find(e => e.id === employeeId);
   const weeks = useMemo(() => getWeeksForMonth(viewDate), [viewDate]);
@@ -152,7 +146,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
             taskName: task.taskName,
             weekStartDate: task.weekDate,
             hoursAssigned: parseFloat(task.hours),
-            status: 'planned', // SIEMPRE NACE COMO PLANNED
+            status: 'planned', 
             description: task.description,
           });
         }
@@ -161,42 +155,28 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setIsFormOpen(false);
   };
 
-  // --- LÓGICA DE CIERRE DE TAREA (NUEVO) ---
-  const initiateTaskCompletion = (allocation: Allocation) => {
-      // Si ya estaba completa y le damos al check, la pasamos a planned (deshacer)
-      if (allocation.status === 'completed') {
-          updateAllocation({ 
-              ...allocation, 
-              status: 'planned',
-              hoursActual: 0, 
-              hoursComputed: 0 
-          });
-          return;
-      }
-
-      // Si está pendiente, abrimos diálogo
-      setTaskToComplete(allocation);
-      // Por defecto sugerimos lo estimado, pero el usuario lo cambia manual
-      setCloseHoursReal(allocation.hoursAssigned.toString());
-      setCloseHoursComputed(allocation.hoursAssigned.toString());
-      setIsCompleteDialogOpen(true);
+  // --- LÓGICA DE CIERRE DE TAREA (INLINE - OPCIÓN A) ---
+  const toggleTaskCompletion = (allocation: Allocation) => {
+      const isCompleting = allocation.status !== 'completed';
+      
+      updateAllocation({
+          ...allocation,
+          status: isCompleting ? 'completed' : 'planned',
+          // Smart Defaults: Si completamos, copiamos lo estimado. Si no, reseteamos a 0.
+          hoursActual: isCompleting ? allocation.hoursAssigned : 0,
+          hoursComputed: isCompleting ? allocation.hoursAssigned : 0
+      });
   };
 
-  const confirmTaskCompletion = () => {
-      if (!taskToComplete) return;
-      
-      const real = parseFloat(closeHoursReal) || 0;
-      const computed = parseFloat(closeHoursComputed) || 0;
-
-      updateAllocation({
-          ...taskToComplete,
-          status: 'completed',
-          hoursActual: real,      // REAL MANUAL
-          hoursComputed: computed // COMPUTADO MANUAL
-      });
-
-      setIsCompleteDialogOpen(false);
-      setTaskToComplete(null);
+  const updateInlineHours = (allocation: Allocation, field: 'hoursActual' | 'hoursComputed', value: string) => {
+      const numValue = parseFloat(value) || 0;
+      // Solo actualizamos si el valor cambió para evitar llamadas innecesarias
+      if (allocation[field] !== numValue) {
+          updateAllocation({
+              ...allocation,
+              [field]: numValue
+          });
+      }
   };
 
   // --- LÓGICA DE EDICIÓN ---
@@ -375,7 +355,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                 <div key={alloc.id} className={cn("group flex items-start gap-2 p-2 hover:bg-slate-50/80 transition-colors", isCompleted && "bg-slate-50/50 opacity-90")}>
                                                     <Checkbox 
                                                         checked={isCompleted} 
-                                                        onCheckedChange={() => initiateTaskCompletion(alloc)} 
+                                                        onCheckedChange={() => toggleTaskCompletion(alloc)} 
                                                         className="h-4 w-4 mt-1 rounded-sm" 
                                                     />
                                                     
@@ -430,14 +410,32 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
 
                                                             {isCompleted && (
                                                                 <>
-                                                                    <div className="flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100" title="Horas Reales Invertidas">
-                                                                        <span className="text-[9px] text-blue-600 font-bold">REAL</span>
-                                                                        <span className="text-[10px] font-mono font-medium text-blue-700">{real}h</span>
+                                                                    {/* INPUT REAL INLINE */}
+                                                                    <div className="flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 transition-colors focus-within:ring-1 focus-within:ring-blue-300" title="Horas Reales Invertidas">
+                                                                        <span className="text-[9px] text-blue-600 font-bold cursor-default">REAL</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            className="w-8 bg-transparent text-[10px] font-mono font-medium text-blue-700 text-center outline-none p-0 border-0 h-auto"
+                                                                            defaultValue={real}
+                                                                            onBlur={(e) => updateInlineHours(alloc, 'hoursActual', e.target.value)}
+                                                                            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                                                                            step="0.1"
+                                                                        />
                                                                     </div>
-                                                                    <div className="flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" title="Horas Computadas al Cliente">
-                                                                        <span className="text-[9px] text-emerald-600 font-bold">COMP</span>
-                                                                        <span className="text-[10px] font-mono font-medium text-emerald-700">{computed}h</span>
+                                                                    
+                                                                    {/* INPUT COMPUTADO INLINE */}
+                                                                    <div className="flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 transition-colors focus-within:ring-1 focus-within:ring-emerald-300" title="Horas Computadas al Cliente">
+                                                                        <span className="text-[9px] text-emerald-600 font-bold cursor-default">COMP</span>
+                                                                         <input
+                                                                            type="number"
+                                                                            className="w-8 bg-transparent text-[10px] font-mono font-medium text-emerald-700 text-center outline-none p-0 border-0 h-auto"
+                                                                            defaultValue={computed}
+                                                                            onBlur={(e) => updateInlineHours(alloc, 'hoursComputed', e.target.value)}
+                                                                            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                                                                            step="0.1"
+                                                                        />
                                                                     </div>
+                                                                    
                                                                     {/* Badge de Ganancia/Perdida */}
                                                                     {gain !== 0 && (
                                                                         <Badge variant="outline" className={cn("text-[9px] h-4 px-1 ml-auto", gain > 0 ? "text-emerald-600 border-emerald-200 bg-emerald-50" : "text-red-600 border-red-200 bg-red-50")}>
@@ -463,57 +461,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
           </TooltipProvider>
         </SheetContent>
       </Sheet>
-
-      {/* DIÁLOGO DE CIERRE DE TAREA */}
-      <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
-        <DialogContent className="max-w-sm">
-            <DialogHeader>
-                <DialogTitle>Finalizar Tarea</DialogTitle>
-                <DialogDescription>
-                    Indica el tiempo real invertido y cuánto computará al cliente.
-                </DialogDescription>
-            </DialogHeader>
-            
-            <div className="grid gap-4 py-2">
-                <div className="p-3 bg-slate-50 rounded-lg border text-sm">
-                    <span className="text-muted-foreground">Tarea:</span> 
-                    <span className="font-medium text-slate-900 ml-2">{taskToComplete?.taskName}</span>
-                    <div className="mt-1 text-xs text-muted-foreground">Estimado original: {taskToComplete?.hoursAssigned}h</div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <Label className="text-xs font-bold text-blue-600 uppercase">Horas Reales</Label>
-                        <Input 
-                            type="number" 
-                            value={closeHoursReal} 
-                            onChange={e => setCloseHoursReal(e.target.value)}
-                            className="font-mono text-center font-bold"
-                            autoFocus
-                        />
-                        <p className="text-[10px] text-muted-foreground">Tiempo de reloj invertido.</p>
-                    </div>
-                    <div className="space-y-2">
-                        <Label className="text-xs font-bold text-emerald-600 uppercase">Computables</Label>
-                        <Input 
-                            type="number" 
-                            value={closeHoursComputed} 
-                            onChange={e => setCloseHoursComputed(e.target.value)}
-                            className="font-mono text-center font-bold"
-                        />
-                        <p className="text-[10px] text-muted-foreground">Lo que cuenta al cliente.</p>
-                    </div>
-                </div>
-            </div>
-
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsCompleteDialogOpen(false)}>Cancelar</Button>
-                <Button onClick={confirmTaskCompletion} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-                    <Check className="h-4 w-4" /> Completar
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* DIALOGOS DE EDICIÓN / CREACIÓN (Se mantienen igual) */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
@@ -609,67 +556,4 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                 <CommandGroup className="max-h-[200px] overflow-y-auto">
                                                     {activeProjects.map((project) => (
                                                         <CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}>
-                                                            <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
-                                                            {project.name}
-                                                        </CommandItem>
-                                                    ))}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                            </div>
-
-                            <Input 
-                                className="flex-1 h-10 px-2 bg-muted/30 border-input/50" 
-                                placeholder="Nombre tarea..." 
-                                value={task.taskName} 
-                                onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} 
-                            />
-
-                            <Input 
-                                type="number" 
-                                className="w-20 h-10 text-center px-1 font-mono bg-muted/30 border-input/50" 
-                                placeholder="0" 
-                                value={task.hours} 
-                                onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} 
-                                step="0.5"
-                            />
-
-                            <div className="w-36">
-                                <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
-                                    <SelectTrigger className="h-10 px-2 bg-muted/30 border-input/50"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        {weeks.map((w, i) => (
-                                            <SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>
-                                                Sem {i+1} ({format(w.effectiveStart!, 'd', { locale: es })})
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => removeTaskRow(task.id)} disabled={newTasks.length === 1}>
-                                <X className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    ))}
-                </div>
-
-                <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed h-10 hover:bg-primary/5 hover:text-primary hover:border-primary/30">
-                    <Plus className="h-4 w-4 mr-2" /> Añadir otra fila
-                </Button>
-              </div>
-            )}
-          </div>
-          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t">
-            <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>
-                {editingAllocation ? 'Guardar Cambios' : `Guardar ${newTasks.filter(t => t.projectId && t.hours).length} Tareas`}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
+                                                            <Check className={cn("mr-2 h-4 w-4", task
