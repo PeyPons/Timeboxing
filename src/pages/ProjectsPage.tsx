@@ -13,12 +13,13 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format, addMonths, subMonths, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
   FolderKanban, ChevronLeft, ChevronRight, CalendarDays, Briefcase, Pencil, Search, 
   HeartPulse, ChevronsUpDown, Check, User, Target, FileCheck, Clock, Plus, Trash2, 
-  ChevronDown, AlertCircle, PlayCircle, CheckCircle2 
+  ChevronDown, AlertCircle, PlayCircle, CheckCircle2, TrendingUp, TrendingDown 
 } from 'lucide-react';
 import { Project, OKR } from '@/types';
 import { cn } from '@/lib/utils';
@@ -74,7 +75,7 @@ export default function ProjectsPage() {
     });
   }, [projects, searchTerm, selectedEmployeeId, allocations, currentMonth, showOnlyUnderPlanned]);
 
-  // CRUD y Lógica de Edición... (Se mantienen igual que antes, enfocado en mostrar las tareas)
+  // CRUD y Lógica de Edición...
   
   const openNewProject = () => {
       setIsCreating(true);
@@ -244,18 +245,42 @@ export default function ProjectsPage() {
                         <div className="px-4 py-2 bg-slate-50/30">
                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-2">Pendientes ({pendingTasks.length})</div>
                             {pendingTasks.length > 0 ? (
-                                <div className="space-y-1 pb-2">
+                                <div className="space-y-2 pb-2">
                                     {pendingTasks.map(task => {
                                         const emp = employees.find(e => e.id === task.employeeId);
                                         return (
-                                            <div key={task.id} className="flex items-center justify-between bg-white border rounded px-3 py-2 shadow-sm">
-                                                <div className="flex items-center gap-2 min-w-0">
-                                                    <PlayCircle className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                                                    <span className="text-xs font-medium truncate">{task.taskName}</span>
+                                            <div key={task.id} className="flex items-center justify-between p-3 border rounded-lg bg-white shadow-sm hover:shadow-md transition-all">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    {/* AVATAR AÑADIDO */}
+                                                    <Avatar className="h-8 w-8 border border-indigo-100 shrink-0">
+                                                        <AvatarImage src={emp?.avatarUrl} />
+                                                        <AvatarFallback className="bg-indigo-100 text-indigo-700 text-[10px] font-bold">
+                                                            {emp?.name.substring(0, 2).toUpperCase() || "??"}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-medium truncate leading-tight">{task.taskName}</div>
+                                                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                                                            {emp?.name || 'Sin asignar'} • Sem {format(parseISO(task.weekStartDate), 'w')}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    <Badge variant="secondary" className="text-[10px] h-5 font-normal bg-slate-100 text-slate-600">{emp?.name.split(' ')[0]}</Badge>
-                                                    <span className="font-mono text-xs font-bold w-10 text-right">{task.hoursAssigned}h</span>
+
+                                                {/* NUEVAS COLUMNAS */}
+                                                <div className="flex items-center gap-3 text-xs shrink-0 pl-2">
+                                                    <div className="text-right">
+                                                        <div className="text-[9px] text-muted-foreground font-bold tracking-wider">EST</div>
+                                                        <div className="font-mono font-bold">{task.hoursAssigned}</div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-[9px] text-blue-500 font-bold tracking-wider">REAL</div>
+                                                        <div className="font-mono font-bold text-blue-700">{task.hoursActual || 0}</div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-[9px] text-emerald-500 font-bold tracking-wider">COMP</div>
+                                                        <div className="font-mono font-bold text-emerald-700">{task.hoursComputed || 0}</div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -266,27 +291,48 @@ export default function ProjectsPage() {
 
                         {completedTasks.length > 0 && (
                             <details className="group border-t bg-slate-50">
-                                <summary className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-slate-100 transition-colors list-none">
+                                <summary className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-slate-100 transition-colors list-none select-none">
                                     <span className="text-xs font-medium text-emerald-700 flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5" /> Ver {completedTasks.length} tareas completadas</span>
                                     <ChevronDown className="h-3.5 w-3.5 text-slate-400 group-open:rotate-180 transition-transform" />
                                 </summary>
-                                <div className="px-4 pb-3 space-y-1">
+                                <div className="px-4 pb-3 space-y-2 pt-2">
                                     {completedTasks.map(task => {
-                                        // Cálculo de ganancia
+                                        const emp = employees.find(e => e.id === task.employeeId);
                                         const real = task.hoursActual || 0;
-                                        const computed = task.hoursComputed || 0; // Usamos la nueva propiedad
+                                        const computed = task.hoursComputed || 0;
                                         const gain = computed - real;
                                         
                                         return (
-                                        <div key={task.id} className="flex justify-between items-center text-xs text-slate-500 pl-6 py-1 border-l-2 border-emerald-100">
-                                            <span className="line-through truncate max-w-[50%]">{task.taskName}</span>
-                                            <div className="flex gap-2 font-mono">
-                                                <span title="Real" className="text-blue-600">R: {real}h</span>
-                                                <span title="Computado" className="text-emerald-600 font-bold">C: {computed}h</span>
-                                                {gain !== 0 && (
-                                                    <span className={cn("font-bold", gain > 0 ? "text-emerald-500" : "text-red-500")}>
-                                                        ({gain > 0 ? '+' : ''}{parseFloat(gain.toFixed(2))})
-                                                    </span>
+                                        <div key={task.id} className="flex items-center justify-between p-2 pl-3 border rounded-lg bg-slate-50/50 border-l-4 border-l-emerald-500">
+                                            <div className="flex items-center gap-3 min-w-0 opacity-75">
+                                                <Avatar className="h-7 w-7 border border-emerald-100 shrink-0">
+                                                    <AvatarImage src={emp?.avatarUrl} />
+                                                    <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[9px] font-bold">
+                                                        {emp?.name.substring(0, 2).toUpperCase() || "??"}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <div className="min-w-0">
+                                                    <span className="text-xs font-medium text-slate-600 line-through truncate block">{task.taskName}</span>
+                                                    <div className="text-[9px] text-slate-400">
+                                                        {emp?.name} • Completada
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-3 text-xs shrink-0">
+                                                 <div className="text-right">
+                                                    <div className="text-[9px] text-blue-500 font-bold tracking-wider">REAL</div>
+                                                    <div className="font-mono text-blue-700">{real}h</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-[9px] text-emerald-500 font-bold tracking-wider">COMP</div>
+                                                    <div className="font-mono text-emerald-700 font-bold">{computed}h</div>
+                                                </div>
+                                                {Math.abs(gain) > 0.01 && (
+                                                    <Badge variant="outline" className={cn("text-[9px] h-5 px-1 ml-1 border-0", gain > 0 ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50")}>
+                                                        {gain > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                                                        {Math.abs(parseFloat(gain.toFixed(1)))}
+                                                    </Badge>
                                                 )}
                                             </div>
                                         </div>
