@@ -35,7 +35,7 @@ export function ProjectsSheet({ open, onOpenChange, employeeId }: ProjectsSheetP
       
       acc[projId].totalEst += alloc.hoursAssigned;
       
-      // Solo sumamos Real y Computado si está completada
+      // Solo sumamos Real y Computado si está completada la tarea
       if (alloc.status === 'completed') {
           acc[projId].totalReal += alloc.hoursActual || 0;
           acc[projId].totalComp += alloc.hoursComputed || 0;
@@ -44,12 +44,11 @@ export function ProjectsSheet({ open, onOpenChange, employeeId }: ProjectsSheetP
       return acc;
   }, {} as Record<string, { project: Project, totalEst: number, totalReal: number, totalComp: number }>);
 
-  // Ordenar por volumen de horas estimadas
+  // Ordenar por volumen de horas estimadas (mayor a menor)
   const sortedProjects = Object.values(projectGroups).sort((a, b) => b.totalEst - a.totalEst);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      {/* CAMBIO CLAVE AQUÍ: bg-slate-50 sólido (sin /50) para evitar transparencias raras */}
       <SheetContent className="w-full sm:max-w-md overflow-y-auto bg-slate-50 border-l border-slate-200">
         <SheetHeader className="mb-6 pb-4 border-b border-slate-200">
           <SheetTitle className="flex items-center gap-3 text-xl">
@@ -77,13 +76,15 @@ export function ProjectsSheet({ open, onOpenChange, employeeId }: ProjectsSheetP
             ) : (
                 sortedProjects.map((group) => {
                     const client = clients.find(c => c.id === group.project?.clientId);
-                    // Cálculo de Beneficio (Gain) para el empleado
+                    // Cálculo de Beneficio (Gain) para el empleado en este proyecto
                     const gain = round2(group.totalComp - group.totalReal);
                     
                     // CÁLCULO DE IMPACTO (% sobre el total del proyecto global)
+                    // 1. Buscamos TODAS las asignaciones de este proyecto (de todos los empleados)
                     const allProjectAllocations = allocations.filter(a => a.projectId === group.project?.id && a.status === 'completed');
                     const globalProjectComputed = allProjectAllocations.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
                     
+                    // 2. Calculamos % de impacto (Mi Computado / Computado Global)
                     const impactPercentage = globalProjectComputed > 0 
                         ? round2((group.totalComp / globalProjectComputed) * 100) 
                         : 0;
