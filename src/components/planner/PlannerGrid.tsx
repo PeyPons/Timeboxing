@@ -4,7 +4,7 @@ import { EmployeeRow } from './EmployeeRow';
 import { AllocationSheet } from './AllocationSheet';
 import { getWeeksForMonth, getMonthName, isCurrentWeek } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, User, Loader2, Briefcase, Check, ChevronsUpDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, User, Loader2, Briefcase, ChevronsUpDown, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -81,6 +81,9 @@ export function PlannerGrid() {
   const sortedProjects = useMemo(() => [...projects].sort((a,b) => a.name.localeCompare(b.name)), [projects]);
   const sortedEmployees = useMemo(() => [...employees].filter(e=>e.isActive).sort((a,b) => a.name.localeCompare(b.name)), [employees]);
 
+  const getSelectedEmployeeName = () => selectedEmployeeId === 'all' ? "Todos los empleados" : employees.find(e => e.id === selectedEmployeeId)?.name || "Seleccionar...";
+  const getSelectedProjectName = () => selectedProjectId === 'all' ? "Todos los proyectos" : projects.find(p => p.id === selectedProjectId)?.name || "Seleccionar...";
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 rounded-lg border shadow-sm overflow-hidden">
       <div className="flex flex-col gap-4 border-b bg-card px-4 py-3 z-20 relative">
@@ -89,7 +92,7 @@ export function PlannerGrid() {
                 <h2 className="text-xl font-bold capitalize text-foreground flex items-center gap-2">{getMonthName(currentMonth)} <Badge variant="outline" className="text-xs font-normal hidden sm:flex">{year}</Badge></h2>
                 <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-md p-0.5">
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="sm" onClick={handleToday} className="h-7 text-xs px-2"><CalendarDays className="h-3.5 w-3.5 mr-1.5" />Mes</Button>
+                    <Button variant="ghost" size="sm" onClick={handleToday} className="h-7 text-xs px-2"><CalendarDays className="h-3.5 w-3.5 mr-1.5" />Mes Actual</Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNextMonth}><ChevronRight className="h-4 w-4" /></Button>
                 </div>
             </div>
@@ -106,7 +109,8 @@ export function PlannerGrid() {
             </Popover>
         </div>
         
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
              <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
                 <PopoverTrigger asChild><Button variant="outline" role="combobox" className="h-8 w-[200px] justify-between text-xs bg-white"><span className="truncate">{selectedEmployeeId==='all'?"Todos":employees.find(e=>e.id===selectedEmployeeId)?.name}</span><ChevronsUpDown className="ml-2 h-3 w-3 opacity-50" /></Button></PopoverTrigger>
                 <PopoverContent className="w-[200px] p-0"><Command><CommandInput placeholder="Empleado..." /><CommandList><CommandGroup><CommandItem onSelect={()=>{setSelectedEmployeeId('all');setOpenEmployeeCombo(false)}}>Todos</CommandItem>{sortedEmployees.map(e=><CommandItem key={e.id} onSelect={()=>{setSelectedEmployeeId(e.id);setOpenEmployeeCombo(false)}}>{e.name}</CommandItem>)}</CommandGroup></CommandList></Command></PopoverContent>
@@ -116,6 +120,13 @@ export function PlannerGrid() {
                 <PopoverContent className="w-[250px] p-0"><Command><CommandInput placeholder="Proyecto..." /><CommandList><CommandGroup><CommandItem onSelect={()=>{setSelectedProjectId('all');setOpenProjectCombo(false)}}>Todos</CommandItem>{sortedProjects.filter(p=>p.status==='active').map(p=><CommandItem key={p.id} onSelect={()=>{setSelectedProjectId(p.id);setOpenProjectCombo(false)}}>{p.name}</CommandItem>)}</CommandGroup></CommandList></Command></PopoverContent>
             </Popover>
             <Button variant={showOnlyMe?"secondary":"outline"} size="sm" onClick={()=>setShowOnlyMe(!showOnlyMe)} className={cn("h-8 text-xs gap-2", showOnlyMe && "bg-indigo-100 text-indigo-700")}><User className="h-3.5 w-3.5" /> Solo Yo</Button>
+            </div>
+            
+            <div className="flex items-center gap-3 text-xs hidden lg:flex">
+                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-green-500" /> <span className="text-muted-foreground">90-110%</span></div>
+                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-amber-400" /> <span className="text-muted-foreground">&lt;90%</span></div>
+                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-red-500" /> <span className="text-muted-foreground">&gt;110%</span></div>
+            </div>
         </div>
       </div>
 
