@@ -6,16 +6,14 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import { AppProvider } from "@/contexts/AppContext";
 import { AppLayout } from "@/components/layout/AppLayout";
-
-// Importamos las páginas
 import DashboardAI from "./pages/DashboardAI";
-import Index from "./pages/Index"; // Planificador
+import ClientReportsPage from '@/pages/ClientReportsPage';
+import Index from "./pages/Index";
 import TeamPage from "./pages/TeamPage";
 import ClientsPage from "./pages/ClientsPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
-import ClientReportsPage from "./pages/ClientReportsPage"; // ✅ IMPORTACIÓN AÑADIDA
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,25 +28,21 @@ const App = () => (
           <BrowserRouter>
             <AppLayout>
               <Routes>
-                {/* Dashboard Principal */}
+                {/* 1. La ruta raíz "/" carga el Dashboard con IA */}
                 <Route path="/" element={<DashboardAI />} />
                 
-                {/* Planificador */}
+                {/* 2. ✅ AÑADIDO: La ruta explícita para el botón del menú "Copiloto IA" */}
+                <Route path="/dashboard-ai" element={<DashboardAI />} />
+                
+                {/* 3. El Planificador antiguo está en /planner */}
                 <Route path="/planner" element={<Index />} />
                 
-                {/* Gestión */}
                 <Route path="/team" element={<TeamPage />} />
                 <Route path="/clients" element={<ClientsPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
-                
-                {/* Informes y Análisis */}
                 <Route path="/reports" element={<ReportsPage />} />
-                <Route path="/informes-clientes" element={<ClientReportsPage />} /> {/* ✅ RUTA AÑADIDA */}
-                
-                {/* Configuración */}
+                <Route path="/informes-clientes" element={<ClientReportsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
-                
-                {/* Error 404 */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </AppLayout>
