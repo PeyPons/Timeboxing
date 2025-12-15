@@ -76,24 +76,52 @@ export function PlannerGrid() {
     setIsAnalyzing(true);
     setInsights(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    
     if (!apiKey) {
         setInsights([{ type: 'warning', text: '⚠️ Falta API Key en .env' }]);
         setIsAnalyzing(false);
         return;
     }
+
     try {
+        // ✅ OPTIMIZACIÓN DE TOKENS: Enviamos solo nombre, rol y % de carga
         const staffData = filteredEmployees.map(e => {
             const load = getEmployeeMonthlyLoad(e.id, year, month);
-            return { role: e.role, load: load.percentage };
+            return { 
+                name: e.name, // Añadido nombre para mejor contexto
+                role: e.role, 
+                load: load.percentage 
+            };
         });
-        const prompt = `Analiza carga ${getMonthName(currentMonth)}: ${JSON.stringify(staffData)}. Responde JSON array: [{"type":"warning"|"success"|"info","text":"..."}]`;
+
+        const prompt = `
+            Actúa como PM. Analiza la carga de trabajo de ${getMonthName(currentMonth)} basándote en estos datos: 
+            ${JSON.stringify(staffData)}. 
+            Identifica cuellos de botella (>100%) y oportunidades (<80%).
+            Responde ÚNICAMENTE con un array JSON válido con este formato: 
+            [{"type":"warning"|"success"|"info","text":"Tu consejo breve aquí"}]
+        `;
+
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); // ✅ Usando modelo rápido 2.5
+        
         const result = await model.generateContent(prompt);
-        const json = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        setInsights(JSON.parse(json));
-    } catch (e) {
-        setInsights([{ type: 'warning', text: 'Error de IA' }]);
+        const responseText = result.response.text();
+        
+        // Limpieza de JSON por si el modelo incluye bloques de código markdown
+        const jsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        setInsights(JSON.parse(jsonString));
+
+    } catch (e: any) {
+        console.error("Error IA Planner:", e);
+        let errorMsg = 'No se pudo analizar.';
+        
+        // ✅ GESTIÓN DE ERRORES MEJORADA (Igual que en Dashboard)
+        if (e.message?.includes("429")) errorMsg = '⏳ Límite de cuota IA alcanzado. Espera un momento.';
+        if (e.message?.includes("404")) errorMsg = '❌ Modelo IA no disponible.';
+        
+        setInsights([{ type: 'warning', text: errorMsg }]);
     } finally {
         setIsAnalyzing(false);
     }
@@ -101,11 +129,9 @@ export function PlannerGrid() {
 
   const gridTemplate = `250px repeat(${weeks.length}, minmax(0, 1fr)) 100px`;
 
-  // Listas ordenadas para los combobox
   const sortedProjects = useMemo(() => [...projects].sort((a,b) => a.name.localeCompare(b.name)), [projects]);
   const sortedEmployees = useMemo(() => [...employees].filter(e=>e.isActive).sort((a,b) => a.name.localeCompare(b.name)), [employees]);
 
-  // Helpers para mostrar el nombre seleccionado en el botón del combobox
   const getSelectedEmployeeName = () => {
       if (selectedEmployeeId === 'all') return "Todos los empleados";
       return employees.find(e => e.id === selectedEmployeeId)?.name || "Seleccionar...";
@@ -150,7 +176,7 @@ export function PlannerGrid() {
             </Popover>
         </div>
 
-        {/* Cabecera Inferior: Filtros (AHORA CON COMBOBOX) */}
+        {/* Cabecera Inferior: Filtros */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 
