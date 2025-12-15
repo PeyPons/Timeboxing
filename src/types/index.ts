@@ -44,6 +44,8 @@ export interface Project {
   monthlyFee?: number;
   npsLink?: string;
   lastMeetingDate?: string;
+  okrs?: string[];
+  deliverables_log?: Record<string, string[]>;
 }
 
 export interface Allocation {
