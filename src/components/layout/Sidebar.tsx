@@ -34,7 +34,8 @@ export function Sidebar() {
           Gestión
         </div>
         
-        <NavLink to="/" icon={LayoutDashboard} active={location.pathname === '/'}>
+        {/* ✅ CORREGIDO: Ahora apunta a /planner */}
+        <NavLink to="/planner" icon={LayoutDashboard} active={location.pathname === '/planner'}>
           Planificador
         </NavLink>
 
@@ -58,7 +59,6 @@ export function Sidebar() {
           Reportes
         </NavLink>
 
-        {/* ✅ NUEVO ENLACE A INFORMES DE CLIENTES */}
         <NavLink to="/informes-clientes" icon={FileDown} active={location.pathname === '/informes-clientes'}>
           Informes Clientes
         </NavLink>
