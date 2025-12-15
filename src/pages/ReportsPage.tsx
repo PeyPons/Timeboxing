@@ -62,10 +62,7 @@ export default function ReportsPage() {
   // --- CÁLCULOS PRINCIPALES ---
   const monthStats = useMemo(() => {
     const planned = round2(monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
-    
-    // Solo sumamos Real y Computado de tareas completadas
     const completedTasks = monthAllocations.filter(a => a.status === 'completed');
-    
     const real = round2(completedTasks.reduce((sum, a) => sum + (a.hoursActual || 0), 0));
     const computed = round2(completedTasks.reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
 
@@ -73,7 +70,6 @@ export default function ReportsPage() {
   }, [monthAllocations]);
 
   const utilizationRate = totalCapacity > 0 ? (monthStats.planned / totalCapacity) * 100 : 0;
-  // Rentabilidad: Qué porcentaje de lo Realmente trabajado hemos podido Computar
   const profitabilityRate = monthStats.real > 0 ? (monthStats.computed / monthStats.real) * 100 : 0;
 
   const employeeData = useMemo(() => {
@@ -87,8 +83,10 @@ export default function ReportsPage() {
       const computedHours = round2(completedTasks.reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
       
       const percentage = capacity > 0 ? (plannedHours / capacity) * 100 : 0;
+      // Eficiencia individual (Comp vs Real)
+      const efficiency = realHours > 0 ? (computedHours / realHours) * 100 : 0;
 
-      return { ...e, plannedHours, realHours, computedHours, capacity, percentage };
+      return { ...e, plannedHours, realHours, computedHours, capacity, percentage, efficiency };
     }).sort((a, b) => b.percentage - a.percentage);
   }, [activeEmployees, monthAllocations, year, month]);
 
@@ -264,7 +262,6 @@ export default function ReportsPage() {
                     </div>
                     {/* Barra doble: Fondo azul (Real), Frente verde (Computado) */}
                     <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden relative">
-                         {/* Usamos width 100% como base si hay horas reales */}
                         <div className="absolute top-0 left-0 h-full bg-blue-200 w-full" />
                         <div 
                             className="absolute top-0 left-0 h-full bg-emerald-500 transition-all" 
@@ -332,14 +329,14 @@ export default function ReportsPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Desglose por Empleado</CardTitle>
-                    <CardDescription>Comparativa detallada: ¿Cuánto se planificó vs cuánto se trabajó y computó?</CardDescription>
+                    <CardDescription>Análisis de Ocupación (Plan) y Rentabilidad (Real vs Comp).</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-6">
                         {employeeData.map(emp => (
-                            // SOLUCIÓN AL BUG: Añadir currentMonth.toISOString() a la key fuerza el renderizado completo al cambiar de mes
-                            <div key={emp.id + currentMonth.toISOString()} className="grid grid-cols-12 gap-4 items-center group hover:bg-slate-50 p-3 rounded-lg transition-colors border border-transparent hover:border-slate-100">
-                                <div className="col-span-4 md:col-span-3 flex items-center gap-3">
+                            // ✅ KEY ÚNICA: Fuerza re-render al cambiar de mes para arreglar el bug visual del color rojo
+                            <div key={emp.id + currentMonth.toISOString()} className="grid grid-cols-12 gap-4 items-start group hover:bg-slate-50 p-3 rounded-lg transition-colors border border-transparent hover:border-slate-100">
+                                <div className="col-span-4 md:col-span-3 flex items-center gap-3 mt-1">
                                     <div className="h-9 w-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs border border-indigo-200">
                                         {emp.name.substring(0, 2).toUpperCase()}
                                     </div>
@@ -349,41 +346,46 @@ export default function ReportsPage() {
                                     </div>
                                 </div>
 
-                                <div className="col-span-5 md:col-span-6 space-y-1.5">
-                                    {/* Barra de Planificación */}
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">Ocupación Planificada</span>
-                                        {/* Forzamos clase con lógica estricta */}
-                                        <span className={cn("font-medium", emp.percentage > 100 ? "text-red-600 font-bold" : "text-slate-700")}>
-                                            {emp.percentage.toFixed(0)}%
-                                        </span>
-                                    </div>
-                                    
-                                    <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                        {/* Barra de Progreso Colorizada */}
-                                        <div 
-                                            className={cn("absolute top-0 left-0 h-full", 
-                                                emp.percentage > 100 ? "bg-red-500" : 
-                                                emp.percentage > 85 ? "bg-amber-500" : "bg-blue-500"
-                                            )}
-                                            style={{ width: `${Math.min(emp.percentage, 100)}%` }}
-                                        />
-                                    </div>
-                                    
-                                    {/* Métricas Real vs Comp */}
-                                    <div className="flex items-center gap-3 mt-1 pt-1">
-                                        <div className="text-[10px] flex items-center gap-1 bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100">
-                                            <Zap className="h-3 w-3" /> Real: <strong>{emp.realHours}h</strong>
+                                <div className="col-span-8 md:col-span-9 space-y-4">
+                                    {/* SECCIÓN 1: PLANIFICACIÓN (Barra Única) */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-slate-500">Ocupación Planificada ({emp.plannedHours}/{emp.capacity}h)</span>
+                                            <span className={cn("font-medium", emp.percentage > 100 ? "text-red-600 font-bold" : "text-slate-700")}>
+                                                {emp.percentage.toFixed(0)}%
+                                            </span>
                                         </div>
-                                        <div className="text-[10px] flex items-center gap-1 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
-                                            <CheckCircle2 className="h-3 w-3" /> Comp: <strong>{emp.computedHours}h</strong>
+                                        <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                            <div 
+                                                className={cn("absolute top-0 left-0 h-full", 
+                                                    emp.percentage > 100 ? "bg-red-500" : 
+                                                    emp.percentage > 85 ? "bg-amber-500" : "bg-blue-500"
+                                                )}
+                                                style={{ width: `${Math.min(emp.percentage, 100)}%` }}
+                                            />
                                         </div>
                                     </div>
-                                </div>
 
-                                <div className="col-span-3 md:col-span-3 text-right">
-                                    <div className="text-lg font-bold text-slate-700">{emp.plannedHours}h</div>
-                                    <div className="text-xs text-muted-foreground">de {emp.capacity}h disponibles</div>
+                                    {/* SECCIÓN 2: RENTABILIDAD (Barra Verde sobre Azul) */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-xs text-muted-foreground">
+                                            <div className="flex gap-2">
+                                                <span>Rentabilidad</span>
+                                                <span className="text-blue-600 flex items-center gap-0.5"><Zap className="h-3 w-3" /> {emp.realHours}h</span>
+                                                <span className="text-emerald-600 flex items-center gap-0.5"><CheckCircle2 className="h-3 w-3" /> {emp.computedHours}h</span>
+                                            </div>
+                                            <span>{emp.efficiency.toFixed(0)}%</span>
+                                        </div>
+                                        <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                            {/* Fondo Azul (Real) */}
+                                            <div className="absolute top-0 left-0 h-full bg-blue-200 w-full" />
+                                            {/* Frente Verde (Computado) */}
+                                            <div 
+                                                className="absolute top-0 left-0 h-full bg-emerald-500 transition-all" 
+                                                style={{ width: `${Math.min(emp.efficiency, 100)}%` }} 
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -397,7 +399,6 @@ export default function ReportsPage() {
                 {projectData.map(p => {
                     const gain = p.hoursComputed - p.hoursReal;
                     return (
-                        // SOLUCIÓN AL BUG: Añadir currentMonth.toISOString() aquí también
                         <Card key={p.id + currentMonth.toISOString()} className={cn("border-l-4", p.percentage > 100 ? "border-l-red-500" : "border-l-indigo-500")}>
                             <CardHeader className="pb-2 bg-slate-50/50 pt-3">
                                 <div className="flex justify-between items-start mb-2">
