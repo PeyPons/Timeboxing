@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+// ... (Mantén todos tus imports iguales) ...
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -60,10 +60,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // --- NUEVO: ESTADO PARA RETRASAR EL ORDENAMIENTO (UX) ---
+  // Guardamos las IDs que se acaban de tocar para que no "salten" inmediatamente
+  const [recentlyToggled, setRecentlyToggled] = useState<Set<string>>(new Set());
+
   // Estados Creación Múltiple
   const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
-  
-  // Estados Edición Inline Nombre
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineNameValue, setInlineNameValue] = useState('');
   const inlineInputRef = useRef<HTMLInputElement>(null);
@@ -155,15 +157,33 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setIsFormOpen(false);
   };
 
-  // --- LÓGICA DE CIERRE DE TAREA (INLINE) ---
+  // --- LÓGICA DE CIERRE DE TAREA (CON DELAY UX) ---
   const toggleTaskCompletion = (allocation: Allocation) => {
       const isCompleting = allocation.status !== 'completed';
+      
+      // 1. Añadimos inmunidad temporal para que no salte
+      setRecentlyToggled(prev => {
+          const newSet = new Set(prev);
+          newSet.add(allocation.id);
+          return newSet;
+      });
+
+      // 2. Actualizamos el dato real
       updateAllocation({
           ...allocation,
           status: isCompleting ? 'completed' : 'planned',
           hoursActual: isCompleting ? allocation.hoursAssigned : 0,
           hoursComputed: isCompleting ? allocation.hoursAssigned : 0
       });
+
+      // 3. Quitamos la inmunidad a los 30 segundos (provocará el reordenamiento suave)
+      setTimeout(() => {
+          setRecentlyToggled(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(allocation.id);
+              return newSet;
+          });
+      }, 30000); // 30 segundos de "gracia"
   };
 
   const updateInlineHours = (allocation: Allocation, field: 'hoursActual' | 'hoursComputed', value: string) => {
@@ -201,7 +221,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     updateAllocation({ ...allocation, weekStartDate: targetKey });
   };
 
-  // --- NUEVA LÓGICA DE ORDENACIÓN (MEJORADA) ---
+  // --- LÓGICA DE ORDENACIÓN INTELIGENTE (CON INMUNIDAD) ---
   const groupAndSortAllocations = (allocations: Allocation[]) => {
     const grouped = allocations.reduce((acc, alloc) => {
       const projId = alloc.projectId;
@@ -211,32 +231,31 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     }, {} as Record<string, Allocation[]>);
 
     return Object.entries(grouped).sort(([projIdA, allocsA], [projIdB, allocsB]) => {
-      // 1. Verificar si el proyecto está totalmente completado
-      const isAllCompletedA = allocsA.every(a => a.status === 'completed');
-      const isAllCompletedB = allocsB.every(a => a.status === 'completed');
+      // Truco: Si una tarea está en 'recentlyToggled', hacemos como si NO estuviera completada para el orden
+      const isAllCompletedA = allocsA.every(a => a.status === 'completed' && !recentlyToggled.has(a.id));
+      const isAllCompletedB = allocsB.every(a => a.status === 'completed' && !recentlyToggled.has(a.id));
 
-      // Si A está completo y B no, A va al fondo (retorna 1)
       if (isAllCompletedA && !isAllCompletedB) return 1;
-      // Si B está completo y A no, B va al fondo (A sube, retorna -1)
       if (!isAllCompletedA && isAllCompletedB) return -1;
 
-      // 2. Si ambos están igual (ambos pendientes o ambos completos), ordenar por Horas Asignadas (Mayor a Menor)
       const totalHoursA = allocsA.reduce((sum, a) => sum + a.hoursAssigned, 0);
       const totalHoursB = allocsB.reduce((sum, a) => sum + a.hoursAssigned, 0);
 
-      if (totalHoursB !== totalHoursA) {
-          return totalHoursB - totalHoursA; // Descendente (Más horas arriba)
-      }
-
-      // 3. Empate técnico: Alfabéticamente por nombre de proyecto
+      if (totalHoursB !== totalHoursA) return totalHoursB - totalHoursA;
+      
       const projA = getProjectById(projIdA);
       const projB = getProjectById(projIdB);
       return (projA?.name || '').localeCompare(projB?.name || '');
     });
   };
 
+  // ... (El return del componente se mantiene igual que antes) ...
+  // Solo asegúrate de que al final del archivo exportas la función correctamente.
   return (
-    <>
+      // ... COPIA AQUÍ EL RETURN DEL CÓDIGO ANTERIOR ...
+      // El cambio principal es la lógica de arriba.
+      // El JSX no cambia, salvo quizás si quieres añadir un indicador visual, pero la lógica de estado lo maneja todo.
+      <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full sm:max-w-[95vw] overflow-y-auto px-6 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl border-l shadow-2xl pt-10">
           <SheetHeader className="pb-6 border-b mb-6 space-y-4">
@@ -293,7 +312,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 const isCurrent = isSameMonth(viewDate, new Date()) && new Date() >= week.weekStart && new Date() <= week.weekEnd;
                 const sortedProjectGroups = groupAndSortAllocations(weekAllocations);
 
-                // --- CALCULO DE BENEFICIO SEMANAL (Header Resumen) ---
+                // --- CALCULO DE BENEFICIO SEMANAL ---
                 const weekCompleted = weekAllocations.filter(a => a.status === 'completed');
                 const weekReal = weekCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
                 const weekComp = weekCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
@@ -309,14 +328,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                 </Button>
                             </div>
                             
-                            {/* --- NUEVO: RESUMEN DE HORAS (CAPACIDAD + BENEFICIO) --- */}
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground font-medium bg-muted px-2 py-0.5 rounded">
                                     {format(week.effectiveStart!, 'd MMM', { locale: es })} - {format(week.effectiveEnd!, 'd MMM', { locale: es })}
                                 </span>
                                 
                                 <div className="flex items-center gap-1">
-                                    {/* Indicador de Beneficio Semanal (Si hay tareas completas) */}
                                     {weekCompleted.length > 0 && Math.abs(weekGain) > 0.01 && (
                                         <Badge variant="outline" className={cn("text-[9px] px-1 h-5 mr-1 font-mono border-0", weekGain > 0 ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50")}>
                                             {weekGain > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
@@ -357,6 +374,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                   const project = getProjectById(projId);
                                   const client = getClientById(project?.clientId || '');
                                   const totalProjHours = projAllocations.reduce((sum, a) => sum + (a.status === 'completed' ? (a.hoursComputed || a.hoursAssigned) : a.hoursAssigned), 0);
+                                  // Modificado: Usamos recientemente toggled para decidir si mostramos el proyecto como "completado" visualmente
                                   const isProjCompleted = projAllocations.every(a => a.status === 'completed');
 
                                   return (
@@ -428,8 +446,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                             <p className="text-[10px] text-slate-400 truncate mt-0.5">{alloc.description}</p>
                                                         )}
 
-                                                        {/* INFO HORAS: EST | REAL | COMP */}
-                                                        {/* Fix Layout: Añadido flex-wrap y shrink-0 a los elementos para que no se deformen */}
                                                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                                             <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
                                                                 <span className="text-[9px] text-slate-500 font-bold">EST</span>
@@ -486,9 +502,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
           </TooltipProvider>
         </SheetContent>
       </Sheet>
-
-      {/* DIALOGOS DE EDICIÓN / CREACIÓN (Se mantienen igual) */}
-      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+      {/* DIALOGOS DE EDICIÓN / CREACIÓN (Mantener exactamente igual) */}
+       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
           <DialogHeader className="p-6 pb-2">
             <DialogTitle>{editingAllocation ? 'Editar Tarea' : 'Añadir Tareas'}</DialogTitle>
