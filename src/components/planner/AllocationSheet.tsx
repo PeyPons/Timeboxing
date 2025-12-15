@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-// ... (Mantén todos tus imports iguales) ...
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+// AQUI ESTABA EL ERROR: Faltaba importar Dialog y sus partes
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +15,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown, ExternalLink } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -44,7 +45,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     getEmployeeAllocationsForWeek, 
     getEmployeeLoadForWeek,
     getProjectById,
-    getClientById,
     addAllocation,
     updateAllocation
   } = useApp();
@@ -60,8 +60,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const [editingAllocation, setEditingAllocation] = useState<Allocation | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // --- NUEVO: ESTADO PARA RETRASAR EL ORDENAMIENTO (UX) ---
-  // Guardamos las IDs que se acaban de tocar para que no "salten" inmediatamente
+  // UX: Retrasar ordenamiento al completar
   const [recentlyToggled, setRecentlyToggled] = useState<Set<string>>(new Set());
 
   // Estados Creación Múltiple
@@ -157,18 +156,17 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setIsFormOpen(false);
   };
 
-  // --- LÓGICA DE CIERRE DE TAREA (CON DELAY UX) ---
+  // --- LÓGICA DE CIERRE DE TAREA ---
   const toggleTaskCompletion = (allocation: Allocation) => {
       const isCompleting = allocation.status !== 'completed';
       
-      // 1. Añadimos inmunidad temporal para que no salte
+      // UX: Congelar orden temporalmente
       setRecentlyToggled(prev => {
           const newSet = new Set(prev);
           newSet.add(allocation.id);
           return newSet;
       });
 
-      // 2. Actualizamos el dato real
       updateAllocation({
           ...allocation,
           status: isCompleting ? 'completed' : 'planned',
@@ -176,14 +174,14 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
           hoursComputed: isCompleting ? allocation.hoursAssigned : 0
       });
 
-      // 3. Quitamos la inmunidad a los 30 segundos (provocará el reordenamiento suave)
+      // UX: Descongelar a los 30s
       setTimeout(() => {
           setRecentlyToggled(prev => {
               const newSet = new Set(prev);
               newSet.delete(allocation.id);
               return newSet;
           });
-      }, 30000); // 30 segundos de "gracia"
+      }, 30000);
   };
 
   const updateInlineHours = (allocation: Allocation, field: 'hoursActual' | 'hoursComputed', value: string) => {
@@ -193,7 +191,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       }
   };
 
-  // --- LÓGICA DE EDICIÓN ---
   const startEditFull = (allocation: Allocation) => {
     setEditingAllocation(allocation);
     setEditProjectId(allocation.projectId);
@@ -221,7 +218,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     updateAllocation({ ...allocation, weekStartDate: targetKey });
   };
 
-  // --- LÓGICA DE ORDENACIÓN INTELIGENTE (CON INMUNIDAD) ---
   const groupAndSortAllocations = (allocations: Allocation[]) => {
     const grouped = allocations.reduce((acc, alloc) => {
       const projId = alloc.projectId;
@@ -231,7 +227,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     }, {} as Record<string, Allocation[]>);
 
     return Object.entries(grouped).sort(([projIdA, allocsA], [projIdB, allocsB]) => {
-      // Truco: Si una tarea está en 'recentlyToggled', hacemos como si NO estuviera completada para el orden
+      // UX: Si está en 'recentlyToggled', fingimos que no está completa para el orden
       const isAllCompletedA = allocsA.every(a => a.status === 'completed' && !recentlyToggled.has(a.id));
       const isAllCompletedB = allocsB.every(a => a.status === 'completed' && !recentlyToggled.has(a.id));
 
@@ -249,13 +245,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     });
   };
 
-  // ... (El return del componente se mantiene igual que antes) ...
-  // Solo asegúrate de que al final del archivo exportas la función correctamente.
   return (
-      // ... COPIA AQUÍ EL RETURN DEL CÓDIGO ANTERIOR ...
-      // El cambio principal es la lógica de arriba.
-      // El JSX no cambia, salvo quizás si quieres añadir un indicador visual, pero la lógica de estado lo maneja todo.
-      <>
+    <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full sm:max-w-[95vw] overflow-y-auto px-6 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl border-l shadow-2xl pt-10">
           <SheetHeader className="pb-6 border-b mb-6 space-y-4">
@@ -312,7 +303,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 const isCurrent = isSameMonth(viewDate, new Date()) && new Date() >= week.weekStart && new Date() <= week.weekEnd;
                 const sortedProjectGroups = groupAndSortAllocations(weekAllocations);
 
-                // --- CALCULO DE BENEFICIO SEMANAL ---
                 const weekCompleted = weekAllocations.filter(a => a.status === 'completed');
                 const weekReal = weekCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
                 const weekComp = weekCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
@@ -372,21 +362,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                             ) : (
                                 sortedProjectGroups.map(([projId, projAllocations]) => {
                                   const project = getProjectById(projId);
-                                  const client = getClientById(project?.clientId || '');
                                   const totalProjHours = projAllocations.reduce((sum, a) => sum + (a.status === 'completed' ? (a.hoursComputed || a.hoursAssigned) : a.hoursAssigned), 0);
-                                  // Modificado: Usamos recientemente toggled para decidir si mostramos el proyecto como "completado" visualmente
                                   const isProjCompleted = projAllocations.every(a => a.status === 'completed');
 
                                   return (
                                     <div key={projId} className={cn("bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-hidden transition-opacity", isProjCompleted ? "opacity-70 grayscale-[0.3]" : "opacity-100")}>
                                         <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 border-b flex justify-between items-center">
-                                            <div className="flex items-center gap-2 overflow-hidden">
-                                                <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: client?.color || '#cbd5e1' }} title={client?.name} />
-                                                <div className="flex flex-col min-w-0">
-                                                    <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={project?.name}>{project?.name || 'Desc.'}</span>
-                                                    <span className="text-[9px] text-slate-400 truncate leading-none">{client?.name || 'Sin cliente'}</span>
-                                                </div>
-                                            </div>
+                                            <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={project?.name}>{project?.name || 'Desc.'}</span>
                                             <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">{totalProjHours}h</span>
                                         </div>
 
@@ -502,8 +484,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
           </TooltipProvider>
         </SheetContent>
       </Sheet>
-      {/* DIALOGOS DE EDICIÓN / CREACIÓN (Mantener exactamente igual) */}
-       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+
+      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
           <DialogHeader className="p-6 pb-2">
             <DialogTitle>{editingAllocation ? 'Editar Tarea' : 'Añadir Tareas'}</DialogTitle>
