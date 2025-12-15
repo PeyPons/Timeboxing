@@ -7,9 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Bot, Send, Sparkles, Loader2 } from 'lucide-react';
+import { Bot, Send, Sparkles, Loader2, Zap } from 'lucide-react';
 
-// Inicializar la API de Gemini (asegúrate de que la clave sea correcta en .env)
+// Inicializar la API de Gemini
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
 
 interface Message {
@@ -41,13 +41,14 @@ export default function DashboardAI() {
   const handleSendMessage = async () => {
     if (!input.trim()) return;
     
-    // Verificación de seguridad de la API Key
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
-        setMessages(prev => [...prev, { role: 'assistant', content: "⚠️ Error: No detecto la API Key en el archivo .env. Por favor, añádela y reinicia la terminal.", timestamp: new Date(), isError: true }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: "⚠️ Error: Falta la API Key en .env.", timestamp: new Date(), isError: true }]);
         return;
     }
 
     const userMessage = input;
+    const lowerMessage = userMessage.toLowerCase();
+    
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage, timestamp: new Date() }]);
     setIsLoading(true);
@@ -55,31 +56,55 @@ export default function DashboardAI() {
     try {
       const today = new Date();
       
-      // Construcción del contexto enriquecido con OKRs
-      const dataContext = {
-        fecha_actual: today.toLocaleDateString(),
-        empleados: employees.filter(e => e.isActive).map(e => {
-            // Buscamos los objetivos de este empleado
-            const goals = professionalGoals.filter(g => g.employeeId === e.id).map(g => ({
-                objetivo: g.title,
-                resultados_clave: g.keyResults,
-                estado: `${g.progress}% completado`,
-                fecha_fin: g.dueDate
-            }));
+      // --- ESTRATEGIA DE CONTEXTO DINÁMICO (AHORRO DE TOKENS) ---
+      
+      const empleadosContext = employees.filter(e => e.isActive).map(e => {
+          const isRelevant = lowerMessage.includes(e.name.toLowerCase());
+          
+          if (isRelevant) {
+              const goals = professionalGoals.filter(g => g.employeeId === e.id).map(g => ({
+                  objetivo: g.title,
+                  progreso: `${g.progress}%`,
+                  krs: g.keyResults
+              }));
+              
+              return {
+                  nombre: e.name, 
+                  rol: e.role,
+                  status: "DETALLADO",
+                  capacidad: e.defaultWeeklyCapacity,
+                  okrs: goals.length > 0 ? goals : "Sin objetivos",
+              };
+          } else {
+              return {
+                  nombre: e.name,
+                  rol: e.role,
+                  status: "RESUMIDO" 
+              };
+          }
+      });
 
-            return {
-                nombre: e.name, 
-                rol: e.role,
-                capacidad_semanal: e.defaultWeeklyCapacity,
-                okrs_proyeccion: goals.length > 0 ? goals : "Sin objetivos definidos actualmente"
-            };
-        }),
-        proyectos_activos: projects.filter(p => p.status === 'active').map(p => ({
-          nombre: p.name,
-          cliente: clients.find(c => c.id === p.clientId)?.name || 'N/A',
-          horas_presupuesto: p.budgetHours
-        })),
-        eventos_ausencias: absences.filter(a => new Date(a.endDate) >= today).map(a => ({
+      const proyectosContext = projects.filter(p => p.status === 'active').map(p => {
+          const isRelevant = lowerMessage.includes(p.name.toLowerCase());
+          const clientName = clients.find(c => c.id === p.clientId)?.name || 'N/A';
+          
+          if (isRelevant || lowerMessage.includes("proyectos") || lowerMessage.includes("resumen")) {
+              return {
+                  nombre: p.name,
+                  cliente: clientName,
+                  presupuesto: p.budgetHours,
+                  status: "DETALLADO"
+              };
+          } else {
+              return { nombre: p.name, cliente: clientName };
+          }
+      });
+
+      const dataContext = {
+        fecha: today.toLocaleDateString(),
+        empleados: empleadosContext,
+        proyectos: proyectosContext,
+        ausencias_proximas: absences.filter(a => new Date(a.endDate) >= today).map(a => ({
           quien: employees.find(e => e.id === a.employeeId)?.name,
           tipo: a.type,
           hasta: a.endDate
@@ -87,21 +112,23 @@ export default function DashboardAI() {
       };
 
       const systemPrompt = `
-        Actúa como Minguito, el Project Manager de esta agencia.
-        Tienes acceso a los siguientes datos en tiempo real (JSON):
+        Eres Minguito, Project Manager.
+        
+        DATOS EN TIEMPO REAL (Optimizados):
         ${JSON.stringify(dataContext)}
 
-        La pregunta del usuario es: "${userMessage}"
+        PREGUNTA: "${userMessage}"
 
-        Instrucciones:
-        1. Responde de forma clara, profesional y empática.
-        2. Si preguntan por una persona, menciona su carga y sus objetivos profesionales (OKRs) para dar contexto de su crecimiento.
-        3. Si detectas conflictos (ej: alguien con mucha carga y muchos objetivos), avísalo.
-        4. Usa formato Markdown (negritas, listas) para que sea legible.
+        INSTRUCCIONES:
+        1. Responde de forma breve y ejecutiva.
+        2. Tienes datos "DETALLADOS" solo de lo que el usuario ha preguntado.
+        3. Si te preguntan por alguien que sale como "RESUMIDO", di que sabes que existe pero necesitas que pregunten específicamente por él para ver sus detalles.
+        4. Usa Markdown.
       `;
 
-      // Usamos el modelo flash por rapidez y eficiencia
+      // Modelo optimizado
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      
       const result = await model.generateContent(systemPrompt);
       const text = result.response.text(); 
 
@@ -109,9 +136,17 @@ export default function DashboardAI() {
 
     } catch (error: any) {
       console.error("Error IA:", error);
-      let errorMsg = "Minguito tuvo un problema técnico.";
-      if (error.message?.includes("API key")) errorMsg = "Error de API Key. Verifícala.";
-      if (error.message?.includes("400")) errorMsg = "La solicitud fue rechazada por seguridad o formato.";
+      let errorMsg = "Minguito está teniendo problemas de conexión. Intenta de nuevo.";
+      
+      // ✅ GESTIÓN DE ERRORES ESPECÍFICOS
+      if (error.message?.includes("404")) {
+          errorMsg = "Error: El modelo de IA no está disponible o ha cambiado de versión. Revisa DashboardAI.tsx.";
+      } else if (error.message?.includes("429")) {
+          // ✅ MENSAJE AMIGABLE PARA LÍMITE DE CUOTA
+          errorMsg = "⏳ **Minguito está descansando.** He alcanzado el límite de consultas por minuto de la versión gratuita. Por favor, espera un momento y vuelve a preguntar.";
+      } else if (error.message?.includes("API key")) {
+          errorMsg = "Error: Verifica tu API Key en el archivo .env.";
+      }
       
       setMessages(prev => [...prev, { role: 'assistant', content: errorMsg, timestamp: new Date(), isError: true }]);
     } finally {
@@ -125,14 +160,19 @@ export default function DashboardAI() {
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
           <Sparkles className="h-8 w-8 text-indigo-500" /> Copiloto IA
         </h1>
-        <p className="text-muted-foreground">Tu asistente de gestión. Conectado a Proyectos, RRHH y OKRs.</p>
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <p>Asistente de gestión inteligente.</p>
+            <span className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-0.5 rounded-full text-xs font-medium border border-green-200">
+                <Zap className="h-3 w-3" /> Modo Ahorro Tokens Activo
+            </span>
+        </div>
       </div>
 
       <Card className="flex-1 flex flex-col overflow-hidden shadow-lg border-indigo-100 dark:border-indigo-900/50">
         <CardHeader className="bg-muted/30 border-b pb-4 py-3">
           <div className="flex items-center gap-2">
             <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs font-medium text-muted-foreground">Minguito v2.0 • Online</span>
+            <span className="text-xs font-medium text-muted-foreground">Minguito v2.5 • Online</span>
           </div>
         </CardHeader>
         
@@ -156,7 +196,7 @@ export default function DashboardAI() {
                 <div className="flex gap-3 justify-start">
                    <Avatar className="h-8 w-8 mt-1"><AvatarFallback className="bg-indigo-50"><Sparkles className="h-4 w-4 animate-pulse text-indigo-400" /></AvatarFallback></Avatar>
                     <div className="bg-white dark:bg-slate-900 border px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2 text-sm text-muted-foreground shadow-sm">
-                      <Loader2 className="h-3 w-3 animate-spin text-indigo-500" /> Analizando datos...
+                      <Loader2 className="h-3 w-3 animate-spin text-indigo-500" /> Optimizando contexto...
                     </div>
                 </div>
               )}
