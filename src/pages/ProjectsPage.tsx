@@ -27,15 +27,15 @@ import { supabase } from '@/lib/supabase';
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export default function ProjectsPage() {
-  const { projects, clients, allocations, employees } = useApp();
+  const { projects, clients, allocations, employees, deleteProject } = useApp(); // AÑADIDO deleteProject
   
+  // ... (Mismo código de estados y fechas que tenías antes) ...
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
   const [openEmployeeCombo, setOpenEmployeeCombo] = useState(false);
   const [showOnlyUnderPlanned, setShowOnlyUnderPlanned] = useState(false);
 
-  // Estados Edición/Creación
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -74,10 +74,51 @@ export default function ProjectsPage() {
     });
   }, [projects, searchTerm, selectedEmployeeId, allocations, currentMonth, showOnlyUnderPlanned]);
 
-  // Funciones CRUD (abrevio para no ocupar espacio innecesario, la lógica es igual)
-  const openNewProject = () => { setIsCreating(true); setEditingId(null); setFormData({ name: '', clientId: '', budgetHours: '0', minimumHours: '0', monthlyFee: '0', status: 'active', healthStatus: 'healthy', okrs: [] }); setIsDialogOpen(true); };
-  const openEditProject = (project: Project) => { setIsCreating(false); setEditingId(project.id); setFormData({ name: project.name, clientId: project.clientId, budgetHours: project.budgetHours?.toString() || '0', minimumHours: project.minimumHours?.toString() || '0', monthlyFee: project.monthlyFee?.toString() || '0', status: project.status, healthStatus: project.healthStatus || 'healthy', okrs: project.okrs || [] }); setIsDialogOpen(true); };
-  const handleSave = async () => { const payload = { name: formData.name, client_id: formData.clientId, budget_hours: parseFloat(formData.budgetHours)||0, minimum_hours: parseFloat(formData.minimumHours)||0, monthly_fee: parseFloat(formData.monthlyFee)||0, status: formData.status, health_status: formData.healthStatus, okrs: formData.okrs }; try { if (isCreating) { await supabase.from('projects').insert([payload]); } else if (editingId) { await supabase.from('projects').update(payload).eq('id', editingId); } window.location.reload(); } catch (error) { console.error(error); alert("Error al guardar."); } setIsDialogOpen(false); };
+  const openNewProject = () => {
+      setIsCreating(true);
+      setEditingId(null);
+      setFormData({ name: '', clientId: '', budgetHours: '0', minimumHours: '0', monthlyFee: '0', status: 'active', healthStatus: 'healthy', okrs: [] });
+      setIsDialogOpen(true);
+  };
+
+  const openEditProject = (project: Project) => {
+      setIsCreating(false);
+      setEditingId(project.id);
+      setFormData({
+          name: project.name, clientId: project.clientId,
+          budgetHours: project.budgetHours?.toString() || '0', minimumHours: project.minimumHours?.toString() || '0',
+          monthlyFee: project.monthlyFee?.toString() || '0', status: project.status,
+          healthStatus: project.healthStatus || 'healthy', okrs: project.okrs || []
+      });
+      setIsDialogOpen(true);
+  };
+
+  const handleSave = async () => {
+      const payload = {
+          name: formData.name, client_id: formData.clientId,
+          budget_hours: parseFloat(formData.budgetHours)||0, minimum_hours: parseFloat(formData.minimumHours)||0,
+          monthly_fee: parseFloat(formData.monthlyFee)||0, status: formData.status,
+          health_status: formData.healthStatus, okrs: formData.okrs
+      };
+      try {
+          if (isCreating) { await supabase.from('projects').insert([payload]); } 
+          else if (editingId) { await supabase.from('projects').update(payload).eq('id', editingId); }
+          window.location.reload();
+      } catch (error) { console.error(error); alert("Error al guardar."); }
+      setIsDialogOpen(false);
+  };
+
+  // NUEVA FUNCIÓN DE BORRADO
+  const handleDelete = async () => {
+      if (!editingId) return;
+      if (confirm("¿Estás seguro de eliminar este proyecto? Se borrarán sus asignaciones.")) {
+          try {
+              await deleteProject(editingId);
+              setIsDialogOpen(false);
+          } catch (e) { console.error(e); alert("No se pudo eliminar."); }
+      }
+  };
+
   const addOkrToForm = () => { if (!newOkrTitle.trim()) return; setFormData({ ...formData, okrs: [...formData.okrs, { id: crypto.randomUUID(), title: newOkrTitle, progress: 0 }] }); setNewOkrTitle(''); };
   const updateOkrProgress = (id: string, val: number) => { setFormData({ ...formData, okrs: formData.okrs.map(o => o.id === id ? { ...o, progress: val } : o) }); };
   const removeOkr = (id: string) => { setFormData({ ...formData, okrs: formData.okrs.filter(o => o.id !== id) }); };
@@ -94,7 +135,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
-      {/* Cabecera y Filtros */}
+      {/* ... (Cabecera y Filtros IDÉNTICOS al código anterior) ... */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
@@ -143,6 +184,7 @@ export default function ProjectsPage() {
         </div>
       </div>
 
+      {/* Grid de Proyectos (Idéntico, solo cambia el onClick del lápiz que ya está bien) */}
       <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
         {filteredProjects.map((project) => {
           const client = clients.find(c => c.id === project.clientId);
@@ -154,7 +196,6 @@ export default function ProjectsPage() {
           const completedTasks = monthTasks.filter(t => t.status === 'completed');
           const pendingTasks = monthTasks.filter(t => t.status !== 'completed');
 
-          // --- CÁLCULO DE GANANCIA DEL PROYECTO (Header) ---
           const projectReal = completedTasks.reduce((sum, t) => sum + (t.hoursActual || 0), 0);
           const projectComputed = completedTasks.reduce((sum, t) => sum + (t.hoursComputed || 0), 0);
           const projectGain = projectComputed - projectReal;
@@ -178,8 +219,6 @@ export default function ProjectsPage() {
                                 <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getHealthColor(project.healthStatus))}>
                                     {project.healthStatus === 'at_risk' ? 'En Peligro' : project.healthStatus === 'needs_attention' ? 'Atención' : 'Sano'}
                                 </Badge>
-                                
-                                {/* --- INDICADOR DE GANANCIA PROYECTO --- */}
                                 {Math.abs(projectGain) > 0.01 && (
                                     <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 border-0 flex items-center gap-1", projectGain > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800")}>
                                         {projectGain > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
@@ -230,7 +269,6 @@ export default function ProjectsPage() {
                                                         <div className="text-[10px] text-muted-foreground mt-0.5">{emp?.name || 'Sin asignar'} • Sem {format(parseISO(task.weekStartDate), 'w')}</div>
                                                     </div>
                                                 </div>
-                                                {/* SOLO EST EN PENDIENTES */}
                                                 <div className="flex items-center gap-3 text-xs shrink-0 pl-2">
                                                     <div className="text-right">
                                                         <div className="text-[9px] text-muted-foreground font-bold tracking-wider">EST</div>
@@ -348,7 +386,14 @@ export default function ProjectsPage() {
                     </div>
                 </div>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button><Button onClick={handleSave}>Guardar Cambios</Button></DialogFooter>
+            <DialogFooter>
+                {/* BOTÓN ELIMINAR PROYECTO */}
+                {!isCreating && (
+                    <Button variant="destructive" onClick={handleDelete} className="mr-auto"><Trash2 className="h-4 w-4 mr-2" /> Eliminar</Button>
+                )}
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
+                <Button onClick={handleSave}>Guardar Cambios</Button>
+            </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
