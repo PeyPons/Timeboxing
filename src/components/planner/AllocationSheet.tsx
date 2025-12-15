@@ -14,7 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -556,4 +556,67 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                 <CommandGroup className="max-h-[200px] overflow-y-auto">
                                                     {activeProjects.map((project) => (
                                                         <CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}>
-                                                            <Check className={cn("mr-2 h-4 w-4", task
+                                                            <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
+                                                            {project.name}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                            <Input 
+                                className="flex-1 h-10 px-2 bg-muted/30 border-input/50" 
+                                placeholder="Nombre tarea..." 
+                                value={task.taskName} 
+                                onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} 
+                            />
+
+                            <Input 
+                                type="number" 
+                                className="w-20 h-10 text-center px-1 font-mono bg-muted/30 border-input/50" 
+                                placeholder="0" 
+                                value={task.hours} 
+                                onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} 
+                                step="0.5"
+                            />
+
+                            <div className="w-36">
+                                <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
+                                    <SelectTrigger className="h-10 px-2 bg-muted/30 border-input/50"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        {weeks.map((w, i) => (
+                                            <SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>
+                                                Sem {i+1} ({format(w.effectiveStart!, 'd', { locale: es })})
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => removeTaskRow(task.id)} disabled={newTasks.length === 1}>
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+
+                <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed h-10 hover:bg-primary/5 hover:text-primary hover:border-primary/30">
+                    <Plus className="h-4 w-4 mr-2" /> Añadir otra fila
+                </Button>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t">
+            <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSave}>
+                {editingAllocation ? 'Guardar Cambios' : `Guardar ${newTasks.filter(t => t.projectId && t.hours).length} Tareas`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
