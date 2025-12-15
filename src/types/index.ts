@@ -42,10 +42,16 @@ export interface Project {
   minimumHours?: number;
   healthStatus?: 'healthy' | 'needs_attention' | 'at_risk';
   monthlyFee?: number;
-  npsLink?: string;
+  // npsLink eliminado
   lastMeetingDate?: string;
-  okrs?: string[];
+  okrs?: OKR[];
   deliverables_log?: Record<string, string[]>;
+}
+
+export interface OKR {
+  id: string;
+  title: string;
+  progress: number;
 }
 
 export interface Allocation {
