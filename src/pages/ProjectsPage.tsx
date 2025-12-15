@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -17,8 +16,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format, addMonths, subMonths, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
-  FolderKanban, ChevronLeft, ChevronRight, CalendarDays, Briefcase, Pencil, Search, 
-  HeartPulse, ChevronsUpDown, Check, User, Target, FileCheck, Clock, Plus, Trash2, 
+  FolderKanban, ChevronLeft, ChevronRight, Briefcase, Pencil, Search, 
+  ChevronsUpDown, User, Target, Plus, Trash2, 
   ChevronDown, AlertCircle, PlayCircle, CheckCircle2, TrendingUp, TrendingDown 
 } from 'lucide-react';
 import { Project, OKR } from '@/types';
@@ -28,7 +27,7 @@ import { supabase } from '@/lib/supabase';
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export default function ProjectsPage() {
-  const { projects, clients, allocations, employees, updateProject } = useApp();
+  const { projects, clients, allocations, employees } = useApp();
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState('');
@@ -75,51 +74,12 @@ export default function ProjectsPage() {
     });
   }, [projects, searchTerm, selectedEmployeeId, allocations, currentMonth, showOnlyUnderPlanned]);
 
-  // CRUD y Lógica de Edición...
-  
-  const openNewProject = () => {
-      setIsCreating(true);
-      setEditingId(null);
-      setFormData({ name: '', clientId: '', budgetHours: '0', minimumHours: '0', monthlyFee: '0', status: 'active', healthStatus: 'healthy', okrs: [] });
-      setIsDialogOpen(true);
-  };
-
-  const openEditProject = (project: Project) => {
-      setIsCreating(false);
-      setEditingId(project.id);
-      setFormData({
-          name: project.name, clientId: project.clientId,
-          budgetHours: project.budgetHours?.toString() || '0', minimumHours: project.minimumHours?.toString() || '0',
-          monthlyFee: project.monthlyFee?.toString() || '0', status: project.status,
-          healthStatus: project.healthStatus || 'healthy', okrs: project.okrs || []
-      });
-      setIsDialogOpen(true);
-  };
-
-  const handleSave = async () => {
-      const payload = {
-          name: formData.name, client_id: formData.clientId,
-          budget_hours: parseFloat(formData.budgetHours) || 0, minimum_hours: parseFloat(formData.minimumHours) || 0,
-          monthly_fee: parseFloat(formData.monthlyFee) || 0, status: formData.status,
-          health_status: formData.healthStatus, okrs: formData.okrs
-      };
-      try {
-          if (isCreating) { await supabase.from('projects').insert([payload]); } 
-          else if (editingId) { await supabase.from('projects').update(payload).eq('id', editingId); }
-          window.location.reload();
-      } catch (error) { console.error(error); alert("Error al guardar."); }
-      setIsDialogOpen(false);
-  };
-
-  const addOkrToForm = () => {
-      if (!newOkrTitle.trim()) return;
-      const newOkr: OKR = { id: crypto.randomUUID(), title: newOkrTitle, progress: 0 };
-      setFormData({ ...formData, okrs: [...formData.okrs, newOkr] });
-      setNewOkrTitle('');
-  };
-  const updateOkrProgress = (id: string, val: number) => {
-      setFormData({ ...formData, okrs: formData.okrs.map(o => o.id === id ? { ...o, progress: val } : o) });
-  };
+  // Funciones CRUD (abrevio para no ocupar espacio innecesario, la lógica es igual)
+  const openNewProject = () => { setIsCreating(true); setEditingId(null); setFormData({ name: '', clientId: '', budgetHours: '0', minimumHours: '0', monthlyFee: '0', status: 'active', healthStatus: 'healthy', okrs: [] }); setIsDialogOpen(true); };
+  const openEditProject = (project: Project) => { setIsCreating(false); setEditingId(project.id); setFormData({ name: project.name, clientId: project.clientId, budgetHours: project.budgetHours?.toString() || '0', minimumHours: project.minimumHours?.toString() || '0', monthlyFee: project.monthlyFee?.toString() || '0', status: project.status, healthStatus: project.healthStatus || 'healthy', okrs: project.okrs || [] }); setIsDialogOpen(true); };
+  const handleSave = async () => { const payload = { name: formData.name, client_id: formData.clientId, budget_hours: parseFloat(formData.budgetHours)||0, minimum_hours: parseFloat(formData.minimumHours)||0, monthly_fee: parseFloat(formData.monthlyFee)||0, status: formData.status, health_status: formData.healthStatus, okrs: formData.okrs }; try { if (isCreating) { await supabase.from('projects').insert([payload]); } else if (editingId) { await supabase.from('projects').update(payload).eq('id', editingId); } window.location.reload(); } catch (error) { console.error(error); alert("Error al guardar."); } setIsDialogOpen(false); };
+  const addOkrToForm = () => { if (!newOkrTitle.trim()) return; setFormData({ ...formData, okrs: [...formData.okrs, { id: crypto.randomUUID(), title: newOkrTitle, progress: 0 }] }); setNewOkrTitle(''); };
+  const updateOkrProgress = (id: string, val: number) => { setFormData({ ...formData, okrs: formData.okrs.map(o => o.id === id ? { ...o, progress: val } : o) }); };
   const removeOkr = (id: string) => { setFormData({ ...formData, okrs: formData.okrs.filter(o => o.id !== id) }); };
 
   const getHealthColor = (status?: string) => {
@@ -130,10 +90,7 @@ export default function ProjectsPage() {
       }
   };
 
-  const getSelectedEmployeeName = () => {
-      if (selectedEmployeeId === 'all') return "Todos";
-      return employees.find(e => e.id === selectedEmployeeId)?.name || "Seleccionar...";
-  };
+  const getSelectedEmployeeName = () => selectedEmployeeId === 'all' ? "Todos" : employees.find(e => e.id === selectedEmployeeId)?.name || "Seleccionar...";
 
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
@@ -197,6 +154,11 @@ export default function ProjectsPage() {
           const completedTasks = monthTasks.filter(t => t.status === 'completed');
           const pendingTasks = monthTasks.filter(t => t.status !== 'completed');
 
+          // --- CÁLCULO DE GANANCIA DEL PROYECTO (Header) ---
+          const projectReal = completedTasks.reduce((sum, t) => sum + (t.hoursActual || 0), 0);
+          const projectComputed = completedTasks.reduce((sum, t) => sum + (t.hoursComputed || 0), 0);
+          const projectGain = projectComputed - projectReal;
+
           const budget = project.budgetHours || 0;
           const minimum = project.minimumHours || 0;
           const assignedPct = budget > 0 ? (totalAssigned / budget) * 100 : 0;
@@ -211,11 +173,19 @@ export default function ProjectsPage() {
                     <div className="flex gap-3 min-w-0 flex-1">
                         <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shadow-sm shrink-0"><Briefcase className="h-5 w-5 text-slate-500" /></div>
                         <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <CardTitle className="text-base truncate">{project.name}</CardTitle>
                                 <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getHealthColor(project.healthStatus))}>
                                     {project.healthStatus === 'at_risk' ? 'En Peligro' : project.healthStatus === 'needs_attention' ? 'Atención' : 'Sano'}
                                 </Badge>
+                                
+                                {/* --- INDICADOR DE GANANCIA PROYECTO --- */}
+                                {Math.abs(projectGain) > 0.01 && (
+                                    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 border-0 flex items-center gap-1", projectGain > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800")}>
+                                        {projectGain > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                                        {projectGain > 0 ? 'Ganado: ' : 'Perdido: '}{parseFloat(Math.abs(projectGain).toFixed(1))}h
+                                    </Badge>
+                                )}
                             </div>
                             <div className="text-xs text-muted-foreground flex gap-2 items-center mt-1">
                                 <span className="font-medium text-slate-700">{client?.name || "Sin Cliente"}</span>
@@ -251,35 +221,20 @@ export default function ProjectsPage() {
                                         return (
                                             <div key={task.id} className="flex items-center justify-between p-3 border rounded-lg bg-white shadow-sm hover:shadow-md transition-all">
                                                 <div className="flex items-center gap-3 min-w-0">
-                                                    {/* AVATAR AÑADIDO */}
                                                     <Avatar className="h-8 w-8 border border-indigo-100 shrink-0">
                                                         <AvatarImage src={emp?.avatarUrl} />
-                                                        <AvatarFallback className="bg-indigo-100 text-indigo-700 text-[10px] font-bold">
-                                                            {emp?.name.substring(0, 2).toUpperCase() || "??"}
-                                                        </AvatarFallback>
+                                                        <AvatarFallback className="bg-indigo-100 text-indigo-700 text-[10px] font-bold">{emp?.name.substring(0, 2).toUpperCase() || "??"}</AvatarFallback>
                                                     </Avatar>
-
                                                     <div className="min-w-0">
                                                         <div className="text-sm font-medium truncate leading-tight">{task.taskName}</div>
-                                                        <div className="text-[10px] text-muted-foreground mt-0.5">
-                                                            {emp?.name || 'Sin asignar'} • Sem {format(parseISO(task.weekStartDate), 'w')}
-                                                        </div>
+                                                        <div className="text-[10px] text-muted-foreground mt-0.5">{emp?.name || 'Sin asignar'} • Sem {format(parseISO(task.weekStartDate), 'w')}</div>
                                                     </div>
                                                 </div>
-
-                                                {/* NUEVAS COLUMNAS */}
+                                                {/* SOLO EST EN PENDIENTES */}
                                                 <div className="flex items-center gap-3 text-xs shrink-0 pl-2">
                                                     <div className="text-right">
                                                         <div className="text-[9px] text-muted-foreground font-bold tracking-wider">EST</div>
-                                                        <div className="font-mono font-bold">{task.hoursAssigned}</div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className="text-[9px] text-blue-500 font-bold tracking-wider">REAL</div>
-                                                        <div className="font-mono font-bold text-blue-700">{task.hoursActual || 0}</div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className="text-[9px] text-emerald-500 font-bold tracking-wider">COMP</div>
-                                                        <div className="font-mono font-bold text-emerald-700">{task.hoursComputed || 0}</div>
+                                                        <div className="font-mono font-bold">{task.hoursAssigned}h</div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -301,25 +256,23 @@ export default function ProjectsPage() {
                                         const real = task.hoursActual || 0;
                                         const computed = task.hoursComputed || 0;
                                         const gain = computed - real;
-                                        
                                         return (
                                         <div key={task.id} className="flex items-center justify-between p-2 pl-3 border rounded-lg bg-slate-50/50 border-l-4 border-l-emerald-500">
                                             <div className="flex items-center gap-3 min-w-0 opacity-75">
                                                 <Avatar className="h-7 w-7 border border-emerald-100 shrink-0">
                                                     <AvatarImage src={emp?.avatarUrl} />
-                                                    <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[9px] font-bold">
-                                                        {emp?.name.substring(0, 2).toUpperCase() || "??"}
-                                                    </AvatarFallback>
+                                                    <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[9px] font-bold">{emp?.name.substring(0, 2).toUpperCase() || "??"}</AvatarFallback>
                                                 </Avatar>
                                                 <div className="min-w-0">
                                                     <span className="text-xs font-medium text-slate-600 line-through truncate block">{task.taskName}</span>
-                                                    <div className="text-[9px] text-slate-400">
-                                                        {emp?.name} • Completada
-                                                    </div>
+                                                    <div className="text-[9px] text-slate-400">{emp?.name} • Completada</div>
                                                 </div>
                                             </div>
-
                                             <div className="flex items-center gap-3 text-xs shrink-0">
+                                                 <div className="text-right hidden sm:block">
+                                                    <div className="text-[9px] text-slate-400 font-bold tracking-wider">EST</div>
+                                                    <div className="font-mono text-slate-500">{task.hoursAssigned}h</div>
+                                                </div>
                                                  <div className="text-right">
                                                     <div className="text-[9px] text-blue-500 font-bold tracking-wider">REAL</div>
                                                     <div className="font-mono text-blue-700">{real}h</div>
