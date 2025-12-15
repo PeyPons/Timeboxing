@@ -37,9 +37,13 @@ export interface Project {
   id: string;
   clientId: string;
   name: string;
-  status: 'active' | 'archived';
-  budgetHours: number; // Horas contratadas (Techo)
-  minimumHours: number; // <--- ¡NUEVO! (Suelo)
+  status: 'active' | 'archived' | 'completed';
+  budgetHours: number;
+  minimumHours?: number;
+  healthStatus?: 'healthy' | 'needs_attention' | 'at_risk';
+  monthlyFee?: number;
+  npsLink?: string;
+  lastMeetingDate?: string;
 }
 
 export interface Allocation {
