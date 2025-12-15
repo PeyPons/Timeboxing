@@ -9,12 +9,13 @@ import { AppLayout } from "@/components/layout/AppLayout";
 
 // Importamos las páginas
 import DashboardAI from "./pages/DashboardAI";
-import Index from "./pages/Index"; // Este es tu Planificador original
+import Index from "./pages/Index"; // Planificador
 import TeamPage from "./pages/TeamPage";
 import ClientsPage from "./pages/ClientsPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
+import ClientReportsPage from "./pages/ClientReportsPage"; // ✅ IMPORTACIÓN AÑADIDA
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,22 +30,25 @@ const App = () => (
           <BrowserRouter>
             <AppLayout>
               <Routes>
-                {/* --- CAMBIO CLAVE AQUÍ --- */}
-                
-                {/* 1. La ruta raíz "/" ahora carga el Dashboard con IA */}
+                {/* Dashboard Principal */}
                 <Route path="/" element={<DashboardAI />} />
                 
-                {/* 2. La ruta "/planner" ahora carga el Planificador (Index) */}
+                {/* Planificador */}
                 <Route path="/planner" element={<Index />} />
                 
-                {/* Resto de rutas normales */}
+                {/* Gestión */}
                 <Route path="/team" element={<TeamPage />} />
                 <Route path="/clients" element={<ClientsPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
+                
+                {/* Informes y Análisis */}
                 <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/informes-clientes" element={<ClientReportsPage />} /> {/* ✅ RUTA AÑADIDA */}
+                
+                {/* Configuración */}
                 <Route path="/settings" element={<SettingsPage />} />
                 
-                {/* Ruta 404 para cualquier otra cosa */}
+                {/* Error 404 */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </AppLayout>
