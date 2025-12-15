@@ -86,7 +86,7 @@ export function PlannerGrid() {
             const problematicTasks = empAllocations.filter(a => {
                 const real = a.hoursActual || 0;
                 const comp = a.hoursComputed || 0;
-                // Desviación: Si trabajó más de lo computado (Pérdida) o mucho más de lo estimado
+                // Desviación: Si trabajó más de lo computado (Pérdida)
                 const loss = real - comp; 
                 return loss > 0.5; // Umbral de "dolor": 30 min perdidos
             }).map(a => `${a.taskName}: Perdió ${Math.round((a.hoursActual! - a.hoursComputed!) * 10) / 10}h`);
@@ -134,12 +134,21 @@ export function PlannerGrid() {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const result = await model.generateContent(prompt);
         const text = result.response.text();
-        const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
-        setInsights(JSON.parse(jsonString));
+        // --- CORRECCIÓN CLAVE: EXTRACCIÓN ROBUSTA DE JSON ---
+        // Buscamos explícitamente el array JSON [...] ignorando texto previo/posterior
+        const jsonMatch = text.match(/\[[\s\S]*\]/); 
+        
+        if (jsonMatch) {
+            const jsonString = jsonMatch[0];
+            setInsights(JSON.parse(jsonString));
+        } else {
+            console.warn("Minguito no devolvió JSON válido:", text);
+            setInsights([{ type: 'warning', text: 'Minguito ha soltado un discurso pero no me ha dado los datos en limpio.' }]);
+        }
 
     } catch (e: any) {
-        console.error(e);
+        console.error("Error Minguito:", e);
         setInsights([{ type: 'warning', text: 'Minguito se ha mareado (Error API).' }]);
     } finally {
         setIsAnalyzing(false);
@@ -213,7 +222,6 @@ export function PlannerGrid() {
             </Popover>
         </div>
         
-        {/* ... (Resto de filtros se mantienen igual) ... */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
              <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
