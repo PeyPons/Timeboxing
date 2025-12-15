@@ -104,8 +104,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           projectId: a.project_id,
           weekStartDate: a.week_start_date,
           hoursAssigned: round2(a.hours_assigned),
-          hoursActual: a.hours_actual ? round2(a.hours_actual) : undefined,
-          hoursComputed: a.hours_computed ? round2(a.hours_computed) : undefined,
+          hoursActual: a.hours_actual ? round2(a.hours_actual) : undefined, // ✅ Leemos el real
+          hoursComputed: a.hours_computed ? round2(a.hours_computed) : undefined, // ✅ Leemos el computado
           taskName: a.task_name
         })));
       }
@@ -146,7 +146,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     fetchData();
   }, [fetchData]);
 
-  // CRUD OPERATIONS (Simplificadas para brevedad, solo pongo las modificadas)
+  // --- CRUD OPERATIONS ---
   
   const addAllocation = useCallback(async (allocation: Omit<Allocation, 'id'>) => {
     const { data } = await supabase.from('allocations').insert({
@@ -155,7 +155,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       week_start_date: allocation.weekStartDate,
       hours_assigned: allocation.hoursAssigned,
       hours_actual: allocation.hoursActual || 0,
-      hours_computed: allocation.hoursComputed || 0,
+      hours_computed: allocation.hoursComputed || 0, // ✅ Guardamos computado
       status: allocation.status,
       description: allocation.description,
       task_name: allocation.taskName
@@ -168,7 +168,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           weekStartDate: data.week_start_date, 
           hoursAssigned: round2(data.hours_assigned),
           hoursActual: round2(data.hours_actual),
-          hoursComputed: round2(data.hours_computed),
+          hoursComputed: round2(data.hours_computed), // ✅ Actualizamos estado local
           taskName: data.task_name 
       }]);
     }
@@ -179,7 +179,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('allocations').update({
       hours_assigned: allocation.hoursAssigned,
       hours_actual: allocation.hoursActual,
-      hours_computed: allocation.hoursComputed,
+      hours_computed: allocation.hoursComputed, // ✅ IMPRESCINDIBLE para el fix
       status: allocation.status,
       description: allocation.description,
       task_name: allocation.taskName
@@ -191,7 +191,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('allocations').delete().eq('id', id);
   }, []);
 
-  // ... Resto de adds/updates/deletes se mantienen igual que tu versión anterior ...
+  // ... Resto de CRUD (Empleados, Proyectos, etc.) sin cambios ...
   const addProfessionalGoal = useCallback(async (goal: Omit<ProfessionalGoal, 'id'>) => { const { data } = await supabase.from('professional_goals').insert({ employee_id: goal.employeeId, title: goal.title, key_results: goal.keyResults, actions: goal.actions, training_url: goal.trainingUrl, start_date: goal.startDate, due_date: goal.dueDate, progress: goal.progress }).select().single(); if (data) setProfessionalGoals(prev => [...prev, { ...data, employeeId: data.employee_id, keyResults: data.key_results, trainingUrl: data.training_url, startDate: data.start_date, dueDate: data.due_date }]); }, []);
   const updateProfessionalGoal = useCallback(async (goal: ProfessionalGoal) => { setProfessionalGoals(prev => prev.map(g => g.id === goal.id ? goal : g)); await supabase.from('professional_goals').update({ title: goal.title, key_results: goal.keyResults, actions: goal.actions, training_url: goal.trainingUrl, start_date: goal.startDate, due_date: goal.dueDate, progress: goal.progress }).eq('id', goal.id); }, []);
   const deleteProfessionalGoal = useCallback(async (id: string) => { setProfessionalGoals(prev => prev.filter(g => g.id !== id)); await supabase.from('professional_goals').delete().eq('id', id); }, []);
@@ -212,19 +212,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateTeamEvent = useCallback(async (event: TeamEvent) => { setTeamEvents(prev => prev.map(e => e.id === event.id ? event : e)); await supabase.from('team_events').update({ name: event.name, date: event.date, hours_reduction: event.hoursReduction, affected_employee_ids: event.affectedEmployeeIds, description: event.description }).eq('id', event.id); }, []);
   const deleteTeamEvent = useCallback(async (id: string) => { setTeamEvents(prev => prev.filter(e => e.id !== id)); await supabase.from('team_events').delete().eq('id', id); }, []);
 
+
+  // --- LÓGICA DE NEGOCIO ---
+
   const getEmployeeAllocationsForWeek = useCallback((employeeId: string, weekStart: string) => {
     return allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
   }, [allocations]);
 
-  // ✅ LOGICA DE CARGA: Real vs Estimado
+  // ✅ CÁLCULO DE CARGA (HONESTO: Real si completada, Estimado si no)
   const getEmployeeLoadForWeek = useCallback((employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => {
     const employee = employees.find(e => e.id === employeeId);
     if (!employee) return { hours: 0, capacity: 0, baseCapacity: 0, status: 'empty' as LoadStatus, percentage: 0, breakdown: [] };
 
-    // 1. Horas asignadas (Carga Inteligente)
     const employeeAllocations = allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
     
-    // Si completada, suma Real. Si no, suma Estimado.
     const totalHours = round2(employeeAllocations.reduce((sum, a) => {
         const hoursToCount = (a.status === 'completed' && (a.hoursActual || 0) > 0) 
             ? Number(a.hoursActual) 
@@ -232,13 +233,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return sum + hoursToCount;
     }, 0));
     
-    // 2. Definir rango
+    // ... Cálculo de capacidad (sin cambios) ...
     const weekStartDate = new Date(weekStart);
     const weekEndDate = addDays(weekStartDate, 6);
     const rangeStart = effectiveStart || weekStartDate;
     const rangeEnd = effectiveEnd || weekEndDate;
     
-    // 3. Capacidad Base
     let baseCapacity: number;
     if (effectiveStart && effectiveEnd) {
       const { totalHours: capacityHours } = getWorkingDaysInRange(effectiveStart, effectiveEnd, employee.workSchedule);
@@ -247,7 +247,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       baseCapacity = employee.defaultWeeklyCapacity;
     }
 
-    // 4. Reducciones
     const breakdown: { reason: string; hours: number; type: 'absence' | 'event' }[] = [];
     let reducedCapacity = baseCapacity;
 
@@ -302,7 +301,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity: reducedCapacity, baseCapacity, status, percentage, breakdown };
   }, [employees, allocations, absences, teamEvents]);
 
-  // ✅ LOGICA MENSUAL ACTUALIZADA TAMBIÉN
+  // ✅ CARGA MENSUAL (Misma lógica honesta)
   const getEmployeeMonthlyLoad = useCallback((employeeId: string, year: number, month: number) => {
     const employee = employees.find(e => e.id === employeeId);
     if (!employee) return { hours: 0, capacity: 0, status: 'empty' as LoadStatus, percentage: 0 };
@@ -315,7 +314,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const storageKey = getStorageKey(week.weekStart, monthStart);
         const tasks = allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === storageKey);
         
-        // Suma inteligente (Real vs Estimado)
         const weekTotal = tasks.reduce((sum, a) => {
             const hoursToCount = (a.status === 'completed' && (a.hoursActual || 0) > 0) 
                 ? Number(a.hoursActual) 
@@ -346,7 +344,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { hours: totalHours, capacity, status, percentage };
   }, [employees, allocations, absences, teamEvents]);
 
-  // ✅ PROJECT HOURS ACTUALIZADO (Usado = Real si completado)
+  // ✅ HORAS DE PROYECTO (Misma lógica honesta)
   const getProjectHoursForMonth = useCallback((projectId: string, month: Date) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return { used: 0, budget: 0, available: 0, percentage: 0 };
@@ -359,7 +357,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const tasks = allocations.filter(a => a.projectId === projectId && a.weekStartDate === storageKey);
         
         usedHours += tasks.reduce((sum, a) => {
-            // Contamos la realidad si está cerrada
             const hoursToCount = (a.status === 'completed' && (a.hoursActual || 0) > 0) 
                 ? Number(a.hoursActual) 
                 : Number(a.hoursAssigned);
@@ -385,7 +382,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       weeks.forEach(week => {
         const storageKey = getStorageKey(week.weekStart, month);
         const tasks = allocations.filter(a => a.projectId === project.id && a.weekStartDate === storageKey);
-        // Suma inteligente
         totalUsed += tasks.reduce((sum, a) => {
             const hoursToCount = (a.status === 'completed' && (a.hoursActual || 0) > 0) 
                 ? Number(a.hoursActual) 
