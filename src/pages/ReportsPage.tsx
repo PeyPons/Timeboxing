@@ -58,10 +58,12 @@ export default function ReportsPage() {
   }, 0), [activeEmployees, year, month]);
 
   const monthStats = useMemo(() => {
-    const planned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-    const completed = monthAllocations
+    // ✅ CORRECCIÓN: Aplicamos round2 AL FINAL de la suma para limpiar decimales locos
+    const planned = round2(monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
+    
+    const completed = round2(monthAllocations
         .filter(a => a.status === 'completed')
-        .reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0);
+        .reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0));
 
     return { planned, completed };
   }, [monthAllocations]);
@@ -74,13 +76,14 @@ export default function ReportsPage() {
       const capacity = getMonthlyCapacity(year, month, e.workSchedule);
       const empAllocations = monthAllocations.filter(a => a.employeeId === e.id);
       
-      const plannedHours = empAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-      const completedHours = empAllocations
+      // ✅ CORRECCIÓN AQUÍ TAMBIÉN
+      const plannedHours = round2(empAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
+      const completedHours = round2(empAllocations
         .filter(a => a.status === 'completed')
-        .reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0);
+        .reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0));
       
       const percentage = capacity > 0 ? (plannedHours / capacity) * 100 : 0;
-      const available = Math.max(0, capacity - plannedHours);
+      const available = round2(Math.max(0, capacity - plannedHours));
 
       return { ...e, plannedHours, completedHours, capacity, percentage, available };
     }).sort((a, b) => b.percentage - a.percentage);
@@ -96,8 +99,9 @@ export default function ReportsPage() {
         const client = clients.find(c => c.id === p.clientId);
         const projAllocations = monthAllocations.filter(a => a.projectId === p.id);
         
-        const planned = projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-        const real = projAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0);
+        // ✅ Y AQUÍ TAMBIÉN
+        const planned = round2(projAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
+        const real = round2(projAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0));
 
         const percentage = p.budgetHours > 0 ? (planned / p.budgetHours) * 100 : 0;
 
