@@ -7,85 +7,112 @@
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
 ![Gemini AI](https://img.shields.io/badge/Gemini_AI-8E75B2?style=for-the-badge&logo=google-bard&logoColor=white)
 
-Una aplicación moderna para la gestión de recursos, planificación de equipos y control de horas (*timeboxing*). Diseñada para agencias y equipos que necesitan optimizar la asignación de tareas semanales evitando la sobrecarga de trabajo mediante una planificación mensual estricta e inteligencia artificial.
-
-## ✨ Características Principales
-
-### 🧠 Gestión Inteligente
-* **📅 Planificador Mensual Estricto (*Smart Logic*):** Sistema único de "Llaves de Almacenamiento" que separa matemáticamente los meses. Las horas de una semana compartida (ej: 29 Dic - 4 Ene) no se mezclan; lo asignado en Enero pertenece a Enero y lo de Diciembre a Diciembre.
-* **🤖 Copiloto IA (Minguito v2.0):** Asistente virtual potenciado por **Google Gemini**.
-    * Analiza la carga de trabajo en tiempo real para detectar cuellos de botella.
-    * Responde preguntas sobre proyectos, disponibilidad y objetivos profesionales (*OKRs*).
-    * Ofrece recomendaciones proactivas para equilibrar el equipo.
-* **📊 Métricas en Tiempo Real:** Visualización instantánea de capacidad vs. asignación, con alertas visuales de sobrecarga (*Overload*), zona óptima (*Sweet Spot*) e infrautilización.
-
-### ⚡ Productividad y Flujo
-* **🚀 Carga Masiva (*Bulk Mode*):** Formulario optimizado para añadir múltiples líneas de tareas a la vez, ideal para planificaciones rápidas.
-* **✏️ Edición Rápida (*Inline*):** Edita nombres de tareas con doble clic y mueve tareas entre semanas mediante menús contextuales, sin necesidad de abrir modales complejos.
-* **🗓️ Gestión de Festivos:** Opción de marcar "Día Completo" en eventos para descontar automáticamente la jornada laboral completa de la capacidad del equipo.
-
-### 👥 Equipo y Proyección
-* **🏆 Proyección Profesional:** Módulo dedicado para gestionar OKRs, planes de carrera y seguimiento de objetivos, conectado al contexto de la IA.
-* **🏖️ Gestión de Ausencias:** Control de vacaciones y bajas que ajusta automáticamente la disponibilidad en el planificador.
-* **🗂️ Organización Jerárquica:** Vista clara de *Proyecto > Tareas* en el planificador, manteniendo siempre visible el contexto del Cliente (nombre y color).
-
-## 🛠️ Tecnologías
-
-* **Frontend:** React 18 + TypeScript + Vite.
-* **UI/UX:** Tailwind CSS + Shadcn/ui + Lucide Icons.
-* **Backend / DB:** Supabase (PostgreSQL + Auth + RLS).
-* **IA:** Google Generative AI SDK (Modelo `gemini-2.5-flash`).
-* **Estado:** React Context API + Custom Hooks optimizados.
-* **Fechas:** `date-fns` con lógica personalizada para periodos fiscales.
+Una aplicación integral para la gestión de recursos, planificación de equipos y control de horas (*timeboxing*). Diseñada para agencias y equipos que necesitan optimizar la asignación de tareas semanales evitando la sobrecarga de trabajo mediante una planificación mensual estricta e inteligencia artificial.
 
 ---
 
-## 🚀 Instalación y uso
+## 📖 Manual de Usuario
 
-1.  **Clonar el repositorio**
-    ```bash
-    git clone https://github.com/PeyPons/Timeboxing.git
-    cd Timeboxing
-    ```
+Esta sección explica cómo utilizar las funcionalidades principales de la aplicación para gestionar tu equipo día a día.
 
-2.  **Instalar dependencias**
+### 1. Panel de Control & Copiloto IA (Minguito)
+El **Dashboard** es tu centro de mando. Aquí encontrarás a **Minguito**, tu asistente virtual potenciado por Google Gemini.
+
+*   **¿Qué puede hacer Minguito?**
+    *   Responder preguntas sobre la carga de trabajo actual (ej: *"¿Quién está sobreasignado esta semana?"*).
+    *   Informar sobre el estado de proyectos y presupuestos.
+    *   Consultar objetivos profesionales (OKRs) de los empleados.
+*   **Modo Ahorro de Tokens:**
+    *   El sistema utiliza una estrategia de "Contexto Dinámico". Minguito solo carga en su memoria los detalles de los empleados o proyectos que mencionas en tu pregunta. Esto hace que las respuestas sean más rápidas y económicas.
+    *   Si preguntas por "Resumen general", Minguito cargará una vista simplificada de todo el equipo.
+
+### 2. Planificador Mensual (Planner)
+El corazón de la aplicación. Permite asignar tareas a los empleados semana a semana.
+
+#### 🧠 Lógica Mensual Estricta
+El sistema utiliza un modelo de "Cajas Mensuales".
+*   Si una semana cae entre dos meses (ej: 29 Ene - 4 Feb), **se trata como dos semanas separadas visualmente** aunque sea la misma semana calendario.
+*   Las horas asignadas para los días de Enero se guardan en Enero. Las de Febrero, en Febrero. Esto asegura que los informes mensuales sean exactos al 100%.
+
+#### ⚡ Herramientas de Productividad
+*   **Carga Masiva (Bulk Mode):**
+    *   Al hacer clic en el botón `+` de una semana, se abre el formulario de tareas.
+    *   Puedes añadir múltiples filas a la vez pulsando "Añadir otra fila".
+    *   Ideal para planificar la semana completa de un empleado en un solo paso.
+*   **Edición Rápida (Inline Editing):**
+    *   Haz **doble clic** sobre el nombre de cualquier tarea en la lista para renombrarla al instante sin abrir ventanas emergentes.
+    *   Presiona `Enter` para guardar.
+*   **Mover Tareas:**
+    *   Si necesitas posponer una tarea, pasa el ratón sobre ella, abre el menú de opciones (tres puntos) y selecciona "Mover a semana X". La tarea se trasladará automáticamente.
+
+#### 📊 Control de Horas
+*   **Estimadas vs. Reales:** Cada tarea tiene horas planificadas (Est). Al completar la tarea (marcando el checkbox), puedes introducir las horas reales (Comp).
+*   **Alertas:** Si las horas reales superan a las estimadas, el sistema te avisará con un indicador rojo de desvío.
+
+### 3. Gestión de Equipo
+*   **Capacidad:** Configura cuántas horas trabaja cada empleado por defecto en la sección de Equipo.
+*   **Ausencias:** Registra vacaciones o bajas. Estas se reflejan automáticamente en el Planificador reduciendo la capacidad disponible (barra de progreso y tooltip de desglose).
+
+---
+
+## 💻 Documentación para Desarrolladores
+
+Guía técnica para configurar, entender y extender el proyecto.
+
+### 🏗️ Arquitectura del Proyecto
+
+El proyecto sigue una estructura modular basada en características (`src/components/feature`):
+
+```bash
+src/
+├── components/
+│   ├── dashboard/   # Lógica del Copiloto IA y widgets
+│   ├── planner/     # Core del planificador (AllocationSheet, PlannerGrid)
+│   ├── ui/          # Componentes base (Shadcn/ui)
+│   └── ...
+├── pages/           # Vistas principales (Rutas)
+├── lib/
+│   ├── supabase.ts  # Cliente e interfaces de base de datos
+│   ├── gemini.ts    # Configuración del SDK de Google AI
+│   └── utils.ts     # Utilidades generales (cn, formateadores)
+└── App.tsx          # Router y Layout principal
+```
+
+### 🔐 Conceptos Clave
+
+#### Storage Keys (Lógica de Fechas)
+Para lograr la separación estricta por meses, usamos una `storageKey` única para cada asignación.
+*   Función: `getStorageKey(weekStart, viewDate)` en `src/utils/dateUtils.ts`.
+*   Si `weekStart` es 29/01/2024 pero estamos viendo la vista de **Febrero**, la key forzará la asociación al mes de vista si es necesario, o separará la capacidad proporcionalmente.
+
+#### Integración IA (Contexto Dinámico)
+En `DashboardAI.tsx`, el prompt del sistema se construye dinámicamente:
+1.  Se analiza el input del usuario buscando nombres de empleados o proyectos.
+2.  Se inyectan datos `DETALLADOS` solo para las coincidencias.
+3.  El resto de datos se inyectan como `RESUMIDO` para dar contexto sin gastar tokens excesivos.
+
+### 🚀 Instalación y Despliegue
+
+1.  **Clonar y Dependencias:**
     ```bash
+    git clone ...
     npm install
-    # o si usas bun
-    bun install
     ```
 
-3.  **Configurar variables de entorno**
-    Crea un archivo `.env` en la raíz del proyecto con tus credenciales:
+2.  **Variables de Entorno (.env):**
     ```env
     VITE_SUPABASE_URL="https://tu-proyecto.supabase.co"
-    VITE_SUPABASE_ANON_KEY="tu-clave-anonima-publica"
-
-    # Clave requerida para el Copiloto IA (Minguito)
-    VITE_GEMINI_API_KEY="tu-api-key-de-google-gemini"
-    ```
-    > **Nota:** Puedes obtener tu clave de IA en Google AI Studio. Si recibes errores 429, verifica los límites de uso de tu cuenta.
-
-4.  **Ejecutar en desarrollo**
-    ```bash
-    npm run dev
+    VITE_SUPABASE_ANON_KEY="tu-key-publica"
+    VITE_GEMINI_API_KEY="tu-api-key-google-ai"
     ```
 
-## 🗄️ Estructura de base de datos (Supabase)
+3.  **Base de Datos (Supabase):**
+    Ejecuta el script SQL incluido abajo en el Editor SQL de Supabase para crear las tablas y políticas RLS.
 
-El proyecto requiere las siguientes tablas en Supabase. Puedes usar el editor SQL para crearlas:
-
-* `employees`: Datos del personal, configuración horaria y capacidad.
-* `clients`: Cartera de clientes con asignación de color.
-* `projects`: Proyectos vinculados a clientes con presupuesto de horas.
-* `allocations`: Asignación de horas (relación empleado-proyecto-semana con lógica de fechas estricta).
-* `absences`: Registro de vacaciones y bajas.
-* `team_events`: Eventos globales y festivos (con soporte para reducción parcial o día completo).
-* `professional_goals`: Seguimiento de objetivos, formación y OKRs.
+### 🗄️ Esquema de Base de Datos
 
 ```sql
--- 1. TABLAS MAESTRAS (Clientes, Empleados, Proyectos)
-
+-- 1. TABLAS MAESTRAS
 CREATE TABLE public.clients (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   name text NOT NULL,
@@ -99,7 +126,7 @@ CREATE TABLE public.employees (
   avatar_url text,
   role text NOT NULL,
   default_weekly_capacity int NOT NULL,
-  work_schedule jsonb NOT NULL, -- Ej: {"monday": 8, "tuesday": 8...}
+  work_schedule jsonb NOT NULL,
   is_active boolean DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
@@ -108,23 +135,23 @@ CREATE TABLE public.projects (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   client_id uuid REFERENCES public.clients(id),
   name text NOT NULL,
-  status text DEFAULT 'active', -- 'active', 'archived', 'completed'
+  status text DEFAULT 'active',
   budget_hours numeric DEFAULT 0,
   minimum_hours numeric DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
 
--- 2. TABLAS TRANSACCIONALES (Asignaciones, Ausencias, Eventos)
-
+-- 2. OPERACIONES
 CREATE TABLE public.allocations (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   employee_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
   project_id uuid REFERENCES public.projects(id),
-  week_start_date date NOT NULL, -- Clave de almacenamiento inteligente (Storage Key)
+  week_start_date date NOT NULL, -- Clave vital para el planner
   hours_assigned numeric NOT NULL,
+  hours_actual numeric DEFAULT 0, -- Control de horas reales
   task_name text,
   description text,
-  status text DEFAULT 'planned', -- 'planned', 'completed'
+  status text DEFAULT 'planned',
   created_at timestamptz DEFAULT now()
 );
 
@@ -133,8 +160,7 @@ CREATE TABLE public.absences (
   employee_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
   start_date date NOT NULL,
   end_date date NOT NULL,
-  type text NOT NULL, -- 'vacation', 'sick_leave', etc.
-  description text,
+  type text NOT NULL,
   created_at timestamptz DEFAULT now()
 );
 
@@ -143,8 +169,7 @@ CREATE TABLE public.team_events (
   name text NOT NULL,
   date date NOT NULL,
   hours_reduction numeric NOT NULL,
-  affected_employee_ids jsonb NOT NULL, -- Array de IDs de empleados afectados
-  description text,
+  affected_employee_ids jsonb NOT NULL,
   created_at timestamptz DEFAULT now()
 );
 
@@ -153,37 +178,15 @@ CREATE TABLE public.professional_goals (
   employee_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
   title text NOT NULL,
   key_results text,
-  actions text,
-  training_url text,
-  start_date date,
-  due_date date,
   progress int DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
 
--- 3. SEGURIDAD (Habilitar RLS y políticas públicas para desarrollo)
-
+-- 3. SEGURIDAD (RLS Básico para Demo)
 ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.allocations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.absences ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.team_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.professional_goals ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Public Access Employees" ON public.employees FOR ALL USING (true);
-CREATE POLICY "Public Access Clients" ON public.clients FOR ALL USING (true);
-CREATE POLICY "Public Access Projects" ON public.projects FOR ALL USING (true);
-CREATE POLICY "Public Access Allocations" ON public.allocations FOR ALL USING (true);
-CREATE POLICY "Public Access Absences" ON public.absences FOR ALL USING (true);
-CREATE POLICY "Public Access Events" ON public.team_events FOR ALL USING (true);
-CREATE POLICY "Public Access Goals" ON public.professional_goals FOR ALL USING (true);
- ```
-
-
-## 🤝 Contribución
-
-Las contribuciones son bienvenidas. Por favor, abre un *issue* primero para discutir lo que te gustaría cambiar.
+CREATE POLICY "Public Access" ON public.employees FOR ALL USING (true);
+-- Repetir para resto de tablas...
+```
 
 ---
-Desarrollado con ❤️ por Alexander y sus coleguitas Lovable y Gemini.
+Desarrollado con ❤️ por el equipo de Timeboxing.
