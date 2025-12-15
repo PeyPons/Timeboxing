@@ -104,7 +104,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           projectId: a.project_id,
           weekStartDate: a.week_start_date,
           hoursAssigned: round2(a.hours_assigned),
-          hoursActual: a.hours_actual ? round2(a.hours_actual) : undefined, // ✅ Leemos el real
+          hoursActual: a.hours_actual ? round2(a.hours_actual) : undefined,
+          hoursComputed: a.hours_computed ? round2(a.hours_computed) : undefined,
           taskName: a.task_name
         })));
       }
@@ -153,7 +154,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       project_id: allocation.projectId,
       week_start_date: allocation.weekStartDate,
       hours_assigned: allocation.hoursAssigned,
-      hours_actual: allocation.hoursActual || 0, // ✅ Guardamos real
+      hours_actual: allocation.hoursActual || 0,
+      hours_computed: allocation.hoursComputed || 0,
       status: allocation.status,
       description: allocation.description,
       task_name: allocation.taskName
@@ -166,6 +168,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           weekStartDate: data.week_start_date, 
           hoursAssigned: round2(data.hours_assigned),
           hoursActual: round2(data.hours_actual),
+          hoursComputed: round2(data.hours_computed),
           taskName: data.task_name 
       }]);
     }
@@ -175,7 +178,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAllocations(prev => prev.map(a => a.id === allocation.id ? allocation : a));
     await supabase.from('allocations').update({
       hours_assigned: allocation.hoursAssigned,
-      hours_actual: allocation.hoursActual, // ✅ Actualizamos real
+      hours_actual: allocation.hoursActual,
+      hours_computed: allocation.hoursComputed,
       status: allocation.status,
       description: allocation.description,
       task_name: allocation.taskName
