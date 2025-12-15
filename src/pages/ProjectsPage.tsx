@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -19,23 +20,24 @@ import {
   ChevronRight, 
   CalendarDays, 
   Briefcase, 
-  LayoutList,
   Pencil,
-  CheckCircle2, 
-  Circle,       
-  TrendingUp,
   Search,
-  Filter,
-  AlertCircle,
   HeartPulse,
   Euro,
   ExternalLink,
   ChevronsUpDown,
   Check,
-  User
+  User,
+  Target,
+  FileCheck,
+  Clock,
+  MessageSquare
 } from 'lucide-react';
 import { Project } from '@/types';
 import { cn } from '@/lib/utils';
+
+// Helper para redondeo
+const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export default function ProjectsPage() {
   const { projects, clients, allocations, employees, updateProject } = useApp();
@@ -43,11 +45,11 @@ export default function ProjectsPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Filtros Avanzados (Igual que Planner)
+  // Filtros
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
   const [openEmployeeCombo, setOpenEmployeeCombo] = useState(false);
 
-  // Estados Edición
+  // Edición
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   
@@ -85,11 +87,9 @@ export default function ProjectsPage() {
     setEditName(project.name);
     setEditBudget(project.budgetHours.toString());
     setEditStatus(project.status);
-    // Nuevos campos
     setEditHealth(project.healthStatus || 'healthy');
     setEditFee(project.monthlyFee?.toString() || '');
     setEditNps(project.npsLink || '');
-    
     setIsEditOpen(true);
   };
 
@@ -119,7 +119,7 @@ export default function ProjectsPage() {
   const getHealthLabel = (status?: string) => {
       switch(status) {
           case 'at_risk': return 'En Peligro';
-          case 'needs_attention': return 'Con Necesidades';
+          case 'needs_attention': return 'Atención';
           default: return 'Sano';
       }
   };
@@ -132,16 +132,16 @@ export default function ProjectsPage() {
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
       
-      {/* Cabecera y Filtros */}
+      {/* Cabecera */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
                 <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
                     <FolderKanban className="h-8 w-8 text-indigo-600" />
-                    Proyectos y Rentabilidad
+                    Proyectos 360º
                 </h1>
                 <p className="text-muted-foreground">
-                    Gestión de salud de clientes, horas y facturación.
+                    Visión estratégica, financiera y operativa.
                 </p>
             </div>
 
@@ -156,7 +156,6 @@ export default function ProjectsPage() {
                 <Button variant="ghost" size="icon" onClick={handleNextMonth}>
                     <ChevronRight className="h-4 w-4" />
                 </Button>
-                <div className="w-px h-6 bg-border mx-1" />
                 <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">Hoy</Button>
             </div>
         </div>
@@ -172,7 +171,6 @@ export default function ProjectsPage() {
                 />
             </div>
             
-            {/* Filtro Empleado (Combobox) */}
             <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
                 <PopoverTrigger asChild>
                     <Button variant="outline" role="combobox" aria-expanded={openEmployeeCombo} className="w-full sm:w-[250px] justify-between bg-white">
@@ -208,7 +206,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Grid de Proyectos */}
-      <div className="grid gap-6">
+      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
         {filteredProjects.map((project) => {
           const client = clients.find(c => c.id === project.clientId);
           
@@ -230,122 +228,165 @@ export default function ProjectsPage() {
           const assignedPct = budget > 0 ? (totalAssigned / budget) * 100 : 0;
           const completedPct = budget > 0 ? (totalCompleted / budget) * 100 : 0;
 
-          // Cálculo Financiero Estimado
           const fee = project.monthlyFee || 0;
-          const internalCostRate = 25; // Coste promedio hora interno (configurable)
+          const internalCostRate = 25; 
           const currentCost = totalCompleted * internalCostRate;
           const profitMargin = fee - currentCost;
-          const isProfitNegative = profitMargin < 0 && fee > 0;
 
           return (
-            <Card key={project.id} className={cn("overflow-hidden transition-all border-l-4", 
+            <Card key={project.id} className={cn("overflow-hidden border-l-4 shadow-sm hover:shadow-md transition-shadow", 
                 project.healthStatus === 'at_risk' ? 'border-l-red-500' : 
                 project.healthStatus === 'needs_attention' ? 'border-l-amber-500' : 'border-l-emerald-500'
             )}>
-              <CardHeader className="bg-slate-50/50 dark:bg-slate-900/50 pb-4">
-                <div className="flex flex-col md:flex-row justify-between gap-6">
-                    
-                    {/* Info Proyecto */}
-                    <div className="flex items-start gap-4 flex-1">
-                        <div className="flex flex-col items-center gap-2">
-                            <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shadow-sm flex-shrink-0">
-                                <Briefcase className="h-5 w-5 text-slate-500" />
-                            </div>
-                            {/* Semáforo Salud */}
-                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.5 whitespace-nowrap", getHealthColor(project.healthStatus))}>
-                                <HeartPulse className="h-3 w-3 mr-1" />
-                                {getHealthLabel(project.healthStatus)}
-                            </Badge>
+              <CardHeader className="bg-slate-50/50 pb-3 border-b">
+                <div className="flex justify-between items-start gap-4">
+                    <div className="flex gap-3 min-w-0">
+                        <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shadow-sm shrink-0">
+                            <Briefcase className="h-5 w-5 text-slate-500" />
                         </div>
-
-                        <div className="flex-1 min-w-0 space-y-1">
-                            <div className="flex items-center gap-3">
-                                <CardTitle className="text-lg truncate">{project.name}</CardTitle>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 ml-2 text-slate-400 hover:text-indigo-600" onClick={() => handleEditClick(project)}>
-                                    <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                            </div>
+                        <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="font-normal text-xs bg-white shrink-0">
-                                    <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: client?.color || '#ccc' }} />
-                                    {client?.name || 'Sin Cliente'}
+                                <CardTitle className="text-base truncate">{project.name}</CardTitle>
+                                <Badge variant="outline" className={cn("text-[10px] h-5 px-1.5", getHealthColor(project.healthStatus))}>
+                                    <HeartPulse className="h-3 w-3 mr-1" />
+                                    {getHealthLabel(project.healthStatus)}
                                 </Badge>
-                                {project.npsLink && (
-                                    <a href={project.npsLink} target="_blank" rel="noreferrer" className="text-xs flex items-center gap-1 text-indigo-600 hover:underline">
-                                        <ExternalLink className="h-3 w-3" /> NPS
-                                    </a>
-                                )}
                             </div>
-                            <div className="text-xs text-muted-foreground flex gap-3 mt-1">
-                                <span className="font-mono">Presupuesto: {project.budgetHours}h</span>
-                                {fee > 0 && <span className="font-mono text-slate-600">Fee: {fee}€</span>}
+                            <div className="text-xs text-muted-foreground flex gap-2 items-center mt-1">
+                                <span className="font-medium text-slate-700">{client?.name}</span>
+                                <span>•</span>
+                                {fee > 0 ? (
+                                    <span className={cn("font-mono", profitMargin < 0 ? "text-red-600" : "text-emerald-600")}>
+                                        Mg: {profitMargin.toFixed(0)}€
+                                    </span>
+                                ) : <span>Sin Fee</span>}
                             </div>
                         </div>
                     </div>
-
-                    {/* Métricas Financieras y Horas */}
-                    <div className="min-w-[280px] flex flex-col justify-center gap-3 bg-white dark:bg-slate-950 p-3 rounded-lg border">
-                        
-                        {/* Dato Rentabilidad */}
-                        {fee > 0 ? (
-                            <div className="flex justify-between items-center text-xs pb-2 border-b mb-1">
-                                <span className="text-muted-foreground flex items-center gap-1"><Euro className="h-3 w-3" /> Margen Est.</span>
-                                <span className={cn("font-bold font-mono", isProfitNegative ? "text-red-600" : "text-emerald-600")}>
-                                    {profitMargin.toFixed(0)}€
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="text-[10px] text-center text-muted-foreground pb-2 border-b mb-1 italic">Sin datos económicos</div>
-                        )}
-
-                        <div className="space-y-1.5">
-                            <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-slate-500">
-                                <span>Planificado</span>
-                                <span>{round2(totalAssigned)}h</span>
-                            </div>
-                            <Progress value={assignedPct} className="h-1.5 bg-slate-100" />
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-emerald-600">
-                                <span>Computado</span>
-                                <span>{round2(totalCompleted)}h</span>
-                            </div>
-                            <Progress value={completedPct} className="h-1.5 bg-emerald-100 [&>div]:bg-emerald-500" />
-                        </div>
-                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400" onClick={() => handleEditClick(project)}>
+                        <Pencil className="h-4 w-4" />
+                    </Button>
                 </div>
               </CardHeader>
 
               <CardContent className="p-0">
-                {monthTasks.length > 0 ? (
-                    <div className="divide-y">
-                        {/* ... (Lista de tareas se mantiene igual que antes) ... */}
-                        {/* Solo añadiré el código de renderizado de tareas resumido para no alargar innecesariamente, ya que es igual al anterior */}
-                        <div className="bg-slate-50 px-6 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex">
-                            <div className="flex-1">Tareas ({monthTasks.length})</div>
-                            <div className="w-20 text-right">Horas</div>
-                        </div>
-                        {monthTasks.slice(0, 5).map(task => ( // Mostramos solo 5 para no saturar si hay muchas
-                            <div key={task.id} className="px-6 py-2 flex justify-between text-xs items-center hover:bg-slate-50">
-                                <span className={cn("truncate max-w-[70%]", task.status === 'completed' && "line-through text-muted-foreground")}>{task.taskName}</span>
-                                <span className="font-mono text-muted-foreground">{task.hoursAssigned}h</span>
+                <Tabs defaultValue="operativa" className="w-full">
+                    <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-4 h-10">
+                        <TabsTrigger value="operativa" className="text-xs data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none h-10 px-4">
+                            <Clock className="h-3.5 w-3.5 mr-2" /> Operativa
+                        </TabsTrigger>
+                        <TabsTrigger value="estrategia" className="text-xs data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none h-10 px-4">
+                            <Target className="h-3.5 w-3.5 mr-2" /> OKRs y Estrategia
+                        </TabsTrigger>
+                        <TabsTrigger value="gestion" className="text-xs data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none h-10 px-4">
+                            <FileCheck className="h-3.5 w-3.5 mr-2" /> Gestión Mensual
+                        </TabsTrigger>
+                    </TabsList>
+
+                    {/* VISTA OPERATIVA (Horas y Tareas) */}
+                    <TabsContent value="operativa" className="p-4 space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                                    <span>Planificado</span>
+                                    <span>{round2(totalAssigned)} / {budget}h</span>
+                                </div>
+                                <Progress value={assignedPct} className="h-2 bg-slate-100" />
                             </div>
-                        ))}
-                        {monthTasks.length > 5 && <div className="px-6 py-2 text-[10px] text-center text-muted-foreground">Ver {monthTasks.length - 5} tareas más...</div>}
-                    </div>
-                ) : (
-                    <div className="py-6 text-center text-muted-foreground text-xs italic">
-                        Sin actividad registrada este mes.
-                    </div>
-                )}
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold text-emerald-600">
+                                    <span>Computado</span>
+                                    <span>{round2(totalCompleted)}h</span>
+                                </div>
+                                <Progress value={completedPct} className="h-2 bg-emerald-100 [&>div]:bg-emerald-500" />
+                            </div>
+                        </div>
+
+                        <div className="border rounded-md bg-slate-50/50 overflow-hidden">
+                            <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase flex justify-between">
+                                <span>Últimas Tareas</span>
+                                <span>Horas</span>
+                            </div>
+                            {monthTasks.length > 0 ? (
+                                <div className="divide-y divide-slate-100">
+                                    {monthTasks.slice(0, 3).map(task => (
+                                        <div key={task.id} className="px-3 py-2 flex justify-between text-xs items-center bg-white">
+                                            <span className="truncate max-w-[80%]">{task.taskName}</span>
+                                            <span className="font-mono text-slate-500">{task.hoursAssigned}h</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-3 text-center text-xs text-muted-foreground italic">Sin tareas este mes</div>
+                            )}
+                        </div>
+                    </TabsContent>
+
+                    {/* VISTA ESTRATEGIA (OKRs) - Simulado basado en Excel */}
+                    <TabsContent value="estrategia" className="p-4 space-y-3">
+                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Objetivos Trimestrales (Q1)</div>
+                        {/* Mock Data para visualizar concepto */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="flex items-center gap-2"><Target className="h-3 w-3 text-indigo-500"/> KWR Top 3</span>
+                                <span className="font-mono font-bold">12 / 15</span>
+                            </div>
+                            <Progress value={80} className="h-1.5 bg-slate-100 [&>div]:bg-indigo-500" />
+                            
+                            <div className="flex items-center justify-between text-sm mt-2">
+                                <span className="flex items-center gap-2"><Target className="h-3 w-3 text-indigo-500"/> Tráfico Orgánico</span>
+                                <span className="font-mono font-bold">+15%</span>
+                            </div>
+                            <Progress value={45} className="h-1.5 bg-slate-100 [&>div]:bg-indigo-500" />
+                        </div>
+                        
+                        <div className="mt-4 pt-3 border-t">
+                            <div className="flex items-start gap-2">
+                                <MessageSquare className="h-3 w-3 text-slate-400 mt-0.5" />
+                                <p className="text-xs text-slate-600 italic">"Cliente quiere foco en KWR de marca este mes. Ojo con la canibalización."</p>
+                            </div>
+                        </div>
+                    </TabsContent>
+
+                    {/* VISTA GESTIÓN (Entregables) - Simulado */}
+                    <TabsContent value="gestion" className="p-4">
+                        <div className="space-y-3">
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id={`meet-${project.id}`} />
+                                <label htmlFor={`meet-${project.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                    Reunión Mensual Realizada
+                                </label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id={`report-${project.id}`} />
+                                <label htmlFor={`report-${project.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                    Informe Enviado
+                                </label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id={`nps-${project.id}`} />
+                                <label htmlFor={`nps-${project.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                    Encuesta NPS Enviada
+                                </label>
+                            </div>
+                        </div>
+                        
+                        {project.npsLink && (
+                            <div className="mt-4 pt-3 border-t">
+                                <a href={project.npsLink} target="_blank" rel="noreferrer" className="text-xs flex items-center gap-1 text-indigo-600 hover:underline">
+                                    <ExternalLink className="h-3 w-3" /> Ver Informe de Satisfacción
+                                </a>
+                            </div>
+                        )}
+                    </TabsContent>
+                </Tabs>
               </CardContent>
             </Card>
           );
         })}
       </div>
 
-      {/* Dialogo Edición Actualizado */}
+      {/* Dialogo Edición (Mismo que tenías, necesario para que funcione el lápiz) */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -406,5 +447,3 @@ export default function ProjectsPage() {
     </div>
   );
 }
-
-const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
