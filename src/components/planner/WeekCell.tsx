@@ -4,9 +4,9 @@ import { TrendingUp, TrendingDown, AlertCircle, AlertTriangle, Palmtree, Calenda
 
 interface WeekCellProps {
   allocations: Allocation[];
-  hours: number; // Carga calculada (Real o Est según estado)
+  hours: number;
   capacity: number;
-  status: LoadStatus;
+  status: LoadStatus; // Mantenemos el prop por compatibilidad, pero recalculamos visualmente aquí
   percentage: number;
   isCurrentWeek: boolean;
   baseCapacity: number;
@@ -16,23 +16,26 @@ interface WeekCellProps {
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, breakdown, onClick }: WeekCellProps) {
+export function WeekCell({ allocations, hours, capacity, isCurrentWeek, breakdown, onClick }: WeekCellProps) {
   
-  // 1. Calcular métricas internas para visualización detallada
+  // 1. Métricas Internas
   const totalEst = round2(allocations.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0));
   
-  // Solo tareas completadas suman a Real y Computado visualmente aquí
   const completedTasks = allocations.filter(a => a.status === 'completed');
   const totalReal = round2(completedTasks.reduce((sum, a) => sum + (a.hoursActual || 0), 0));
   const totalComp = round2(completedTasks.reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
   
-  // Balance: (Lo que cobro - Lo que tardo). Si cobro más de lo que tardo = Ahorro/Ganancia.
   const balance = round2(totalComp - totalReal);
   const hasActivity = allocations.length > 0;
   
-  // Semáforo de carga (basado en hours/capacity recibidos del padre para consistencia)
-  const isOverload = hours > capacity && capacity > 0; // Simple sobrecarga
-  const isUnderload = hours < (capacity * 0.8) && capacity > 0; // Menos del 80%
+  // 2. LÓGICA DE SEMÁFORO (90% - 110%)
+  const ratio = capacity > 0 ? (hours / capacity) : 0;
+  
+  // Definición de estados según tu criterio:
+  const isOverload = ratio > 1.1;       // > 110% (Rojo)
+  const isUnderload = ratio < 0.9 && capacity > 0; // < 90% (Naranja)
+  const isHealthy = ratio >= 0.9 && ratio <= 1.1 && capacity > 0; // 90-110% (Verde)
+
   const hasReductions = breakdown && breakdown.length > 0;
 
   return (
@@ -41,23 +44,15 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
       isCurrentWeek ? "bg-white shadow-sm" : "bg-slate-50/50 hover:bg-white",
       !hasActivity && !hasReductions && "opacity-60 hover:opacity-100"
     )}>
-      {/* Semáforo (Puntito) */}
-      <div className={cn("absolute top-1.5 right-1.5 w-2 h-2 rounded-full transition-colors",
-          status === 'overload' ? "bg-red-500" :
-          status === 'warning' ? "bg-amber-400" :
-          isUnderload ? "bg-amber-200" : "bg-emerald-400"
-      )} />
-
-      {/* --- SECCIÓN DATOS --- */}
+      
+      {/* SECCIÓN DATOS */}
       {hasActivity ? (
         <div className="flex flex-col gap-1.5 mt-1 flex-1">
-            {/* Fila Estimado */}
-            <div className="flex justify-between items-center text-[10px] text-slate-500">
-                <span className="font-medium">Est.</span>
+            <div className={cn("flex justify-between items-center text-[10px]", completedTasks.length > 0 ? "text-slate-400" : "text-slate-600 font-medium")}>
+                <span>Est.</span>
                 <span className="font-mono">{totalEst}h</span>
             </div>
 
-            {/* Fila Real/Comp solo si hay completadas, si no, solo mostramos Est */}
             {completedTasks.length > 0 && (
                 <>
                     <div className="flex justify-between items-center text-[10px] text-blue-600">
@@ -71,7 +66,6 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
                 </>
             )}
 
-            {/* Badge de Balance (Rentabilidad) */}
             {completedTasks.length > 0 && Math.abs(balance) > 0.01 && (
                 <div className={cn(
                     "flex justify-between items-center text-[9px] px-1.5 py-0.5 rounded border mt-auto mb-1",
@@ -91,7 +85,7 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
         </div>
       )}
 
-      {/* --- SECCIÓN REDUCCIONES (Ausencias/Eventos) --- */}
+      {/* SECCIÓN REDUCCIONES */}
       {hasReductions && (
         <div className="my-1 space-y-1">
             {breakdown.map((item, idx) => (
@@ -109,16 +103,17 @@ export function WeekCell({ allocations, hours, capacity, status, isCurrentWeek, 
         </div>
       )}
 
-      {/* --- FOOTER (Carga Real) --- */}
+      {/* FOOTER: TOTAL COLOREADO */}
       <div className="mt-auto pt-1.5 border-t flex justify-end">
          <div className={cn(
              "text-[10px] font-bold flex items-center gap-1.5 transition-colors duration-300",
-             status === 'overload' ? "text-red-600" : 
-             status === 'warning' ? "text-amber-600" : 
+             isOverload ? "text-red-600" : 
+             isUnderload ? "text-amber-500" : 
+             isHealthy ? "text-emerald-600" : // VERDE si está en rango
              "text-slate-400"
          )}>
-             {status === 'overload' && <AlertCircle className="h-3 w-3" />}
-             {status === 'warning' && <AlertTriangle className="h-3 w-3" />} 
+             {isOverload && <AlertCircle className="h-3 w-3" />}
+             {isUnderload && <AlertTriangle className="h-3 w-3" />} 
              {hours}/{capacity}h
          </div>
       </div>
