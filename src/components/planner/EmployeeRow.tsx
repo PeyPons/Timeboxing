@@ -45,15 +45,16 @@ export function EmployeeRow({
 
       {/* Celdas de Semanas */}
       {weeks.map((week) => {
+        // Usamos getStorageKey para asegurar que el string de fecha coincide EXACTAMENTE con lo guardado en BD
         const weekKey = getStorageKey(week.weekStart, viewDate);
         
-        // 1. FILTRAR LAS TAREAS DE ESTA SEMANA (Corrección)
+        // 1. Filtrar tareas para pasar a la celda (Visualización detallada)
         const weekAllocations = allocations.filter(a => 
             a.employeeId === employee.id && 
             a.weekStartDate === weekKey
         );
 
-        // 2. CALCULAR LA CARGA
+        // 2. Calcular carga total (Footer y Semáforo)
         const load = getEmployeeLoadForWeek(
             employee.id, 
             weekKey, 
@@ -64,7 +65,7 @@ export function EmployeeRow({
         return (
             <div key={week.weekStart.toISOString()} className="border-r last:border-r-0">
                 <WeekCell 
-                    allocations={weekAllocations} // ✅ AHORA SÍ PASAMOS LAS TAREAS
+                    allocations={weekAllocations} 
                     hours={load.hours}
                     capacity={load.capacity}
                     status={load.status}
