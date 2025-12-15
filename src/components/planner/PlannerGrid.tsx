@@ -176,14 +176,13 @@ export function PlannerGrid() {
                 <PopoverContent className="w-80 p-0" align="end">
                     <div className="bg-indigo-50 dark:bg-indigo-900/30 p-3 border-b flex items-center gap-2">
                         <Sparkles className="h-4 w-4 text-indigo-600" />
-                        <span className="font-semibold text-sm">Análisis de Minguito:</span>
+                        <span className="font-semibold text-sm">Insights</span>
                     </div>
                     <div className="p-4">
                         {!isAnalyzing && !insights && (
                             <div className="text-center py-2">
-                                <p className="text-xs text-muted-foreground mb-3">Analizo desviaciones {'>'} 30min.</p>
                                 <Button size="sm" onClick={handleAnalyze} className="w-full bg-indigo-600 text-white">
-                                    ¡Dale caña!
+                                    Analizar
                                 </Button>
                             </div>
                         )}
