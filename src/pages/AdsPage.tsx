@@ -9,9 +9,10 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, Clock, Terminal, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { formatCurrency, formatProjectName } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
 
+// Definimos la interfaz para los datos de campaña
 interface CampaignData {
   campaign_id: string;
   campaign_name: string;
@@ -20,6 +21,7 @@ interface CampaignData {
   conversions_value?: number;
 }
 
+// Interfaz para el resumen del cliente
 interface ClientPacing {
   client_id: string;
   client_name: string;
@@ -33,24 +35,27 @@ interface ClientPacing {
   campaigns: CampaignData[];
 }
 
+// Helper para limpiar nombres de clientes (ej: "Cliente - Proyecto X" -> "Proyecto X")
+const formatProjectName = (name: string) => name.replace(/^(Cliente|Client)\s*[-:]?\s*/i, '');
+
 export default function AdsPage() {
   const [rawData, setRawData] = useState<any[]>([]);
   const [clientBudgets, setClientBudgets] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
-  // ESTADO PARA EL POPUP DE SINCRONIZACIÓN
+  // Estados para el Modal de Sincronización
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
   
-  // Ref para el scroll automático
+  // Referencia para el auto-scroll de la consola
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Pedimos todo el historial del mes, pero luego filtraremos por la fecha más reciente
+      // Obtenemos campañas y configuraciones de presupuesto
       const { data: adsData } = await supabase.from('google_ads_campaigns').select('*');
       const { data: settingsData } = await supabase.from('client_settings').select('*');
       
@@ -61,7 +66,7 @@ export default function AdsPage() {
       setClientBudgets(budgetsMap);
 
       if (adsData && adsData.length > 0) {
-        // Encontrar la fecha más reciente en los datos
+        // Buscamos la fecha más reciente para mostrar en la cabecera
         const timestamps = adsData.map(d => new Date(d.date).getTime());
         const maxTs = Math.max(...timestamps);
         setLastSyncTime(new Date(maxTs));
@@ -78,18 +83,20 @@ export default function AdsPage() {
   const handleStartSync = async () => {
     setIsSyncing(true);
     setSyncStatus('running');
-    setSyncLogs(['🚀 Solicitando actualización al servidor...']);
+    setSyncLogs(['🚀 Solicitando actualización al worker...']);
 
     try {
+      // Creamos un trabajo en la tabla de logs
       const { data, error } = await supabase
         .from('ad_sync_logs')
-        .insert({ status: 'pending', logs: ['Esperando al worker...'] })
+        .insert({ status: 'pending', logs: ['Esperando cola...'] })
         .select()
         .single();
 
       if (error) throw error;
       const jobId = data.id;
 
+      // Nos suscribimos a los cambios de ESTE trabajo específico
       const channel = supabase
         .channel(`job-${jobId}`)
         .on(
@@ -101,13 +108,12 @@ export default function AdsPage() {
             
             if (newRow.status === 'completed') {
               setSyncStatus('completed');
-              toast.success('Sincronización finalizada');
-              fetchData(); 
-              // Desconectar tras un breve delay
+              toast.success('Datos actualizados correctamente');
+              fetchData(); // Recargamos la vista principal
               setTimeout(() => { supabase.removeChannel(channel); }, 2000);
             } else if (newRow.status === 'error') {
               setSyncStatus('error');
-              toast.error('Error en la sincronización');
+              toast.error('Ocurrió un error en la sincronización');
             }
           }
         )
@@ -116,12 +122,11 @@ export default function AdsPage() {
     } catch (err) {
       console.error(err);
       setSyncStatus('error');
-      setSyncLogs(prev => [...prev, '❌ Error al conectar con Supabase.']);
+      setSyncLogs(prev => [...prev, '❌ Error de conexión al iniciar.']);
     }
   };
 
-  // --- AUTO-SCROLL FIX ---
-  // Cada vez que syncLogs cambia, bajamos el scroll del div
+  // EFECTO: Auto-scroll cada vez que llega un nuevo log
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -132,17 +137,18 @@ export default function AdsPage() {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount)) return;
     setClientBudgets(prev => ({ ...prev, [clientId]: numAmount }));
+    // Guardamos el presupuesto en Supabase
     await supabase.from('client_settings').upsert({ client_id: clientId, budget_limit: numAmount }, { onConflict: 'client_id' });
   };
 
+  // Lógica de Agrupación y Cálculos (Memoizada)
   const reportData = useMemo(() => {
     if (!rawData.length) return [];
     
-    // 1. Identificar la fecha de sincronización más reciente (SNAPSHOT)
-    // Esto evita sumar datos de ayer con datos de hoy.
+    // 1. IMPORTANTE: Filtramos solo los datos de la fecha más reciente (Snapshot del día)
+    // Esto evita que sumes el gasto de ayer + el de hoy.
     const timestamps = rawData.map(d => new Date(d.date).getTime());
     const maxTs = Math.max(...timestamps);
-    // Convertimos a string YYYY-MM-DD para comparar seguro
     const latestDateStr = new Date(maxTs).toISOString().split('T')[0];
 
     const currentMonth = new Date().getMonth();
@@ -154,7 +160,7 @@ export default function AdsPage() {
     const stats = new Map<string, { name: string, spent: number, campaigns: CampaignData[] }>();
 
     rawData.forEach(row => {
-      // IMPORTANTE: Solo procesamos los datos de la ÚLTIMA sincronización
+      // Solo sumamos si el registro pertenece a la última actualización
       if (row.date === latestDateStr) {
         if (!stats.has(row.client_id)) {
           stats.set(row.client_id, { name: row.client_name, spent: 0, campaigns: [] });
@@ -176,7 +182,6 @@ export default function AdsPage() {
       const budget = clientBudgets[clientId] || 0;
       const spent = value.spent;
       const avgDailySpend = currentDay > 0 ? spent / currentDay : 0;
-      // Proyección simple lineal
       const forecast = avgDailySpend * daysInMonth;
       const progress = budget > 0 ? (spent / budget) * 100 : 0;
       const remainingBudget = Math.max(0, budget - spent);
@@ -199,10 +204,11 @@ export default function AdsPage() {
           recommendedDaily, 
           status, 
           remainingBudget,
-          campaigns: value.campaigns.sort((a,b) => b.cost - a.cost) // Ordenar campañas por gasto
+          campaigns: value.campaigns.sort((a,b) => b.cost - a.cost) // Ordenar campañas por mayor gasto
       });
     });
-    return report.sort((a, b) => b.spent - a.spent); // Ordenar clientes por gasto total
+    // Ordenar clientes por quien gasta más
+    return report.sort((a, b) => b.spent - a.spent);
   }, [rawData, clientBudgets]);
 
   const totalBudget = reportData.reduce((acc, r) => acc + r.budget, 0);
@@ -215,11 +221,11 @@ export default function AdsPage() {
         {/* Cabecera */}
         <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Control Financiero SEM</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Control Presupuestario (Mes en Curso)</h1>
             <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
                <Clock className="w-4 h-4" />
                <span>
-                 Datos actualizados a: {lastSyncTime ? lastSyncTime.toLocaleDateString() : 'Pendiente'}
+                 Datos del: {lastSyncTime ? lastSyncTime.toLocaleDateString() : 'Esperando sincronización...'}
                  {lastSyncTime && ` (${lastSyncTime.toLocaleTimeString()})`}
                </span>
             </div>
@@ -227,7 +233,7 @@ export default function AdsPage() {
           <div className="flex gap-2">
             <Button onClick={handleStartSync} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white">
               <RefreshCw className={`w-4 h-4`} />
-              Sincronizar Datos
+              Sincronizar Ahora
             </Button>
           </div>
         </div>
@@ -235,7 +241,7 @@ export default function AdsPage() {
         {/* Tarjetas KPI */}
          <div className="grid gap-4 md:grid-cols-3">
            <Card className="bg-slate-900 text-white border-0 shadow-lg">
-             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-400">Total Invertido (Mes)</CardTitle></CardHeader>
+             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-400">Total Invertido (Este Mes)</CardTitle></CardHeader>
              <CardContent>
                <div className="text-3xl font-bold">{formatCurrency(totalSpent)}</div>
                <Progress value={totalBudget > 0 ? (totalSpent/totalBudget)*100 : 0} className="h-2 mt-3 bg-slate-700 [&>div]:bg-emerald-500" />
@@ -271,7 +277,7 @@ export default function AdsPage() {
                             </div>
                         </div>
 
-                        {/* Badges de Estado Resumido (Visible colapsado) */}
+                        {/* Badges de Estado Resumido */}
                         <div className="flex items-center gap-4">
                             {client.status === 'risk' && <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50"><AlertTriangle className="w-3 h-3 mr-1"/> Riesgo</Badge>}
                             {client.status === 'over' && <Badge variant="destructive">Excedido</Badge>}
@@ -284,13 +290,13 @@ export default function AdsPage() {
                   
                   <AccordionContent className="border-t border-slate-100 mt-2 pt-6 pb-6 px-2">
                     <div className="grid md:grid-cols-2 gap-8">
-                        {/* Panel de Control de Presupuesto */}
+                        {/* COLUMNA 1: Control de Presupuesto */}
                         <div className="space-y-6">
-                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Control Presupuestario</h3>
+                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Control Financiero</h3>
                             
                             <div className="space-y-4 bg-slate-50 p-4 rounded-md border border-slate-100">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-sm font-medium text-slate-600">Presupuesto Mensual</label>
+                                    <label className="text-sm font-medium text-slate-600">Límite Presupuestario</label>
                                     <div className="flex items-center gap-2">
                                         <span className="text-slate-400">€</span>
                                         <Input 
@@ -305,7 +311,7 @@ export default function AdsPage() {
 
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs text-slate-500">
-                                        <span>Progreso Real</span>
+                                        <span>Consumo Actual</span>
                                         <span>{client.progress.toFixed(1)}%</span>
                                     </div>
                                     <Progress 
@@ -316,7 +322,7 @@ export default function AdsPage() {
 
                                 <div className="grid grid-cols-2 gap-4 pt-2">
                                     <div className="bg-white p-3 rounded border border-slate-200">
-                                        <div className="text-xs text-slate-500">Proyección Fin Mes</div>
+                                        <div className="text-xs text-slate-500">Proyección Fin de Mes</div>
                                         <div className={`text-lg font-bold ${client.status === 'risk' ? 'text-amber-600' : 'text-slate-700'}`}>
                                             {formatCurrency(client.forecast)}
                                         </div>
@@ -331,14 +337,14 @@ export default function AdsPage() {
                             </div>
                         </div>
 
-                        {/* Desglose de Campañas */}
+                        {/* COLUMNA 2: Desglose de Campañas */}
                         <div className="space-y-4">
-                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Desglose por Campaña</h3>
+                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Detalle de Campañas</h3>
                             <div className="rounded-md border border-slate-200 overflow-hidden">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                                         <tr>
-                                            <th className="px-4 py-2">Campaña</th>
+                                            <th className="px-4 py-2">Nombre</th>
                                             <th className="px-4 py-2">Estado</th>
                                             <th className="px-4 py-2 text-right">Gasto</th>
                                             <th className="px-4 py-2 text-right">Valor Conv.</th>
@@ -356,7 +362,7 @@ export default function AdsPage() {
                                                             ? 'bg-green-100 text-green-700' 
                                                             : 'bg-gray-100 text-gray-500'
                                                     }`}>
-                                                        {camp.status === 'ENABLED' ? 'ACTIVA' : 'PAUSADA'}
+                                                        {camp.status === 'ENABLED' ? 'ON' : 'OFF'}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-2 text-right font-mono text-slate-700">
@@ -396,7 +402,7 @@ export default function AdsPage() {
                 Sincronizando Google Ads
               </DialogTitle>
               <DialogDescription className="text-slate-400">
-                Obteniendo desglose de campañas y costes actualizados.
+                Obteniendo desglose de campañas y costes del mes actual.
               </DialogDescription>
             </DialogHeader>
             
