@@ -11,7 +11,6 @@ const DEVELOPER_TOKEN = process.env.GOOGLE_DEVELOPER_TOKEN;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const MCC_ID = process.env.GOOGLE_MCC_ID;
 
-// Usamos la versión v22
 const API_VERSION = 'v22';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env"); process.exit(1); }
@@ -59,10 +58,6 @@ async function getClientAccounts(accessToken) {
 }
 
 async function getAccountLevelSpend(customerId, accessToken) {
-  // CAMBIO CLAVE:
-  // 1. Pedimos desglose por campaña (campaign) para que el acordeón funcione.
-  // 2. Filtramos por 'THIS_MONTH' para ver SOLO el gasto del mes actual (control presupuestario).
-  // 3. Incluimos 'metrics.conversions_value' para ver el retorno (ROAS).
   const query = `
     SELECT 
       campaign.id, 
@@ -93,7 +88,6 @@ async function getAccountLevelSpend(customerId, accessToken) {
           batch.results.forEach(row => { 
             rows.push({ 
               client_id: customerId, 
-              // ID compuesto para evitar duplicados si se corre varias veces al día
               campaign_id: `${row.campaign.id}`, 
               campaign_name: row.campaign.name, 
               status: row.campaign.status, 
@@ -109,7 +103,6 @@ async function getAccountLevelSpend(customerId, accessToken) {
     console.error(`🔴 Error Google API en cliente ${customerId}:`, await response.text());
   }
 
-  // Fallback si no hay gasto (para que no salga vacío en el panel)
   if (rows.length === 0) {
      const today = new Date().toISOString().split('T')[0];
      rows.push({ 
@@ -129,6 +122,7 @@ async function getAccountLevelSpend(customerId, accessToken) {
 async function processSyncJob(jobId) {
   const log = async (msg) => {
     console.log(`[Job ${jobId}] ${msg}`);
+    // Leemos logs actuales para hacer append (concatenar)
     const { data } = await supabase.from('ad_sync_logs').select('logs').eq('id', jobId).single();
     const currentLogs = data?.logs || [];
     await supabase.from('ad_sync_logs').update({ logs: [...currentLogs, msg] }).eq('id', jobId);
@@ -140,27 +134,18 @@ async function processSyncJob(jobId) {
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
-    await log(`📋 Clientes activos: ${clients.length}`);
+    await log(`📋 Clientes activos encontrados: ${clients.length}`);
 
     let totalRows = 0;
     for (const [index, client] of clients.entries()) {
-      process.stdout.write(`   [${index + 1}/${clients.length}] Procesando ${client.name}... `);
+      // --- CAMBIO IMPORTANTE: Enviamos el progreso [X/Y] a Supabase para que la web lo lea ---
+      await log(`[${index + 1}/${clients.length}] Procesando ${client.name}...`);
       
       const campaignData = await getAccountLevelSpend(client.id, token);
       
       if (campaignData.length > 0) {
-         const totalGasto = campaignData.reduce((sum, c) => sum + c.cost, 0);
-         const numCampañas = campaignData.filter(c => c.cost > 0).length;
-         
-         if (totalGasto > 0) {
-            console.log(`✅ ${totalGasto.toFixed(2)}€ (${numCampañas} campañas)`);
-         } else {
-            console.log(`⚠️ 0€`);
-         }
-
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
          
-         // Upsert: Actualiza el registro de HOY si ya existe
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
          
          if (error) {
@@ -172,7 +157,7 @@ async function processSyncJob(jobId) {
       }
     }
 
-    await log(`🎉 FIN. Gasto mensual actualizado.`);
+    await log(`🎉 FIN. Proceso completado exitosamente.`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
@@ -187,7 +172,6 @@ supabase.channel('ads-worker').on('postgres_changes', { event: 'INSERT', schema:
     processSyncJob(payload.new.id);
 }).subscribe();
 
-// Polling de seguridad
 setInterval(async () => {
   const { data } = await supabase.from('ad_sync_logs').select('id').eq('status', 'pending').limit(1);
   if (data?.length) {
@@ -196,4 +180,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker listo (API: ${API_VERSION}). Esperando trabajos...`);
+console.log(`📡 Worker V22 listo. Esperando trabajos...`);
