@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, TrendingUp, TrendingDown, Unlink, DollarSign, Target
+  Info, TrendingUp, TrendingDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
