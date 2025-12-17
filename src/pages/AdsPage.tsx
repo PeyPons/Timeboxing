@@ -244,4 +244,43 @@ export default function AdsPage() {
                           }>
                             {client.progress.toFixed(0)}%
                           </span>
-                          <span className="text-slate-400">{formatCurrency(client.remainingBudget
+                          <span className="text-slate-400">{formatCurrency(client.remainingBudget)} rest.</span>
+                        </div>
+                        <Progress 
+                          value={Math.min(client.progress, 100)} 
+                          className={`h-2 ${
+                            client.status === 'over' ? 'bg-red-100 [&>div]:bg-red-500' :
+                            client.status === 'risk' ? 'bg-amber-100 [&>div]:bg-amber-500' :
+                            'bg-emerald-100 [&>div]:bg-emerald-500'
+                          }`} 
+                        />
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="text-right font-medium text-slate-900">
+                      {formatCurrency(client.spent)}
+                    </TableCell>
+
+                    <TableCell className="text-right font-mono text-slate-600">
+                      {client.budget > 0 ? formatCurrency(client.forecast) : '-'}
+                      {client.status === 'over' && <AlertTriangle className="inline w-3 h-3 text-red-500 ml-1" />}
+                    </TableCell>
+
+                    <TableCell className="text-right font-mono font-medium text-indigo-700 bg-indigo-50/30">
+                       {client.budget > 0 && client.remainingBudget > 0 ? (
+                         <div className="flex items-center justify-end gap-1">
+                           {formatCurrency(client.recommendedDaily)}
+                         </div>
+                       ) : '-'}
+                    </TableCell>
+
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      </div>
+    </AppLayout>
+  );
+}
