@@ -4,25 +4,33 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, Clock, Terminal, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { 
+  RefreshCw, Clock, Terminal, CheckCircle2, XCircle, AlertTriangle, 
+  Search, Settings, EyeOff, Layers, Filter 
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
 
+// --- TIPOS ---
 interface CampaignData {
   campaign_id: string;
   campaign_name: string;
   status: string;
   cost: number;
   conversions_value?: number;
+  original_client_name?: string; // Para saber de qué sub-cuenta viene
 }
 
 interface ClientPacing {
   client_id: string;
   client_name: string;
+  is_group: boolean; // Flag para saber si es agrupación
   budget: number;
   spent: number;
   progress: number;
@@ -31,22 +39,31 @@ interface ClientPacing {
   status: 'ok' | 'risk' | 'over' | 'under';
   remainingBudget: number;
   campaigns: CampaignData[];
+  isHidden: boolean;
+  groupName?: string;
 }
 
 const formatProjectName = (name: string) => name.replace(/^(Cliente|Client)\s*[-:]?\s*/i, '');
 
 export default function AdsPage() {
   const [rawData, setRawData] = useState<any[]>([]);
-  const [clientBudgets, setClientBudgets] = useState<Record<string, number>>({});
+  const [clientSettings, setClientSettings] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
-  // --- ESTADO SINCRONIZACIÓN ---
+  // --- FILTROS Y BÚSQUEDA ---
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
+
+  // --- MODALES ---
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
   const [syncProgress, setSyncProgress] = useState(0); 
   
+  // Modal de Configuración de Cliente
+  const [editingClient, setEditingClient] = useState<{id: string, name: string, group: string, hidden: boolean} | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
@@ -54,18 +71,25 @@ export default function AdsPage() {
       const { data: adsData } = await supabase.from('google_ads_campaigns').select('*');
       const { data: settingsData } = await supabase.from('client_settings').select('*');
       
-      const budgetsMap: Record<string, number> = {};
-      settingsData?.forEach((s: any) => { budgetsMap[s.client_id] = Number(s.budget_limit) || 0; });
+      const settingsMap: Record<string, any> = {};
+      settingsData?.forEach((s: any) => { 
+        settingsMap[s.client_id] = {
+          budget: Number(s.budget_limit) || 0,
+          group_name: s.group_name || '',
+          is_hidden: s.is_hidden || false
+        }; 
+      });
 
       setRawData(adsData || []);
-      setClientBudgets(budgetsMap);
+      setClientSettings(settingsMap);
 
       if (adsData && adsData.length > 0) {
         const dates = adsData.map(d => new Date(d.date).getTime());
         setLastSyncTime(new Date(Math.max(...dates)));
       }
     } catch (error) {
-      console.error('Error fetching data');
+      console.error('Error fetching data', error);
+      toast.error('Error cargando datos');
     } finally {
       setLoading(false);
     }
@@ -73,7 +97,7 @@ export default function AdsPage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- WORKER TRIGGER ---
+  // --- WORKER SYNC ---
   const handleStartSync = async () => {
     setIsSyncing(true);
     setSyncStatus('running');
@@ -100,16 +124,14 @@ export default function AdsPage() {
             const currentLogs = newRow.logs || [];
             setSyncLogs(currentLogs);
             
-            // Detectar progreso [X/Y] en los logs
             if (currentLogs.length > 0) {
                 const lastLog = currentLogs[currentLogs.length - 1];
                 const match = lastLog.match(/\[(\d+)\/(\d+)\]/);
                 if (match) {
                     const current = parseInt(match[1]);
                     const total = parseInt(match[2]);
-                    const percentage = (current / total) * 100;
-                    setSyncProgress(percentage);
-                    fetchData(); // Actualizar tabla en vivo
+                    setSyncProgress((current / total) * 100);
+                    fetchData(); 
                 }
             }
 
@@ -140,14 +162,42 @@ export default function AdsPage() {
     }
   }, [syncLogs, isSyncing]);
 
+  // --- GESTIÓN DE PRESUPUESTOS Y CONFIGURACIÓN ---
   const handleSaveBudget = async (clientId: string, amount: string) => {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount)) return;
-    setClientBudgets(prev => ({ ...prev, [clientId]: numAmount }));
-    await supabase.from('client_settings').upsert({ client_id: clientId, budget_limit: numAmount }, { onConflict: 'client_id' });
+    
+    // Actualizamos estado local
+    setClientSettings(prev => ({
+      ...prev,
+      [clientId]: { ...prev[clientId], budget: numAmount }
+    }));
+
+    await supabase.from('client_settings').upsert({ 
+      client_id: clientId, 
+      budget_limit: numAmount 
+    }, { onConflict: 'client_id' });
   };
 
-  // --- CÁLCULO DE DATOS (CORREGIDO PARA EVITAR DUPLICADOS) ---
+  const handleSaveClientSettings = async () => {
+    if (!editingClient) return;
+    
+    // Si es un grupo, esto es complejo, así que asumimos que editamos 
+    // la configuración del ID principal (o tendríamos que iterar).
+    // Para simplificar: La edición se hace POR CUENTA REAL, no por grupo.
+    
+    await supabase.from('client_settings').upsert({
+      client_id: editingClient.id,
+      group_name: editingClient.group,
+      is_hidden: editingClient.hidden
+    }, { onConflict: 'client_id' });
+
+    setEditingClient(null);
+    fetchData(); // Recargamos para ver los cambios de agrupación
+    toast.success('Configuración guardada');
+  };
+
+  // --- LÓGICA DE AGRUPACIÓN Y CÁLCULO ---
   const reportData = useMemo(() => {
     if (!rawData.length) return [];
     
@@ -162,52 +212,82 @@ export default function AdsPage() {
     const currentDay = new Date().getDate();
     const remainingDays = daysInMonth - currentDay;
 
-    const stats = new Map<string, { name: string, spent: number, campaigns: CampaignData[] }>();
+    // Mapa temporal para agrupar
+    const stats = new Map<string, { 
+      name: string, 
+      spent: number, 
+      budget: number,
+      is_group: boolean,
+      isHidden: boolean,
+      realIds: string[], // IDs reales que componen este grupo
+      campaigns: CampaignData[] 
+    }>();
 
     rawData.forEach(row => {
-      // FILTRO DE SEGURIDAD: Solo procesar datos de hoy
       if (row.date === latestDateStr) {
-        
-        // --- CORRECCIÓN CRÍTICA ---
-        // Si detectamos una fila que parece un "Total Agregado" antiguo, la ignoramos.
-        // Esto evita que se sume (Total Cuenta + Campañas Individuales).
-        const isLegacyTotal = 
-            row.campaign_id.includes('MONTHLY-TOTAL') || 
-            row.campaign_id.includes('TOTAL-MONTH') ||
-            row.campaign_name.includes('Gasto Total') ||
-            row.campaign_name.includes('Sin Gasto');
-
-        // Solo la procesamos si NO es un total legado (o si es la única fila que hay y tiene coste 0)
-        // Pero si tiene coste > 0 y parece un total, fuera.
+        // Filtrar filas de totales antiguos
+        const isLegacyTotal = row.campaign_id.includes('MONTHLY-TOTAL') || row.campaign_id.includes('TOTAL-MONTH');
         if (isLegacyTotal && row.cost > 0) return; 
 
-        if (!stats.has(row.client_id)) {
-          stats.set(row.client_id, { name: row.client_name, spent: 0, campaigns: [] });
+        // OBTENER CONFIGURACIÓN DEL CLIENTE
+        const settings = clientSettings[row.client_id] || { budget: 0, group_name: '', is_hidden: false };
+        
+        // DETERMINAR CLAVE DE AGRUPACIÓN (ID Real o Nombre de Grupo)
+        const groupKey = settings.group_name && settings.group_name.trim() !== '' 
+          ? `GROUP-${settings.group_name}` 
+          : row.client_id;
+        
+        const displayName = settings.group_name && settings.group_name.trim() !== '' 
+          ? settings.group_name 
+          : row.client_name;
+
+        if (!stats.has(groupKey)) {
+          stats.set(groupKey, { 
+            name: displayName, 
+            spent: 0, 
+            budget: 0,
+            is_group: groupKey.startsWith('GROUP-'),
+            isHidden: settings.is_hidden, // Si uno del grupo es visible, el grupo debería serlo? Asumimos herencia simple
+            realIds: [],
+            campaigns: [] 
+          });
         }
-        const clientStats = stats.get(row.client_id)!;
         
-        // Sumamos el coste
-        clientStats.spent += row.cost;
+        const entry = stats.get(groupKey)!;
         
-        // Agregamos al desglose (si no es fila placeholder de coste 0)
+        // Sumamos coste
+        entry.spent += row.cost;
+        
+        // Añadimos ID real si es nuevo (para sumar presupuestos después una sola vez por cliente)
+        if (!entry.realIds.includes(row.client_id)) {
+           entry.realIds.push(row.client_id);
+           // Sumamos el presupuesto de este cliente al total del grupo
+           entry.budget += settings.budget;
+           // Si alguno del grupo no está oculto, el grupo se muestra (o lógica estricta)
+           // Aquí usaremos: si settings.is_hidden es false, el grupo es visible.
+           if (!settings.is_hidden) entry.isHidden = false;
+        }
+        
+        // Agregamos campaña (evitando placeholders sin coste si ya hay otras)
         if (!isLegacyTotal || row.cost === 0) {
-            clientStats.campaigns.push({
+            entry.campaigns.push({
                 campaign_id: row.campaign_id,
                 campaign_name: row.campaign_name,
                 status: row.status,
                 cost: row.cost,
-                conversions_value: row.conversions_value
+                conversions_value: row.conversions_value,
+                original_client_name: row.client_name // Para saber de quién es en un grupo
             });
         }
       }
     });
 
+    // Construir array final
     const report: ClientPacing[] = [];
-    stats.forEach((value, clientId) => {
-      const budget = clientBudgets[clientId] || 0;
+    stats.forEach((value, key) => {
+      const budget = value.budget;
       const spent = value.spent;
       const avgDailySpend = currentDay > 0 ? spent / currentDay : 0;
-      // Proyección corregida
       const forecast = avgDailySpend * daysInMonth;
       const progress = budget > 0 ? (spent / budget) * 100 : 0;
       const remainingBudget = Math.max(0, budget - spent);
@@ -221,8 +301,9 @@ export default function AdsPage() {
       }
 
       report.push({ 
-          client_id: clientId, 
-          client_name: value.name, 
+          client_id: key, // Puede ser un ID real o "GROUP-Bull"
+          client_name: value.name,
+          is_group: value.is_group,
           budget, 
           spent, 
           progress, 
@@ -230,11 +311,30 @@ export default function AdsPage() {
           recommendedDaily, 
           status, 
           remainingBudget,
+          isHidden: value.isHidden,
           campaigns: value.campaigns.sort((a,b) => b.cost - a.cost)
       });
     });
-    return report.sort((a, b) => b.spent - a.spent);
-  }, [rawData, clientBudgets]);
+
+    // FILTRADO FINAL (Buscador + Ocultos)
+    let filtered = report;
+
+    // 1. Filtro Ocultos
+    if (!showHidden) {
+      filtered = filtered.filter(c => !c.isHidden);
+    }
+
+    // 2. Filtro Buscador
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      filtered = filtered.filter(c => 
+        c.client_name.toLowerCase().includes(lowerTerm) ||
+        c.campaigns.some(camp => camp.campaign_name.toLowerCase().includes(lowerTerm))
+      );
+    }
+
+    return filtered.sort((a, b) => b.spent - a.spent);
+  }, [rawData, clientSettings, searchTerm, showHidden]);
 
   const totalBudget = reportData.reduce((acc, r) => acc + r.budget, 0);
   const totalSpent = reportData.reduce((acc, r) => acc + r.spent, 0);
@@ -243,30 +343,51 @@ export default function AdsPage() {
     <AppLayout>
       <div className="space-y-6 animate-in fade-in duration-500 pb-20">
         
-        {/* Cabecera */}
-        <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Control Presupuestario (Mes en Curso)</h1>
-            <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
-               <Clock className="w-4 h-4" />
-               <span>
-                 Datos actualizados a: {lastSyncTime ? lastSyncTime.toLocaleDateString() : 'Pendiente'}
-                 {lastSyncTime && ` (${lastSyncTime.toLocaleTimeString()})`}
-               </span>
+        {/* Cabecera y Controles */}
+        <div className="flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900">Control Presupuestario</h1>
+                    <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
+                    <Clock className="w-4 h-4" />
+                    <span>Datos al: {lastSyncTime?.toLocaleString() || '...'}</span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button onClick={handleStartSync} disabled={isSyncing} className="bg-slate-900 text-white">
+                        <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+                        Sincronizar
+                    </Button>
+                </div>
             </div>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleStartSync} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white">
-              <RefreshCw className={`w-4 h-4`} />
-              Sincronizar Ahora
-            </Button>
-          </div>
+
+            {/* BARRA DE HERRAMIENTAS (Buscador y Filtros) */}
+            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+                <div className="relative w-full md:w-96">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input 
+                        placeholder="Buscar cliente o campaña..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9 bg-slate-50 border-slate-200"
+                    />
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <Switch id="show-hidden" checked={showHidden} onCheckedChange={setShowHidden} />
+                        <Label htmlFor="show-hidden" className="cursor-pointer flex items-center gap-1">
+                            {showHidden ? <EyeOff className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
+                            Ver Ocultos
+                        </Label>
+                    </div>
+                </div>
+            </div>
         </div>
 
         {/* KPIs */}
          <div className="grid gap-4 md:grid-cols-3">
            <Card className="bg-slate-900 text-white border-0 shadow-lg">
-             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-400">Total Invertido (Mes)</CardTitle></CardHeader>
+             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-400">Inversión Total</CardTitle></CardHeader>
              <CardContent>
                <div className="text-3xl font-bold">{formatCurrency(totalSpent)}</div>
                <Progress value={totalBudget > 0 ? (totalSpent/totalBudget)*100 : 0} className="h-2 mt-3 bg-slate-700 [&>div]:bg-emerald-500" />
@@ -275,24 +396,33 @@ export default function AdsPage() {
            </Card>
          </div>
 
-         {/* Lista Clientes */}
+         {/* LISTADO DE CLIENTES */}
          <div className="space-y-4">
             <Accordion type="single" collapsible className="w-full space-y-2">
               {reportData.map((client) => (
                 <AccordionItem 
                   key={client.client_id} 
                   value={client.client_id} 
-                  className="bg-white border border-slate-200 rounded-lg shadow-sm px-2"
+                  className={`bg-white border rounded-lg shadow-sm px-2 ${client.isHidden ? 'opacity-60 border-dashed border-slate-300' : 'border-slate-200'}`}
                 >
-                  <AccordionTrigger className="hover:no-underline py-4 px-2">
+                  <AccordionTrigger className="hover:no-underline py-4 px-2 group">
                     <div className="flex flex-col md:flex-row md:items-center justify-between w-full pr-4 gap-4">
                         <div className="flex items-center gap-3">
+                            {/* Semáforo */}
                             <div className={`w-2 h-10 rounded-full ${
                                 client.status === 'over' ? 'bg-red-500' : 
                                 client.status === 'risk' ? 'bg-amber-500' : 'bg-emerald-500'
                             }`} />
+                            
                             <div className="text-left">
-                                <div className="font-bold text-lg text-slate-900">{formatProjectName(client.client_name)}</div>
+                                <div className="flex items-center gap-2">
+                                    <span className="font-bold text-lg text-slate-900">
+                                        {formatProjectName(client.client_name)}
+                                    </span>
+                                    {/* Badges de Estado */}
+                                    {client.is_group && <Badge variant="secondary" className="text-[10px] gap-1"><Layers className="w-3 h-3"/> GRUPO</Badge>}
+                                    {client.isHidden && <Badge variant="outline" className="text-[10px]">OCULTO</Badge>}
+                                </div>
                                 <div className="text-xs text-slate-500 flex gap-2">
                                    <span>Gastado: {formatCurrency(client.spent)}</span>
                                    <span>•</span>
@@ -302,6 +432,31 @@ export default function AdsPage() {
                         </div>
 
                         <div className="flex items-center gap-4">
+                            {/* BOTÓN DE CONFIGURACIÓN DE CLIENTE */}
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-slate-900"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Si es grupo, abrimos configuración genérica o bloqueamos
+                                    // Para simplificar, abrimos configuración del primer ID real si es un cliente único
+                                    if (!client.is_group) {
+                                        setEditingClient({
+                                            id: client.client_id,
+                                            name: client.client_name,
+                                            // Buscamos settings actuales
+                                            group: clientSettings[client.client_id]?.group_name || '',
+                                            hidden: clientSettings[client.client_id]?.is_hidden || false
+                                        });
+                                    } else {
+                                       toast.info("Para editar un grupo, modifica las cuentas individuales que lo componen.");
+                                    }
+                                }}
+                            >
+                                <Settings className="w-4 h-4" />
+                            </Button>
+
                             {client.status === 'risk' && <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50"><AlertTriangle className="w-3 h-3 mr-1"/> Riesgo</Badge>}
                             {client.status === 'over' && <Badge variant="destructive">Excedido</Badge>}
                             <div className="text-right hidden md:block">
@@ -313,21 +468,29 @@ export default function AdsPage() {
                   
                   <AccordionContent className="border-t border-slate-100 mt-2 pt-6 pb-6 px-2">
                     <div className="grid md:grid-cols-2 gap-8">
-                        {/* Panel Financiero */}
+                        {/* PANEL FINANCIERO */}
                         <div className="space-y-6">
-                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Control Financiero</h3>
+                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                                Control Financiero
+                                {client.is_group && <span className="text-xs font-normal text-slate-400 normal-case">(Suma de cuentas agrupadas)</span>}
+                            </h3>
+                            
                             <div className="space-y-4 bg-slate-50 p-4 rounded-md border border-slate-100">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-sm font-medium text-slate-600">Límite Presupuestario</label>
+                                    <label className="text-sm font-medium text-slate-600">Presupuesto {client.is_group ? 'Total' : ''}</label>
                                     <div className="flex items-center gap-2">
                                         <span className="text-slate-400">€</span>
-                                        <Input 
-                                            type="number" 
-                                            defaultValue={client.budget > 0 ? client.budget : ''} 
-                                            onBlur={(e) => handleSaveBudget(client.client_id, e.target.value)}
-                                            className="h-8 w-24 text-right bg-white" 
-                                            placeholder="0"
-                                        />
+                                        {client.is_group ? (
+                                            <span className="font-mono font-bold text-slate-700">{client.budget}</span>
+                                        ) : (
+                                            <Input 
+                                                type="number" 
+                                                defaultValue={client.budget > 0 ? client.budget : ''} 
+                                                onBlur={(e) => handleSaveBudget(client.client_id, e.target.value)}
+                                                className="h-8 w-24 text-right bg-white" 
+                                                placeholder="0"
+                                            />
+                                        )}
                                     </div>
                                 </div>
 
@@ -359,12 +522,12 @@ export default function AdsPage() {
                             </div>
                         </div>
 
-                        {/* Desglose Campañas */}
+                        {/* DESGLOSE CAMPAÑAS */}
                         <div className="space-y-4">
                             <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Detalle de Campañas</h3>
-                            <div className="rounded-md border border-slate-200 overflow-hidden">
+                            <div className="rounded-md border border-slate-200 overflow-hidden max-h-[400px] overflow-y-auto">
                                 <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                                    <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200 sticky top-0">
                                         <tr>
                                             <th className="px-4 py-2">Campaña</th>
                                             <th className="px-4 py-2">Estado</th>
@@ -373,13 +536,18 @@ export default function AdsPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {client.campaigns.map(camp => (
-                                            <tr key={camp.campaign_id} className="hover:bg-slate-50/50">
-                                                <td className="px-4 py-2 font-medium text-slate-700 max-w-[200px] truncate" title={camp.campaign_name}>
-                                                    {camp.campaign_name}
+                                        {client.campaigns.map((camp, idx) => (
+                                            <tr key={`${camp.campaign_id}-${idx}`} className="hover:bg-slate-50/50">
+                                                <td className="px-4 py-2">
+                                                    <div className="font-medium text-slate-700 max-w-[180px] truncate" title={camp.campaign_name}>
+                                                        {camp.campaign_name}
+                                                    </div>
+                                                    {/* Si es grupo, mostramos a qué cuenta pertenece esta campaña */}
+                                                    {client.is_group && (
+                                                        <div className="text-[10px] text-slate-400">{camp.original_client_name}</div>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-2">
-                                                    {/* CORRECCIÓN VISUAL: Separación y diseño limpio */}
                                                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                                         camp.status === 'ENABLED' 
                                                             ? 'bg-green-100 text-green-700' 
@@ -396,13 +564,6 @@ export default function AdsPage() {
                                                 </td>
                                             </tr>
                                         ))}
-                                        {client.campaigns.length === 0 && (
-                                            <tr>
-                                                <td colSpan={4} className="px-4 py-8 text-center text-slate-400 italic">
-                                                    Sin datos este mes.
-                                                </td>
-                                            </tr>
-                                        )}
                                     </tbody>
                                 </table>
                             </div>
@@ -414,7 +575,44 @@ export default function AdsPage() {
             </Accordion>
          </div>
 
-        {/* MODAL SYNC */}
+         {/* DIALOG DE EDICIÓN DE CLIENTE */}
+         <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Configurar Cliente</DialogTitle>
+                    <DialogDescription>
+                        Ajusta las preferencias para {editingClient?.name}
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <Label>Nombre del Grupo (Holding)</Label>
+                        <Input 
+                            placeholder="Ej: Bull Hotels" 
+                            value={editingClient?.group || ''}
+                            onChange={(e) => setEditingClient(prev => prev ? {...prev, group: e.target.value} : null)}
+                        />
+                        <p className="text-xs text-slate-500">
+                            Si escribes el mismo nombre en varios clientes, se agruparán automáticamente en el panel.
+                        </p>
+                    </div>
+                    <div className="flex items-center space-x-2 pt-2">
+                        <Switch 
+                            id="hide-mode" 
+                            checked={editingClient?.hidden || false}
+                            onCheckedChange={(checked) => setEditingClient(prev => prev ? {...prev, hidden: checked} : null)}
+                        />
+                        <Label htmlFor="hide-mode">Ocultar del listado principal</Label>
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setEditingClient(null)}>Cancelar</Button>
+                    <Button onClick={handleSaveClientSettings}>Guardar Cambios</Button>
+                </DialogFooter>
+            </DialogContent>
+         </Dialog>
+
+        {/* DIALOG DE SYNC (EL DE SIEMPRE) */}
         <Dialog open={isSyncing} onOpenChange={(open) => { if(syncStatus !== 'running') setIsSyncing(open); }}>
           <DialogContent className="sm:max-w-md bg-slate-950 text-slate-100 border-slate-800">
             <DialogHeader>
@@ -422,50 +620,22 @@ export default function AdsPage() {
                 {syncStatus === 'running' && <RefreshCw className="w-5 h-5 animate-spin text-blue-500" />}
                 {syncStatus === 'completed' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
                 {syncStatus === 'error' && <XCircle className="w-5 h-5 text-red-500" />}
-                Sincronizando Google Ads
+                Sincronizando
               </DialogTitle>
               <DialogDescription className="text-slate-400">
-                 {syncStatus === 'running' 
-                    ? `Procesando cuentas... ${Math.round(syncProgress)}%`
-                    : 'Proceso finalizado.'}
+                 {syncStatus === 'running' ? `Progreso: ${Math.round(syncProgress)}%` : 'Proceso finalizado.'}
               </DialogDescription>
             </DialogHeader>
-            
-            <div className="w-full">
-                <Progress value={syncProgress} className="h-2 bg-slate-800 [&>div]:bg-blue-500 transition-all duration-500" />
-            </div>
-
+            <div className="w-full"><Progress value={syncProgress} className="h-2 bg-slate-800 [&>div]:bg-blue-500" /></div>
             <div className="bg-black/50 rounded-md p-4 font-mono text-xs text-green-400 h-64 flex flex-col shadow-inner border border-slate-800 mt-2">
-              <div className="flex items-center gap-2 border-b border-slate-800 pb-2 mb-2 text-slate-500">
-                <Terminal className="w-3 h-3" />
-                <span>Worker Output Log</span>
-              </div>
-              
               <div 
-                className="flex-1 overflow-y-auto min-h-0 space-y-1 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent" 
+                className="flex-1 overflow-y-auto min-h-0 space-y-1" 
                 ref={scrollRef}
               >
                   {syncLogs.map((log, i) => (
-                    <div key={i} className="break-words border-l-2 border-transparent hover:border-slate-700 pl-1">
-                      <span className="text-slate-600 mr-2 opacity-50">[{new Date().toLocaleTimeString()}]</span>
-                      {log}
-                    </div>
+                    <div key={i} className="break-words border-l-2 border-transparent hover:border-slate-700 pl-1">{log}</div>
                   ))}
-                  {syncStatus === 'running' && (
-                    <div className="animate-pulse text-blue-500">_</div>
-                  )}
               </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <Button 
-                onClick={() => setIsSyncing(false)} 
-                disabled={syncStatus === 'running'}
-                variant={syncStatus === 'completed' ? 'default' : 'secondary'}
-                className="bg-slate-800 hover:bg-slate-700 text-white border-slate-700"
-              >
-                {syncStatus === 'running' ? 'Procesando...' : 'Cerrar'}
-              </Button>
             </div>
           </DialogContent>
         </Dialog>
