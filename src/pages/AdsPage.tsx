@@ -1,196 +1,159 @@
-import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Megaphone, TrendingUp, DollarSign, MousePointer, Activity, RefreshCw } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils'; // Asegúrate de que esta utilidad exista o usa una simple
+import { RefreshCw, TrendingUp, MousePointer, Eye } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { formatCurrency, formatProjectName } from '@/lib/utils';
+import { toast } from 'sonner';
 
-// --- TIPOS DE DATOS (Simulando la API de Google) ---
-type CampaignStatus = 'ENABLED' | 'PAUSED' | 'REMOVED';
-
-interface GoogleAdsCampaign {
+interface AdCampaign {
   id: string;
-  name: string;
-  status: CampaignStatus;
-  dailyBudget: number;
-  totalBudget: number; // Presupuesto total asignado (si aplica) o calculado
+  client_name: string;
+  campaign_name: string;
+  status: string;
   cost: number;
   clicks: number;
   impressions: number;
 }
 
-interface GoogleAdsClient {
-  id: string;
-  name: string;
-  currencyCode: string;
-  campaigns: GoogleAdsCampaign[];
-}
-
-// --- DATOS MOCK (Lo que reemplazaremos con la API real más adelante) ---
-const MOCK_MCC_DATA: GoogleAdsClient[] = [
-  {
-    id: '123-456-7890',
-    name: 'Cliente: Furgomera (Ejemplo)',
-    currencyCode: 'EUR',
-    campaigns: [
-      { id: 'c1', name: 'Search - Alquiler Furgonetas', status: 'ENABLED', dailyBudget: 50, totalBudget: 1500, cost: 450.20, clicks: 120, impressions: 4500 },
-      { id: 'c2', name: 'Display - Retargeting Verano', status: 'PAUSED', dailyBudget: 20, totalBudget: 600, cost: 120.50, clicks: 45, impressions: 12000 },
-    ]
-  },
-  {
-    id: '987-654-3210',
-    name: 'Cliente: Restaurante El Patio',
-    currencyCode: 'EUR',
-    campaigns: [
-      { id: 'c3', name: 'Local - Cenas Fin de Semana', status: 'ENABLED', dailyBudget: 30, totalBudget: 900, cost: 210.00, clicks: 85, impressions: 3200 },
-    ]
-  }
-];
-
 export default function AdsPage() {
-  const [selectedClientId, setSelectedClientId] = useState<string>(MOCK_MCC_DATA[0].id);
-  const [isLoading, setIsLoading] = useState(false);
+  const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Filtrar el cliente seleccionado
-  const selectedClient = MOCK_MCC_DATA.find(c => c.id === selectedClientId) || MOCK_MCC_DATA[0];
+  const fetchCampaigns = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('google_ads_campaigns')
+        .select('*')
+        .order('cost', { ascending: false });
 
-  // Cálculos rápidos para los KPIs superiores
-  const totalCost = selectedClient.campaigns.reduce((sum, c) => sum + c.cost, 0);
-  const totalClicks = selectedClient.campaigns.reduce((sum, c) => sum + c.clicks, 0);
-  const activeCampaigns = selectedClient.campaigns.filter(c => c.status === 'ENABLED').length;
-
-  const handleRefresh = () => {
-    setIsLoading(true);
-    // Aquí llamaremos a la API real en el futuro
-    setTimeout(() => setIsLoading(false), 1000);
+      if (error) throw error;
+      setCampaigns(data || []);
+    } catch (error) {
+      console.error('Error fetching ads:', error);
+      toast.error('No se pudieron cargar las campañas');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return (
-    <div className="p-6 space-y-6 animate-in fade-in duration-500">
-      
-      {/* HEADER Y SELECTOR DE CLIENTE */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Megaphone className="h-8 w-8 text-blue-600" />
-            Google Ads Manager
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Supervisión de cuentas MCC y rendimiento de campañas.
-          </p>
-        </div>
+  useEffect(() => {
+    fetchCampaigns();
+  }, []);
 
-        <div className="flex items-center gap-2 bg-card p-2 rounded-lg border shadow-sm">
-          <Select value={selectedClientId} onValueChange={setSelectedClientId}>
-            <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Seleccionar Cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              {MOCK_MCC_DATA.map(client => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name} ({client.id})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+  // Cálculos de totales
+  const totalCost = campaigns.reduce((acc, curr) => acc + curr.cost, 0);
+  const totalClicks = campaigns.reduce((acc, curr) => acc + curr.clicks, 0);
+  const totalImpressions = campaigns.reduce((acc, curr) => acc + curr.impressions, 0);
+
+  return (
+    <AppLayout>
+      <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Google Ads (Tiempo Real)</h1>
+            <p className="text-slate-500">Datos sincronizados directamente de tu cuenta MCC.</p>
+          </div>
+          <Button onClick={fetchCampaigns} variant="outline" size="sm" disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Actualizar
           </Button>
         </div>
-      </div>
 
-      {/* KPIS PRINCIPALES DEL CLIENTE */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Gasto Total</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCost.toFixed(2)} €</div>
-            <p className="text-xs text-muted-foreground">En el periodo seleccionado</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Clics Totales</CardTitle>
-            <MousePointer className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalClicks}</div>
-            <p className="text-xs text-muted-foreground">Interacciones directas</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Campañas Activas</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeCampaigns}</div>
-            <p className="text-xs text-muted-foreground">De {selectedClient.campaigns.length} campañas totales</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">CTR Promedio</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {totalClicks > 0 ? ((totalClicks / (selectedClient.campaigns.reduce((s,c)=>s+c.impressions,0) || 1)) * 100).toFixed(2) : 0}%
-            </div>
-            <p className="text-xs text-muted-foreground">Rendimiento global</p>
-          </CardContent>
-        </Card>
-      </div>
+        {/* Tarjetas de Resumen */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="bg-white shadow-sm border-slate-200">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">Inversión Total</CardTitle>
+              <TrendingUp className="h-4 w-4 text-emerald-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-slate-900">{formatCurrency(totalCost)}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white shadow-sm border-slate-200">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">Clics Totales</CardTitle>
+              <MousePointer className="h-4 w-4 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-slate-900">{totalClicks.toLocaleString()}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white shadow-sm border-slate-200">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">Impresiones</CardTitle>
+              <Eye className="h-4 w-4 text-purple-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-slate-900">{totalImpressions.toLocaleString()}</div>
+            </CardContent>
+          </Card>
+        </div>
 
-      {/* TABLA DE CAMPAÑAS */}
-      <Card className="col-span-4">
-        <CardHeader>
-          <CardTitle>Desglose de Campañas</CardTitle>
-          <CardDescription>
-            Estado actual y presupuestos asignados por campaña.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[300px]">Campaña</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Presupuesto Diario</TableHead>
-                <TableHead className="text-right">Total (Est.)</TableHead>
-                <TableHead className="text-right">Gasto Real</TableHead>
-                <TableHead className="text-right">Clics</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {selectedClient.campaigns.map((campaign) => (
-                <TableRow key={campaign.id}>
-                  <TableCell className="font-medium">
-                    <div className="flex flex-col">
-                      <span>{campaign.name}</span>
-                      <span className="text-xs text-muted-foreground font-mono">{campaign.id}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={campaign.status === 'ENABLED' ? 'default' : 'secondary'} className={campaign.status === 'ENABLED' ? 'bg-green-600 hover:bg-green-700' : ''}>
-                      {campaign.status === 'ENABLED' ? 'Activa' : 'Pausada'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-mono">{campaign.dailyBudget.toFixed(2)} €</TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground">{campaign.totalBudget.toFixed(2)} €</TableCell>
-                  <TableCell className="text-right font-bold">{campaign.cost.toFixed(2)} €</TableCell>
-                  <TableCell className="text-right">{campaign.clicks}</TableCell>
+        {/* Tabla de Campañas */}
+        <Card className="shadow-sm border-slate-200 overflow-hidden">
+          <div className="p-0">
+            <Table>
+              <TableHeader className="bg-slate-50">
+                <TableRow>
+                  <TableHead className="font-semibold text-slate-700">Cliente</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Campaña</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Estado</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-700">Inversión</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-700">Clics</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-700">Impresiones</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center">Cargando datos...</TableCell>
+                  </TableRow>
+                ) : campaigns.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center">No hay campañas activas sincronizadas.</TableCell>
+                  </TableRow>
+                ) : (
+                  campaigns.map((camp) => (
+                    <TableRow key={camp.id} className="hover:bg-slate-50/50">
+                      <TableCell className="font-medium text-indigo-600">
+                        {formatProjectName(camp.client_name)}
+                      </TableCell>
+                      <TableCell>{camp.campaign_name}</TableCell>
+                      <TableCell>
+                        <Badge variant={camp.status === 'ENABLED' ? 'default' : 'secondary'} className="text-xs">
+                          {camp.status === 'ENABLED' ? 'Activa' : camp.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium">
+                        {formatCurrency(camp.cost)}
+                      </TableCell>
+                      <TableCell className="text-right text-slate-600">
+                        {camp.clicks.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right text-slate-600">
+                        {camp.impressions.toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      </div>
+    </AppLayout>
   );
 }
