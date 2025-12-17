@@ -72,6 +72,8 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
       metrics.cost_micros,
       metrics.conversions_value,
       metrics.conversions
+      metrics.clicks,
+      metrics.impressions
     FROM campaign 
     WHERE 
       segments.date BETWEEN '${dateRange.firstDay}' AND '${dateRange.today}'
@@ -104,7 +106,9 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
               cost: cost,
               conversions_value: row.metrics.conversionsValue ? parseFloat(row.metrics.conversionsValue) : 0,
               conversions: row.metrics.conversions ? parseFloat(row.metrics.conversions) : 0,
-              daily_budget: budget
+              daily_budget: budget,
+              clicks: row.metrics.clicks ? parseInt(row.metrics.clicks) : 0,
+              impressions: row.metrics.impressions ? parseInt(row.metrics.impressions) : 0
             }); 
           }); 
         } 
