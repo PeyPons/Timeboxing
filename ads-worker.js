@@ -17,6 +17,20 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env")
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// --- UTILIDAD DE FECHAS ---
+// Calcula el rango exacto "Desde el día 1 hasta hoy" en formato YYYY-MM-DD
+function getDateRange() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+
+  const firstDay = `${year}-${month}-01`;
+  const today = `${year}-${month}-${day}`;
+
+  return { firstDay, today };
+}
+
 // --- FUNCIONES GOOGLE ---
 async function getAccessToken() {
   const response = await fetch('https://oauth2.googleapis.com/token', {
@@ -57,7 +71,8 @@ async function getClientAccounts(accessToken) {
   return clients;
 }
 
-async function getAccountLevelSpend(customerId, accessToken) {
+async function getAccountLevelSpend(customerId, accessToken, dateRange) {
+  // CAMBIO: Usamos BETWEEN explícito con las fechas calculadas
   const query = `
     SELECT 
       campaign.id, 
@@ -67,7 +82,7 @@ async function getAccountLevelSpend(customerId, accessToken) {
       metrics.conversions_value
     FROM campaign 
     WHERE 
-      segments.date DURING THIS_MONTH 
+      segments.date BETWEEN '${dateRange.firstDay}' AND '${dateRange.today}'
       AND metrics.cost_micros > 0`; 
   
   const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
@@ -80,7 +95,9 @@ async function getAccountLevelSpend(customerId, accessToken) {
   
   if (response.ok) {
     const data = await response.json();
-    const today = new Date().toISOString().split('T')[0];
+    
+    // Usamos la fecha 'today' para marcar el registro en la BBDD
+    const dbDate = dateRange.today;
 
     if (data && Array.isArray(data)) {
       data.forEach(batch => { 
@@ -91,7 +108,7 @@ async function getAccountLevelSpend(customerId, accessToken) {
               campaign_id: `${row.campaign.id}`, 
               campaign_name: row.campaign.name, 
               status: row.campaign.status, 
-              date: today, 
+              date: dbDate, 
               cost: (parseInt(row.metrics.costMicros || '0') / 1000000),
               conversions_value: row.metrics.conversionsValue ? parseFloat(row.metrics.conversionsValue) : 0
             }); 
@@ -103,14 +120,15 @@ async function getAccountLevelSpend(customerId, accessToken) {
     console.error(`🔴 Error Google API en cliente ${customerId}:`, await response.text());
   }
 
+  // Fallback si no hay gasto
   if (rows.length === 0) {
-     const today = new Date().toISOString().split('T')[0];
+     const dbDate = dateRange.today;
      rows.push({ 
          client_id: customerId, 
          campaign_id: `NO-SPEND-${customerId}`, 
          campaign_name: '(Sin Gasto este mes)', 
          status: 'UNKNOWN', 
-         date: today, 
+         date: dbDate, 
          cost: 0,
          conversions_value: 0
      });
@@ -122,7 +140,6 @@ async function getAccountLevelSpend(customerId, accessToken) {
 async function processSyncJob(jobId) {
   const log = async (msg) => {
     console.log(`[Job ${jobId}] ${msg}`);
-    // Leemos logs actuales para hacer append (concatenar)
     const { data } = await supabase.from('ad_sync_logs').select('logs').eq('id', jobId).single();
     const currentLogs = data?.logs || [];
     await supabase.from('ad_sync_logs').update({ logs: [...currentLogs, msg] }).eq('id', jobId);
@@ -130,7 +147,11 @@ async function processSyncJob(jobId) {
 
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
-    await log(`🚀 Iniciando control presupuestario (${API_VERSION})...`);
+    
+    // Calculamos las fechas UNA VEZ al principio del trabajo
+    const range = getDateRange();
+    await log(`🚀 Iniciando sincronización manual (${API_VERSION})...`);
+    await log(`📅 Consultando periodo exacto: ${range.firstDay} al ${range.today}`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
@@ -138,14 +159,15 @@ async function processSyncJob(jobId) {
 
     let totalRows = 0;
     for (const [index, client] of clients.entries()) {
-      // --- CAMBIO IMPORTANTE: Enviamos el progreso [X/Y] a Supabase para que la web lo lea ---
+      // Enviamos progreso para la barra de carga
       await log(`[${index + 1}/${clients.length}] Procesando ${client.name}...`);
       
-      const campaignData = await getAccountLevelSpend(client.id, token);
+      const campaignData = await getAccountLevelSpend(client.id, token, range);
       
       if (campaignData.length > 0) {
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
          
+         // Upsert usando la fecha de hoy
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
          
          if (error) {
@@ -157,7 +179,7 @@ async function processSyncJob(jobId) {
       }
     }
 
-    await log(`🎉 FIN. Proceso completado exitosamente.`);
+    await log(`🎉 FIN. Datos actualizados con fecha de corte: ${range.today}.`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
@@ -180,4 +202,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker V22 listo. Esperando trabajos...`);
+console.log(`📡 Worker listo (Fechas explícitas). Esperando trabajos...`);
