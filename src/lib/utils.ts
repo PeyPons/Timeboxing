@@ -4,6 +4,15 @@ import { twMerge } from "tailwind-merge";
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+// --- NUEVA FUNCIÓN NECESARIA PARA LA PÁGINA DE ADS ---
+export function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: 'EUR',
+  }).format(amount);
+}
+
 /**
  * Limpia los nombres largos de Kit Digital para visualización
  * De: (KD) [2000€] Proyecto SEO avanzado - [Cliente]
