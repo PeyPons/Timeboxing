@@ -34,7 +34,6 @@ export function Sidebar() {
           Gestión
         </div>
         
-        {/* ✅ CORREGIDO: Ahora apunta a /planner */}
         <NavLink to="/planner" icon={LayoutDashboard} active={location.pathname === '/planner'}>
           Planificador
         </NavLink>
@@ -67,6 +66,14 @@ export function Sidebar() {
           Copiloto IA
         </NavLink>
       </nav>
+
+      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
+          Gestión
+        </div>
+        
+       <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
+          Google Ads
+        </NavLink>
 
       {/* Footer del Sidebar */}
       <div className="p-4 border-t border-slate-800 bg-slate-950/30">
