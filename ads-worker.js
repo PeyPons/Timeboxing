@@ -11,7 +11,7 @@ const DEVELOPER_TOKEN = process.env.GOOGLE_DEVELOPER_TOKEN;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const MCC_ID = process.env.GOOGLE_MCC_ID;
 
-// ACTUALIZADO: Usamos la versión v22
+// Usamos la versión v22
 const API_VERSION = 'v22';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env"); process.exit(1); }
@@ -59,9 +59,9 @@ async function getClientAccounts(accessToken) {
 }
 
 async function getAccountLevelSpend(customerId, accessToken) {
-  // --- CORRECCIÓN APLICADA ---
-  // Consultamos 'customer' para obtener el total de la cuenta directamente.
-  // Filtramos por THIS_MONTH para ver solo el consumo del mes en curso.
+  // --- CAMBIO CLAVE PARA CONTROL DE PRESUPUESTO ---
+  // 1. Pedimos métricas a nivel de 'customer' (cuenta completa) para evitar sumar campañas manualmente.
+  // 2. Usamos 'DURING THIS_MONTH' para ver solo lo gastado desde el día 1 hasta hoy.
   const query = `
     SELECT 
       metrics.cost_micros 
@@ -81,7 +81,7 @@ async function getAccountLevelSpend(customerId, accessToken) {
     const data = await response.json();
     let totalMicros = 0;
 
-    // Sumamos los resultados (aunque al ser nivel customer suele venir una sola fila)
+    // Aunque sea a nivel de cliente, la API devuelve un array, sumamos por seguridad
     if (data && Array.isArray(data)) {
       data.forEach(batch => { 
         if (batch.results) { 
@@ -92,15 +92,16 @@ async function getAccountLevelSpend(customerId, accessToken) {
       });
     }
 
-    // Creamos una fila de resumen para el mes actual
-    const today = new Date().toISOString().split('T')[0];
+    // Convertimos micros a moneda real (Euros)
     const costReal = totalMicros / 1000000;
+    const today = new Date().toISOString().split('T')[0];
 
+    // Creamos una entrada consolidada para este cliente
     rows.push({ 
       client_id: customerId, 
-      // Usamos un ID sintético único combinando el ID del cliente
-      campaign_id: `TOTAL-MONTH-${customerId}`, 
-      campaign_name: 'Gasto Total (Mes Actual)', 
+      // Usamos un ID fijo mensual para que se actualice el mismo registro cada día del mes
+      campaign_id: `MONTHLY-TOTAL-${customerId}`, 
+      campaign_name: 'Gasto Acumulado (Mes Actual)', 
       status: 'ENABLED', 
       date: today, 
       cost: costReal 
@@ -110,12 +111,12 @@ async function getAccountLevelSpend(customerId, accessToken) {
     console.error(`🔴 Error Google API en cliente ${customerId}:`, await response.text());
   }
 
-  // Fallback visual si no hay respuesta válida (opcional, ayuda a depurar)
+  // Fallback si no hay datos (coste 0)
   if (rows.length === 0) {
      const today = new Date().toISOString().split('T')[0];
      rows.push({ 
          client_id: customerId, 
-         campaign_id: `TOTAL-MONTH-${customerId}`, 
+         campaign_id: `MONTHLY-TOTAL-${customerId}`, 
          campaign_name: '(Sin Gasto/Datos)', 
          status: 'UNKNOWN', 
          date: today, 
@@ -136,36 +137,37 @@ async function processSyncJob(jobId) {
 
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
-    await log(`🚀 Iniciando sincronización de Presupuesto Mensual (${API_VERSION})...`);
+    await log(`🚀 Iniciando control de presupuesto (${API_VERSION})...`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
-    await log(`📋 Clientes encontrados: ${clients.length}`);
+    await log(`📋 Clientes activos: ${clients.length}`);
 
     let totalRows = 0;
     for (const [index, client] of clients.entries()) {
-      process.stdout.write(`   [${index + 1}/${clients.length}] Procesando ${client.name}... `);
+      process.stdout.write(`   [${index + 1}/${clients.length}] Revisando ${client.name}... `);
       
-      const dailyData = await getAccountLevelSpend(client.id, token);
+      const monthlyData = await getAccountLevelSpend(client.id, token);
       
-      if (dailyData.length > 0) {
-         const gasto = dailyData[0].cost;
-         console.log(`✅ ${gasto.toFixed(2)}€ acumulados este mes.`);
+      if (monthlyData.length > 0) {
+         const gasto = monthlyData[0].cost;
+         console.log(`✅ ${gasto.toFixed(2)}€ este mes.`);
 
-         const rowsToInsert = dailyData.map(d => ({ ...d, client_name: client.name }));
+         const rowsToInsert = monthlyData.map(d => ({ ...d, client_name: client.name }));
          
+         // Upsert basado en campaign_id + date para actualizar el dato de hoy
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
          
          if (error) {
             console.error(`❌ Error Supabase: ${error.message}`);
             await log(`❌ Error guardando datos de ${client.name}`);
          } else {
-            totalRows += dailyData.length;
+            totalRows += monthlyData.length;
          }
       }
     }
 
-    await log(`🎉 FIN. ${totalRows} cuentas actualizadas con el gasto mensual.`);
+    await log(`🎉 FIN. Gasto mensual actualizado para ${totalRows} clientes.`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
@@ -189,4 +191,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker listo (API: ${API_VERSION}). Esperando trabajos...`);
+console.log(`📡 Worker de Control Presupuestario listo (API: ${API_VERSION}). Esperando...`);
