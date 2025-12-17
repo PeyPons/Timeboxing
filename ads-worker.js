@@ -11,6 +11,7 @@ const DEVELOPER_TOKEN = process.env.GOOGLE_DEVELOPER_TOKEN;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const MCC_ID = process.env.GOOGLE_MCC_ID;
 
+// Usamos la versión v22
 const API_VERSION = 'v22';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env"); process.exit(1); }
@@ -58,8 +59,10 @@ async function getClientAccounts(accessToken) {
 }
 
 async function getAccountLevelSpend(customerId, accessToken) {
-  // CAMBIO: Solicitamos desglose por campaña (campaign) filtrando por el mes actual (THIS_MONTH).
-  // También pedimos conversions_value para ver si la campaña genera valor.
+  // CAMBIO CLAVE:
+  // 1. Pedimos desglose por campaña (campaign) para que el acordeón funcione.
+  // 2. Filtramos por 'THIS_MONTH' para ver SOLO el gasto del mes actual (control presupuestario).
+  // 3. Incluimos 'metrics.conversions_value' para ver el retorno (ROAS).
   const query = `
     SELECT 
       campaign.id, 
@@ -90,13 +93,12 @@ async function getAccountLevelSpend(customerId, accessToken) {
           batch.results.forEach(row => { 
             rows.push({ 
               client_id: customerId, 
-              // ID compuesto para que la campaña sea única por día
+              // ID compuesto para evitar duplicados si se corre varias veces al día
               campaign_id: `${row.campaign.id}`, 
               campaign_name: row.campaign.name, 
-              status: row.campaign.status, // ENABLED, PAUSED
+              status: row.campaign.status, 
               date: today, 
               cost: (parseInt(row.metrics.costMicros || '0') / 1000000),
-              // Guardamos también el valor de conversion (si existe)
               conversions_value: row.metrics.conversionsValue ? parseFloat(row.metrics.conversionsValue) : 0
             }); 
           }); 
@@ -107,7 +109,7 @@ async function getAccountLevelSpend(customerId, accessToken) {
     console.error(`🔴 Error Google API en cliente ${customerId}:`, await response.text());
   }
 
-  // Fallback visual si no hay gasto
+  // Fallback si no hay gasto (para que no salga vacío en el panel)
   if (rows.length === 0) {
      const today = new Date().toISOString().split('T')[0];
      rows.push({ 
@@ -134,7 +136,7 @@ async function processSyncJob(jobId) {
 
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
-    await log(`🚀 Iniciando sincronización detallada (${API_VERSION})...`);
+    await log(`🚀 Iniciando control presupuestario (${API_VERSION})...`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
@@ -158,7 +160,7 @@ async function processSyncJob(jobId) {
 
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
          
-         // Upsert basado en campaign_id + date
+         // Upsert: Actualiza el registro de HOY si ya existe
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
          
          if (error) {
@@ -170,7 +172,7 @@ async function processSyncJob(jobId) {
       }
     }
 
-    await log(`🎉 FIN. Datos actualizados correctamente.`);
+    await log(`🎉 FIN. Gasto mensual actualizado.`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
