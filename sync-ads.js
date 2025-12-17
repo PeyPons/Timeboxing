@@ -1,11 +1,10 @@
 /* Ejecutar con: node sync-ads.js */
-require('dotenv').config(); 
-
-const { createClient } = require('@supabase/supabase-js');
+import 'dotenv/config'; // Carga las variables del .env automáticamente
+import { createClient } from '@supabase/supabase-js';
 
 // --- CONFIGURACIÓN ---
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-// IMPORTANTE: Usamos la Service Role Key para poder ESCRIBIR sin restricciones
+// Usamos la Service Role Key para poder ESCRIBIR sin restricciones
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Google Ads Creds
@@ -16,6 +15,7 @@ const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const MCC_ID = process.env.GOOGLE_MCC_ID;
 const API_VERSION = 'v22';
 
+// Validación básica
 if (!SUPABASE_URL || !SUPABASE_KEY || !CLIENT_ID) {
   console.error("❌ ERROR: Faltan variables en el archivo .env");
   console.error("Asegúrate de tener SUPABASE_SERVICE_ROLE_KEY definido.");
@@ -79,7 +79,6 @@ async function getClientAccounts(accessToken) {
 }
 
 async function getCampaigns(customerId, accessToken) {
-  // Query corregida para asegurar datos numéricos
   const query = `
     SELECT campaign.id, campaign.name, campaign.status, 
            metrics.cost_micros, metrics.clicks, metrics.impressions 
@@ -110,7 +109,6 @@ async function getCampaigns(customerId, accessToken) {
             client_id: customerId,
             campaign_name: row.campaign.name,
             status: row.campaign.status,
-            // Convertir micros a moneda real (dividido por 1 millón)
             cost: row.metrics ? (parseInt(row.metrics.costMicros) / 1000000) : 0,
             clicks: row.metrics ? parseInt(row.metrics.clicks) : 0,
             impressions: row.metrics ? parseInt(row.metrics.impressions) : 0
@@ -122,52 +120,47 @@ async function getCampaigns(customerId, accessToken) {
   return campaigns;
 }
 
-(async () => {
-  try {
-    console.log("🚀 INICIANDO SINCRONIZACIÓN...");
-    
-    // Check de dotenv
-    try { require('dotenv'); } catch { console.log("⚠️ Nota: Asegúrate de tener 'dotenv' instalado."); }
+// Ejecución (Top-level await es válido en módulos)
+try {
+  console.log("🚀 INICIANDO SINCRONIZACIÓN (Modo ESM)...");
+  
+  const token = await getAccessToken();
+  console.log("✅ Token Google obtenido.");
 
-    const token = await getAccessToken();
-    console.log("✅ Token Google obtenido.");
-
-    // 1. Limpiar tabla antigua para evitar duplicados
-    const { error: delErr } = await supabase.from('google_ads_campaigns').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    if (delErr) {
-        console.error("❌ Error limpiando DB:", delErr.message);
-        console.error("   (Verifica que la tabla exista y tengas permisos)");
-        return;
-    }
-    console.log("🧹 Base de datos limpiada.");
-
-    // 2. Obtener Clientes
-    const clients = await getClientAccounts(token);
-    console.log(`📋 Clientes encontrados: ${clients.length}`);
-
-    // 3. Procesar y guardar
-    let total = 0;
-    for (const client of clients) {
-      process.stdout.write(`   procesando ${client.name}... `);
-      const campaigns = await getCampaigns(client.id, token);
-      
-      if (campaigns.length > 0) {
-        const rows = campaigns.map(c => ({ ...c, client_name: client.name }));
-        const { error } = await supabase.from('google_ads_campaigns').insert(rows);
-        
-        if (!error) {
-          console.log(`✅ ${campaigns.length} campañas.`);
-          total += campaigns.length;
-        } else {
-          console.log(`❌ Error Insertando: ${error.message}`);
-        }
-      } else {
-        console.log(`(sin campañas activas)`);
-      }
-    }
-    console.log(`\n🎉 FIN. Total campañas guardadas en Supabase: ${total}`);
-
-  } catch (error) {
-    console.error("\n💥 ERROR:", error.message);
+  // 1. Limpiar tabla antigua
+  const { error: delErr } = await supabase.from('google_ads_campaigns').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (delErr) {
+      console.error("❌ Error limpiando DB:", delErr.message);
+  } else {
+      console.log("🧹 Base de datos limpiada.");
   }
-})();
+
+  // 2. Obtener Clientes
+  const clients = await getClientAccounts(token);
+  console.log(`📋 Clientes encontrados: ${clients.length}`);
+
+  // 3. Procesar y guardar
+  let total = 0;
+  for (const client of clients) {
+    process.stdout.write(`   procesando ${client.name}... `);
+    const campaigns = await getCampaigns(client.id, token);
+    
+    if (campaigns.length > 0) {
+      const rows = campaigns.map(c => ({ ...c, client_name: client.name }));
+      const { error } = await supabase.from('google_ads_campaigns').insert(rows);
+      
+      if (!error) {
+        console.log(`✅ ${campaigns.length} campañas.`);
+        total += campaigns.length;
+      } else {
+        console.log(`❌ Error Insertando: ${error.message}`);
+      }
+    } else {
+      console.log(`(sin campañas activas)`);
+    }
+  }
+  console.log(`\n🎉 FIN. Total campañas guardadas en Supabase: ${total}`);
+
+} catch (error) {
+  console.error("\n💥 ERROR:", error.message);
+}
