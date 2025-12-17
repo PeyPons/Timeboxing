@@ -11,13 +11,12 @@ const DEVELOPER_TOKEN = process.env.GOOGLE_DEVELOPER_TOKEN;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const MCC_ID = process.env.GOOGLE_MCC_ID;
 
-const API_VERSION = 'v17'; // Versión estable
+const API_VERSION = 'v22'; // Versión más reciente
 
 if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env"); process.exit(1); }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- UTILIDAD DE FECHAS ---
 function getDateRange() {
   const now = new Date();
   const year = now.getFullYear();
@@ -28,7 +27,7 @@ function getDateRange() {
   return { firstDay, today };
 }
 
-// --- FUNCIONES GOOGLE ---
+// --- GOOGLE AUTH & API ---
 async function getAccessToken() {
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -63,7 +62,7 @@ async function getClientAccounts(accessToken) {
 }
 
 async function getAccountLevelSpend(customerId, accessToken, dateRange) {
-  // AÑADIDO: campaign_budget.amount_micros Y metrics.conversions
+  // SOLICITAMOS PRESUPUESTO Y CONVERSIONES
   const query = `
     SELECT 
       campaign.id, 
@@ -92,16 +91,20 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
       data.forEach(batch => { 
         if (batch.results) { 
           batch.results.forEach(row => { 
+            // Conversión segura de micro-unidades
+            const cost = parseInt(row.metrics.costMicros || '0') / 1000000;
+            const budget = row.campaignBudget ? (parseInt(row.campaignBudget.amountMicros || '0') / 1000000) : 0;
+            
             rows.push({ 
               client_id: customerId, 
               campaign_id: `${row.campaign.id}`, 
               campaign_name: row.campaign.name, 
               status: row.campaign.status, 
               date: dbDate, 
-              cost: (parseInt(row.metrics.costMicros || '0') / 1000000),
+              cost: cost,
               conversions_value: row.metrics.conversionsValue ? parseFloat(row.metrics.conversionsValue) : 0,
               conversions: row.metrics.conversions ? parseFloat(row.metrics.conversions) : 0,
-              daily_budget: row.campaignBudget ? (parseInt(row.campaignBudget.amountMicros || '0') / 1000000) : 0
+              daily_budget: budget
             }); 
           }); 
         } 
@@ -113,7 +116,7 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
   return rows;
 }
 
-// --- WORKER ---
+// --- WORKER LOGIC ---
 async function processSyncJob(jobId) {
   const log = async (msg) => {
     console.log(`[Job ${jobId}] ${msg}`);
@@ -125,30 +128,29 @@ async function processSyncJob(jobId) {
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
     const range = getDateRange();
-    await log(`🚀 Iniciando sincronización... Periodo: ${range.firstDay} al ${range.today}`);
+    await log(`🚀 Worker API ${API_VERSION}. Periodo: ${range.firstDay} al ${range.today}`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
-    await log(`📋 Clientes encontrados: ${clients.length}`);
+    await log(`📋 Clientes: ${clients.length}`);
 
     let totalRows = 0;
     for (const [index, client] of clients.entries()) {
-      await log(`[${index + 1}/${clients.length}] Procesando ${client.name}...`);
+      await log(`[${index + 1}/${clients.length}] ${client.name}...`);
       const campaignData = await getAccountLevelSpend(client.id, token, range);
       
       if (campaignData.length > 0) {
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
+         // Upsert con budget y conversions
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
          if (error) {
-            console.error(`❌ Error Supabase: ${error.message}`);
-            await log(`❌ Error guardando datos de ${client.name}`);
+            console.error(`❌ Error DB: ${error.message}`);
          } else {
             totalRows += campaignData.length;
          }
       }
     }
-    // IMPORTANTE: Guardamos created_at implícito del log para saber la hora real
-    await log(`🎉 FIN. Datos actualizados.`);
+    await log(`🎉 FIN. Procesados ${totalRows} registros.`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
@@ -170,4 +172,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker v2.0 listo.`);
+console.log(`📡 Worker listo (API ${API_VERSION}).`);
