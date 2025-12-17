@@ -2,7 +2,6 @@
 import 'dotenv/config'; 
 import { createClient } from '@supabase/supabase-js';
 
-// --- CONFIGURACIÓN ---
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -11,7 +10,7 @@ const DEVELOPER_TOKEN = process.env.GOOGLE_DEVELOPER_TOKEN;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const MCC_ID = process.env.GOOGLE_MCC_ID;
 
-const API_VERSION = 'v22'; // Versión más reciente
+const API_VERSION = 'v22'; 
 
 if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env"); process.exit(1); }
 
@@ -27,7 +26,6 @@ function getDateRange() {
   return { firstDay, today };
 }
 
-// --- GOOGLE AUTH & API ---
 async function getAccessToken() {
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -62,7 +60,7 @@ async function getClientAccounts(accessToken) {
 }
 
 async function getAccountLevelSpend(customerId, accessToken, dateRange) {
-  // SOLICITAMOS PRESUPUESTO Y CONVERSIONES
+  // AÑADIDOS: metrics.clicks, metrics.impressions
   const query = `
     SELECT 
       campaign.id, 
@@ -71,7 +69,7 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
       campaign_budget.amount_micros,
       metrics.cost_micros,
       metrics.conversions_value,
-      metrics.conversions
+      metrics.conversions,
       metrics.clicks,
       metrics.impressions
     FROM campaign 
@@ -93,7 +91,6 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
       data.forEach(batch => { 
         if (batch.results) { 
           batch.results.forEach(row => { 
-            // Conversión segura de micro-unidades
             const cost = parseInt(row.metrics.costMicros || '0') / 1000000;
             const budget = row.campaignBudget ? (parseInt(row.campaignBudget.amountMicros || '0') / 1000000) : 0;
             
@@ -132,7 +129,7 @@ async function processSyncJob(jobId) {
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
     const range = getDateRange();
-    await log(`🚀 Worker API ${API_VERSION}. Periodo: ${range.firstDay} al ${range.today}`);
+    await log(`🚀 Worker API ${API_VERSION} (Full PPC). Periodo: ${range.firstDay} al ${range.today}`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
@@ -145,7 +142,6 @@ async function processSyncJob(jobId) {
       
       if (campaignData.length > 0) {
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
-         // Upsert con budget y conversions
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
          if (error) {
             console.error(`❌ Error DB: ${error.message}`);
@@ -176,4 +172,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker listo (API ${API_VERSION}).`);
+console.log(`📡 Worker listo.`);
