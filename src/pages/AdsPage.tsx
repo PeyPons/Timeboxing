@@ -41,16 +41,15 @@ export default function AdsPage() {
   const [loading, setLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
-  // ESTADO SINCRONIZACIÓN
+  // --- ESTADO SINCRONIZACIÓN ---
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
-  const [syncProgress, setSyncProgress] = useState(0); // Nueva variable para la barra visual
+  const [syncProgress, setSyncProgress] = useState(0); 
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
-    // No ponemos setLoading(true) aquí para que la actualización en vivo sea suave (sin flash blanco)
     try {
       const { data: adsData } = await supabase.from('google_ads_campaigns').select('*');
       const { data: settingsData } = await supabase.from('client_settings').select('*');
@@ -62,12 +61,11 @@ export default function AdsPage() {
       setClientBudgets(budgetsMap);
 
       if (adsData && adsData.length > 0) {
-        const timestamps = adsData.map(d => new Date(d.date).getTime());
-        const maxTs = Math.max(...timestamps);
-        setLastSyncTime(new Date(maxTs));
+        const dates = adsData.map(d => new Date(d.date).getTime());
+        setLastSyncTime(new Date(Math.max(...dates)));
       }
     } catch (error) {
-      console.error('Error fetching data silently');
+      console.error('Error fetching data');
     } finally {
       setLoading(false);
     }
@@ -75,6 +73,7 @@ export default function AdsPage() {
 
   useEffect(() => { fetchData(); }, []);
 
+  // --- WORKER TRIGGER ---
   const handleStartSync = async () => {
     setIsSyncing(true);
     setSyncStatus('running');
@@ -101,19 +100,16 @@ export default function AdsPage() {
             const currentLogs = newRow.logs || [];
             setSyncLogs(currentLogs);
             
-            // --- LÓGICA DE BARRA DE PROGRESO ---
+            // Detectar progreso [X/Y] en los logs
             if (currentLogs.length > 0) {
                 const lastLog = currentLogs[currentLogs.length - 1];
-                // Buscamos el patrón [1/10] en el último log
                 const match = lastLog.match(/\[(\d+)\/(\d+)\]/);
                 if (match) {
                     const current = parseInt(match[1]);
                     const total = parseInt(match[2]);
                     const percentage = (current / total) * 100;
                     setSyncProgress(percentage);
-                    
-                    // ACTUALIZACIÓN EN VIVO: Si procesamos un cliente, recargamos la tabla de fondo
-                    fetchData(); 
+                    fetchData(); // Actualizar tabla en vivo
                 }
             }
 
@@ -151,10 +147,11 @@ export default function AdsPage() {
     await supabase.from('client_settings').upsert({ client_id: clientId, budget_limit: numAmount }, { onConflict: 'client_id' });
   };
 
+  // --- CÁLCULO DE DATOS (CORREGIDO PARA EVITAR DUPLICADOS) ---
   const reportData = useMemo(() => {
     if (!rawData.length) return [];
     
-    // SNAPSHOT DIARIO: Filtramos solo la última fecha disponible
+    // 1. Snapshot: Usar solo la fecha más reciente
     const timestamps = rawData.map(d => new Date(d.date).getTime());
     const maxTs = Math.max(...timestamps);
     const latestDateStr = new Date(maxTs).toISOString().split('T')[0];
@@ -168,19 +165,40 @@ export default function AdsPage() {
     const stats = new Map<string, { name: string, spent: number, campaigns: CampaignData[] }>();
 
     rawData.forEach(row => {
+      // FILTRO DE SEGURIDAD: Solo procesar datos de hoy
       if (row.date === latestDateStr) {
+        
+        // --- CORRECCIÓN CRÍTICA ---
+        // Si detectamos una fila que parece un "Total Agregado" antiguo, la ignoramos.
+        // Esto evita que se sume (Total Cuenta + Campañas Individuales).
+        const isLegacyTotal = 
+            row.campaign_id.includes('MONTHLY-TOTAL') || 
+            row.campaign_id.includes('TOTAL-MONTH') ||
+            row.campaign_name.includes('Gasto Total') ||
+            row.campaign_name.includes('Sin Gasto');
+
+        // Solo la procesamos si NO es un total legado (o si es la única fila que hay y tiene coste 0)
+        // Pero si tiene coste > 0 y parece un total, fuera.
+        if (isLegacyTotal && row.cost > 0) return; 
+
         if (!stats.has(row.client_id)) {
           stats.set(row.client_id, { name: row.client_name, spent: 0, campaigns: [] });
         }
         const clientStats = stats.get(row.client_id)!;
+        
+        // Sumamos el coste
         clientStats.spent += row.cost;
-        clientStats.campaigns.push({
-            campaign_id: row.campaign_id,
-            campaign_name: row.campaign_name,
-            status: row.status,
-            cost: row.cost,
-            conversions_value: row.conversions_value
-        });
+        
+        // Agregamos al desglose (si no es fila placeholder de coste 0)
+        if (!isLegacyTotal || row.cost === 0) {
+            clientStats.campaigns.push({
+                campaign_id: row.campaign_id,
+                campaign_name: row.campaign_name,
+                status: row.status,
+                cost: row.cost,
+                conversions_value: row.conversions_value
+            });
+        }
       }
     });
 
@@ -189,6 +207,7 @@ export default function AdsPage() {
       const budget = clientBudgets[clientId] || 0;
       const spent = value.spent;
       const avgDailySpend = currentDay > 0 ? spent / currentDay : 0;
+      // Proyección corregida
       const forecast = avgDailySpend * daysInMonth;
       const progress = budget > 0 ? (spent / budget) * 100 : 0;
       const remainingBudget = Math.max(0, budget - spent);
@@ -231,7 +250,7 @@ export default function AdsPage() {
             <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
                <Clock className="w-4 h-4" />
                <span>
-                 Última actualización: {lastSyncTime ? lastSyncTime.toLocaleDateString() : 'Pendiente'}
+                 Datos actualizados a: {lastSyncTime ? lastSyncTime.toLocaleDateString() : 'Pendiente'}
                  {lastSyncTime && ` (${lastSyncTime.toLocaleTimeString()})`}
                </span>
             </div>
@@ -244,19 +263,19 @@ export default function AdsPage() {
           </div>
         </div>
 
-        {/* KPIs Globales */}
+        {/* KPIs */}
          <div className="grid gap-4 md:grid-cols-3">
            <Card className="bg-slate-900 text-white border-0 shadow-lg">
              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-400">Total Invertido (Mes)</CardTitle></CardHeader>
              <CardContent>
                <div className="text-3xl font-bold">{formatCurrency(totalSpent)}</div>
                <Progress value={totalBudget > 0 ? (totalSpent/totalBudget)*100 : 0} className="h-2 mt-3 bg-slate-700 [&>div]:bg-emerald-500" />
-               <p className="text-xs text-slate-400 mt-2 text-right">Total Presupuestado: {formatCurrency(totalBudget)}</p>
+               <p className="text-xs text-slate-400 mt-2 text-right">Presupuesto Global: {formatCurrency(totalBudget)}</p>
              </CardContent>
            </Card>
          </div>
 
-         {/* Acordeón de Clientes */}
+         {/* Lista Clientes */}
          <div className="space-y-4">
             <Accordion type="single" collapsible className="w-full space-y-2">
               {reportData.map((client) => (
@@ -360,7 +379,8 @@ export default function AdsPage() {
                                                     {camp.campaign_name}
                                                 </td>
                                                 <td className="px-4 py-2">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                    {/* CORRECCIÓN VISUAL: Separación y diseño limpio */}
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                                         camp.status === 'ENABLED' 
                                                             ? 'bg-green-100 text-green-700' 
                                                             : 'bg-gray-100 text-gray-500'
@@ -394,7 +414,7 @@ export default function AdsPage() {
             </Accordion>
          </div>
 
-        {/* --- MODAL POPUP DE ACTUALIZACIÓN (CON BARRA DE PROGRESO) --- */}
+        {/* MODAL SYNC */}
         <Dialog open={isSyncing} onOpenChange={(open) => { if(syncStatus !== 'running') setIsSyncing(open); }}>
           <DialogContent className="sm:max-w-md bg-slate-950 text-slate-100 border-slate-800">
             <DialogHeader>
@@ -411,7 +431,6 @@ export default function AdsPage() {
               </DialogDescription>
             </DialogHeader>
             
-            {/* BARRA DE PROGRESO NUEVA */}
             <div className="w-full">
                 <Progress value={syncProgress} className="h-2 bg-slate-800 [&>div]:bg-blue-500 transition-all duration-500" />
             </div>
