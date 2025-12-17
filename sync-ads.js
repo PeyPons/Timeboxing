@@ -1,10 +1,9 @@
 /* Ejecutar con: node sync-ads.js */
-import 'dotenv/config'; // Carga las variables del .env automáticamente
+import 'dotenv/config'; 
 import { createClient } from '@supabase/supabase-js';
 
 // --- CONFIGURACIÓN ---
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-// Usamos la Service Role Key para poder ESCRIBIR sin restricciones
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Google Ads Creds
@@ -15,14 +14,11 @@ const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const MCC_ID = process.env.GOOGLE_MCC_ID;
 const API_VERSION = 'v22';
 
-// Validación básica
 if (!SUPABASE_URL || !SUPABASE_KEY || !CLIENT_ID) {
   console.error("❌ ERROR: Faltan variables en el archivo .env");
-  console.error("Asegúrate de tener SUPABASE_SERVICE_ROLE_KEY definido.");
   process.exit(1);
 }
 
-// Cliente con superpoderes (Service Role)
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 async function getAccessToken() {
@@ -37,12 +33,12 @@ async function getAccessToken() {
     }),
   });
   const data = await response.json();
-  if (!data.access_token) throw new Error("Error obteniendo token Google: " + JSON.stringify(data));
+  if (!data.access_token) throw new Error("Error token Google: " + JSON.stringify(data));
   return data.access_token;
 }
 
 async function getClientAccounts(accessToken) {
-  console.log(`📡 Buscando clientes en MCC ${MCC_ID}...`);
+  console.log(`📡 Buscando clientes...`);
   const query = `
     SELECT customer_client.client_customer, customer_client.descriptive_name 
     FROM customer_client 
@@ -60,8 +56,8 @@ async function getClientAccounts(accessToken) {
   });
 
   if (!response.ok) throw new Error(`Error API: ${await response.text()}`);
-
   const data = await response.json();
+  
   const clients = [];
   if (data && Array.isArray(data)) {
     data.forEach(batch => {
@@ -78,12 +74,21 @@ async function getClientAccounts(accessToken) {
   return clients;
 }
 
-async function getCampaigns(customerId, accessToken) {
+async function getCampaignsDaily(customerId, accessToken) {
+  // GAQL MÁGICO: Pedimos segments.date y filtramos los últimos 30 días
   const query = `
-    SELECT campaign.id, campaign.name, campaign.status, 
-           metrics.cost_micros, metrics.clicks, metrics.impressions 
+    SELECT 
+      campaign.id, 
+      campaign.name, 
+      campaign.status, 
+      segments.date,
+      metrics.cost_micros, 
+      metrics.clicks, 
+      metrics.impressions 
     FROM campaign 
-    WHERE campaign.status = 'ENABLED'`;
+    WHERE campaign.status = 'ENABLED' 
+    AND metrics.cost_micros > 0 -- Solo traemos días con gasto para no llenar la DB de ceros
+    AND segments.date DURING LAST_30_DAYS`;
 
   const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
     method: 'POST',
@@ -99,16 +104,17 @@ async function getCampaigns(customerId, accessToken) {
   if (!response.ok) return [];
 
   const data = await response.json();
-  const campaigns = [];
+  const rows = [];
   if (data && Array.isArray(data)) {
     data.forEach(batch => {
       if (batch.results) {
         batch.results.forEach(row => {
-          campaigns.push({
-            client_name: null, 
+          rows.push({
             client_id: customerId,
+            campaign_id: row.campaign.id.toString(),
             campaign_name: row.campaign.name,
             status: row.campaign.status,
+            date: row.segments.date, // La fecha del dato (ej: 2023-10-25)
             cost: row.metrics ? (parseInt(row.metrics.costMicros) / 1000000) : 0,
             clicks: row.metrics ? parseInt(row.metrics.clicks) : 0,
             impressions: row.metrics ? parseInt(row.metrics.impressions) : 0
@@ -117,49 +123,41 @@ async function getCampaigns(customerId, accessToken) {
       }
     });
   }
-  return campaigns;
+  return rows;
 }
 
-// Ejecución (Top-level await es válido en módulos)
+// Ejecución
 try {
-  console.log("🚀 INICIANDO SINCRONIZACIÓN (Modo ESM)...");
-  
+  console.log("🚀 INICIANDO SINCRONIZACIÓN DIARIA...");
   const token = await getAccessToken();
-  console.log("✅ Token Google obtenido.");
-
-  // 1. Limpiar tabla antigua
-  const { error: delErr } = await supabase.from('google_ads_campaigns').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  if (delErr) {
-      console.error("❌ Error limpiando DB:", delErr.message);
-  } else {
-      console.log("🧹 Base de datos limpiada.");
-  }
-
-  // 2. Obtener Clientes
   const clients = await getClientAccounts(token);
-  console.log(`📋 Clientes encontrados: ${clients.length}`);
+  console.log(`📋 Clientes: ${clients.length}`);
 
-  // 3. Procesar y guardar
-  let total = 0;
+  let totalRows = 0;
   for (const client of clients) {
     process.stdout.write(`   procesando ${client.name}... `);
-    const campaigns = await getCampaigns(client.id, token);
+    const dailyData = await getCampaignsDaily(client.id, token);
     
-    if (campaigns.length > 0) {
-      const rows = campaigns.map(c => ({ ...c, client_name: client.name }));
-      const { error } = await supabase.from('google_ads_campaigns').insert(rows);
+    if (dailyData.length > 0) {
+      // Añadimos el nombre del cliente a cada fila
+      const rowsToInsert = dailyData.map(d => ({ ...d, client_name: client.name }));
+
+      // UPSERT: Si ya existe el dato para ese día/campaña, lo actualiza
+      const { error } = await supabase
+        .from('google_ads_campaigns')
+        .upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
       
       if (!error) {
-        console.log(`✅ ${campaigns.length} campañas.`);
-        total += campaigns.length;
+        console.log(`✅ ${dailyData.length} reg.`);
+        totalRows += dailyData.length;
       } else {
-        console.log(`❌ Error Insertando: ${error.message}`);
+        console.log(`❌ Error: ${error.message}`);
       }
     } else {
-      console.log(`(sin campañas activas)`);
+      console.log(`(sin gasto reciente)`);
     }
   }
-  console.log(`\n🎉 FIN. Total campañas guardadas en Supabase: ${total}`);
+  console.log(`\n🎉 FIN. Total registros diarios: ${totalRows}`);
 
 } catch (error) {
   console.error("\n💥 ERROR:", error.message);
