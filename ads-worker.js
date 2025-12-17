@@ -11,7 +11,7 @@ const DEVELOPER_TOKEN = process.env.GOOGLE_DEVELOPER_TOKEN;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const MCC_ID = process.env.GOOGLE_MCC_ID;
 
-// ACTUALIZADO: Usamos la versión v22 (Última versión estable)
+// ACTUALIZADO: Usamos la versión v22
 const API_VERSION = 'v22';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env"); process.exit(1); }
@@ -31,7 +31,6 @@ async function getAccessToken() {
 }
 
 async function getClientAccounts(accessToken) {
-  // NOTA: En v18/v22 NO debemos pedir métricas aquí, solo la estructura.
   const query = `SELECT customer_client.client_customer, customer_client.descriptive_name FROM customer_client WHERE customer_client.status = 'ENABLED' AND customer_client.manager = false`;
   
   const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${MCC_ID}/googleAds:searchStream`, {
@@ -48,7 +47,6 @@ async function getClientAccounts(accessToken) {
     data.forEach(batch => { 
       if (batch.results) { 
         batch.results.forEach(row => { 
-          // Parseamos el resource name 'customers/1234567890' -> '1234567890'
           clients.push({ 
             id: row.customerClient.clientCustomer.split('/')[1], 
             name: row.customerClient.descriptiveName 
@@ -61,21 +59,16 @@ async function getClientAccounts(accessToken) {
 }
 
 async function getAccountLevelSpend(customerId, accessToken) {
-  // Consulta de métricas a nivel de campaña
+  // --- CORRECCIÓN APLICADA ---
+  // Consultamos 'customer' para obtener el total de la cuenta directamente.
+  // Filtramos por THIS_MONTH para ver solo el consumo del mes en curso.
   const query = `
     SELECT 
-      campaign.id, 
-      campaign.name, 
-      campaign.status, 
-      segments.date, 
       metrics.cost_micros 
-    FROM campaign 
+    FROM customer 
     WHERE 
-      segments.date DURING LAST_90_DAYS 
-      AND metrics.cost_micros > 0`; 
+      segments.date DURING THIS_MONTH`; 
   
-  // IMPORTANTE: Aquí la URL cambia para apuntar al cliente específico (${customerId}), 
-  // pero seguimos usando el MCC como 'login-customer-id' para la autorización.
   const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}`, 'developer-token': DEVELOPER_TOKEN, 'Content-Type': 'application/json', 'login-customer-id': MCC_ID },
@@ -86,31 +79,48 @@ async function getAccountLevelSpend(customerId, accessToken) {
   
   if (response.ok) {
     const data = await response.json();
+    let totalMicros = 0;
+
+    // Sumamos los resultados (aunque al ser nivel customer suele venir una sola fila)
     if (data && Array.isArray(data)) {
       data.forEach(batch => { 
         if (batch.results) { 
           batch.results.forEach(row => { 
-            rows.push({ 
-              client_id: customerId, 
-              campaign_id: row.campaign.id.toString(), 
-              campaign_name: row.campaign.name, 
-              status: row.campaign.status, 
-              date: row.segments.date, 
-              // Convertimos micros a moneda real
-              cost: row.metrics ? (parseInt(row.metrics.costMicros) / 1000000) : 0 
-            }); 
+            totalMicros += parseInt(row.metrics.costMicros || '0');
           }); 
         } 
       });
     }
+
+    // Creamos una fila de resumen para el mes actual
+    const today = new Date().toISOString().split('T')[0];
+    const costReal = totalMicros / 1000000;
+
+    rows.push({ 
+      client_id: customerId, 
+      // Usamos un ID sintético único combinando el ID del cliente
+      campaign_id: `TOTAL-MONTH-${customerId}`, 
+      campaign_name: 'Gasto Total (Mes Actual)', 
+      status: 'ENABLED', 
+      date: today, 
+      cost: costReal 
+    });
+
   } else {
     console.error(`🔴 Error Google API en cliente ${customerId}:`, await response.text());
   }
 
-  // Fallback: Si no hay gasto, insertamos una fila vacía para que conste que se revisó
+  // Fallback visual si no hay respuesta válida (opcional, ayuda a depurar)
   if (rows.length === 0) {
      const today = new Date().toISOString().split('T')[0];
-     rows.push({ client_id: customerId, campaign_id: `account-level-${customerId}`, campaign_name: '(Sin Gasto Reciente)', status: 'UNKNOWN', date: today, cost: 0 });
+     rows.push({ 
+         client_id: customerId, 
+         campaign_id: `TOTAL-MONTH-${customerId}`, 
+         campaign_name: '(Sin Gasto/Datos)', 
+         status: 'UNKNOWN', 
+         date: today, 
+         cost: 0 
+     });
   }
   return rows;
 }
@@ -119,7 +129,6 @@ async function getAccountLevelSpend(customerId, accessToken) {
 async function processSyncJob(jobId) {
   const log = async (msg) => {
     console.log(`[Job ${jobId}] ${msg}`);
-    // Leemos logs actuales para hacer append (simple pero efectivo)
     const { data } = await supabase.from('ad_sync_logs').select('logs').eq('id', jobId).single();
     const currentLogs = data?.logs || [];
     await supabase.from('ad_sync_logs').update({ logs: [...currentLogs, msg] }).eq('id', jobId);
@@ -127,7 +136,7 @@ async function processSyncJob(jobId) {
 
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
-    await log(`🚀 Iniciando sincronización (${API_VERSION})...`);
+    await log(`🚀 Iniciando sincronización de Presupuesto Mensual (${API_VERSION})...`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
@@ -140,11 +149,8 @@ async function processSyncJob(jobId) {
       const dailyData = await getAccountLevelSpend(client.id, token);
       
       if (dailyData.length > 0) {
-         if (dailyData[0].cost === 0 && dailyData[0].campaign_name === '(Sin Gasto Reciente)') {
-            console.log("⚠️ 0€");
-         } else {
-            console.log(`✅ ${dailyData.length} registros.`);
-         }
+         const gasto = dailyData[0].cost;
+         console.log(`✅ ${gasto.toFixed(2)}€ acumulados este mes.`);
 
          const rowsToInsert = dailyData.map(d => ({ ...d, client_name: client.name }));
          
@@ -159,7 +165,7 @@ async function processSyncJob(jobId) {
       }
     }
 
-    await log(`🎉 FIN. ${totalRows} filas actualizadas/insertadas.`);
+    await log(`🎉 FIN. ${totalRows} cuentas actualizadas con el gasto mensual.`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
@@ -174,7 +180,7 @@ supabase.channel('ads-worker').on('postgres_changes', { event: 'INSERT', schema:
     processSyncJob(payload.new.id);
 }).subscribe();
 
-// Polling de seguridad (por si se pierde el evento de websocket)
+// Polling de seguridad
 setInterval(async () => {
   const { data } = await supabase.from('ad_sync_logs').select('id').eq('status', 'pending').limit(1);
   if (data?.length) {
