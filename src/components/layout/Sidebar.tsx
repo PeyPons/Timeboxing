@@ -8,7 +8,8 @@ import {
   Settings, 
   Sparkles,
   Briefcase,
-  FileDown
+  FileDown,
+  Megaphone // <--- 1. AÑADIDO (Faltaba esto)
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -46,6 +47,11 @@ export function Sidebar() {
           Clientes
         </NavLink>
 
+        {/* 2. MOVIDO AQUÍ: Google Ads ahora está dentro de la navegación correcta */}
+        <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
+          Google Ads
+        </NavLink>
+
         <NavLink to="/team" icon={Users} active={location.pathname === '/team'}>
           Equipo
         </NavLink>
@@ -66,14 +72,6 @@ export function Sidebar() {
           Copiloto IA
         </NavLink>
       </nav>
-
-      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
-          Gestión
-        </div>
-        
-       <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
-          Google Ads
-        </NavLink>
 
       {/* Footer del Sidebar */}
       <div className="p-4 border-t border-slate-800 bg-slate-950/30">
