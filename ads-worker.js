@@ -60,27 +60,34 @@ async function getAccountLevelSpend(customerId, accessToken) {
       }); } });
     }
   }
-  // Fallback: Si no hay gasto, metemos una fila dummy
+  
+  // CORRECCIÓN AQUÍ: ID ÚNICO PARA EL FALLBACK
   if (rows.length === 0) {
      const today = new Date().toISOString().split('T')[0];
-     rows.push({ client_id: customerId, campaign_id: 'account-level', campaign_name: '(Sin Gasto Reciente)', status: 'UNKNOWN', date: today, cost: 0 });
+     // Antes: 'account-level' (causaba que todos se sobrescribieran)
+     // Ahora: 'account-level-' + customerId (único para cada cliente)
+     rows.push({ 
+       client_id: customerId, 
+       campaign_id: `account-level-${customerId}`, 
+       campaign_name: '(Sin Gasto Reciente)', 
+       status: 'UNKNOWN', 
+       date: today, 
+       cost: 0 
+     });
   }
   return rows;
 }
 
 // --- PROCESADOR DE TRABAJO ---
 async function processSyncJob(jobId) {
-  // Función auxiliar para loguear en DB
   const log = async (msg) => {
     console.log(`[Job ${jobId}] ${msg}`);
-    // Leemos logs actuales y añadimos el nuevo
     const { data } = await supabase.from('ad_sync_logs').select('logs').eq('id', jobId).single();
     const currentLogs = data?.logs || [];
     await supabase.from('ad_sync_logs').update({ logs: [...currentLogs, msg] }).eq('id', jobId);
   };
 
   try {
-    // 1. Marcar como corriendo
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
     await log("🚀 Worker conectado. Iniciando proceso...");
     
@@ -91,7 +98,6 @@ async function processSyncJob(jobId) {
     await log(`📋 Encontrados ${clients.length} clientes en el MCC.`);
 
     let totalRows = 0;
-    // Procesamos clientes
     for (const [index, client] of clients.entries()) {
       await log(`Processing (${index + 1}/${clients.length}): ${client.name}...`);
       
@@ -119,9 +125,7 @@ async function processSyncJob(jobId) {
   }
 }
 
-// --- SISTEMA DE ESCUCHA HÍBRIDO (Realtime + Polling) ---
-
-// 1. Escuchar eventos (Rápido)
+// --- SISTEMA DE ESCUCHA HÍBRIDO ---
 supabase
   .channel('ads-worker')
   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ad_sync_logs' }, (payload) => {
@@ -130,18 +134,11 @@ supabase
   })
   .subscribe();
 
-// 2. Buscar tareas pendientes cada 3 segundos (Respaldo Seguro)
 setInterval(async () => {
-  const { data: pendingJobs } = await supabase
-    .from('ad_sync_logs')
-    .select('id')
-    .eq('status', 'pending')
-    .limit(1);
-
+  const { data: pendingJobs } = await supabase.from('ad_sync_logs').select('id').eq('status', 'pending').limit(1);
   if (pendingJobs && pendingJobs.length > 0) {
     const job = pendingJobs[0];
     console.log('🐢 Polling encontró trabajo pendiente:', job.id);
-    // Cambiamos estado inmediatamente para que no lo coja otro ciclo
     await supabase.from('ad_sync_logs').update({ status: 'queued' }).eq('id', job.id);
     processSyncJob(job.id);
   }
