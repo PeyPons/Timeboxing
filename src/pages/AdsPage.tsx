@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, TrendingUp, TrendingDown, Unlink
+  Info, TrendingUp, TrendingDown, Unlink, DollarSign, Target
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
@@ -25,8 +25,8 @@ interface CampaignData {
   status: string;
   cost: number;
   conversions_value?: number;
-  conversions?: number; // Cantidad de conversiones
-  daily_budget?: number; // Presupuesto diario configurado en Google
+  conversions?: number; 
+  daily_budget?: number; 
   original_client_name?: string; 
   original_client_id?: string;
 }
@@ -40,20 +40,20 @@ interface ClientPacing {
   progress: number;
   forecast: number;
   recommendedDaily: number;
-  avgDailySpend: number; // Gasto medio actual
+  avgDailySpend: number; // Ritmo actual
   status: 'ok' | 'risk' | 'over' | 'under';
   remainingBudget: number;
   campaigns: CampaignData[];
   isHidden: boolean;
   groupName?: string;
   isManualGroupBudget?: boolean;
-  realIdsList: {id: string, name: string}[]; // Lista de cuentas dentro del grupo
-  globalRoas: number; // ROAS Global del cliente/grupo
+  isSalesAccount: boolean; // ¿Es cuenta de ventas/ROAS?
+  realIdsList: {id: string, name: string}[]; 
+  globalRoas: number; 
 }
 
 const formatProjectName = (name: string) => name.replace(/^(Cliente|Client)\s*[-:]?\s*/i, '');
 
-// Función auxiliar para calcular color de ROAS
 const getRoasColor = (roas: number) => {
     if (roas >= 4) return "text-emerald-600 bg-emerald-50 border-emerald-200";
     if (roas >= 2) return "text-blue-600 bg-blue-50 border-blue-200";
@@ -77,7 +77,7 @@ export default function AdsPage() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
   const [syncProgress, setSyncProgress] = useState(0); 
   
-  const [editingClient, setEditingClient] = useState<{id: string, name: string, group: string, hidden: boolean} | null>(null);
+  const [editingClient, setEditingClient] = useState<{id: string, name: string, group: string, hidden: boolean, isSales: boolean} | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -86,7 +86,6 @@ export default function AdsPage() {
       const { data: adsData } = await supabase.from('google_ads_campaigns').select('*');
       const { data: settingsData } = await supabase.from('client_settings').select('*');
       
-      // Obtener última fecha REAL de sincronización
       const { data: logData } = await supabase
         .from('ad_sync_logs')
         .select('created_at')
@@ -100,7 +99,8 @@ export default function AdsPage() {
         settingsMap[s.client_id] = {
           budget: Number(s.budget_limit) || 0,
           group_name: s.group_name || '',
-          is_hidden: s.is_hidden || false
+          is_hidden: s.is_hidden || false,
+          is_sales_account: s.is_sales_account !== false // Default true si es null
         }; 
       });
 
@@ -110,7 +110,6 @@ export default function AdsPage() {
       if (logData) {
         setLastSyncTime(new Date(logData.created_at));
       } else if (adsData && adsData.length > 0) {
-         // Fallback por si no hay logs aún
          const dates = adsData.map(d => new Date(d.created_at || d.date).getTime());
          setLastSyncTime(new Date(Math.max(...dates)));
       }
@@ -150,7 +149,6 @@ export default function AdsPage() {
             const currentLogs = newRow.logs || [];
             setSyncLogs(currentLogs);
             
-            // Estimación de progreso basada en logs
             if (currentLogs.length > 0) {
                 const lastLog = currentLogs[currentLogs.length - 1];
                 const match = lastLog.match(/\[(\d+)\/(\d+)\]/);
@@ -210,7 +208,8 @@ export default function AdsPage() {
     await supabase.from('client_settings').upsert({
       client_id: editingClient.id,
       group_name: editingClient.group,
-      is_hidden: editingClient.hidden
+      is_hidden: editingClient.hidden,
+      is_sales_account: editingClient.isSales
     }, { onConflict: 'client_id' });
 
     setEditingClient(null);
@@ -222,7 +221,6 @@ export default function AdsPage() {
   const reportData = useMemo(() => {
     if (!rawData.length) return [];
     
-    // Obtener la fecha más reciente de los datos para filtrar el "Mes Actual"
     const timestamps = rawData.map(d => new Date(d.date).getTime());
     const maxTs = Math.max(...timestamps);
     const latestDateStr = new Date(maxTs).toISOString().split('T')[0];
@@ -240,22 +238,18 @@ export default function AdsPage() {
       total_conversions_val: number,
       is_group: boolean,
       isHidden: boolean,
-      realIds: string[], // IDs de Supabase de los clientes hijos
+      isSalesAccount: boolean,
+      realIds: string[], 
       realIdsNames: {id: string, name: string}[],
       campaigns: CampaignData[],
       isManualGroupBudget: boolean
     }>();
 
     rawData.forEach(row => {
-      // Filtramos solo los datos del último día sincronizado (estado actual)
-      // OJO: Si guardas histórico diario, deberías sumar el coste del mes. 
-      // Asumo que tu worker sobreescribe o que filtras por mes. 
-      // Si tu worker trae "coste del mes hasta hoy", usamos solo la última fecha.
       if (row.date === latestDateStr) {
         
-        const settings = clientSettings[row.client_id] || { budget: 0, group_name: '', is_hidden: false };
+        const settings = clientSettings[row.client_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
         
-        // Agrupación
         const groupKey = settings.group_name && settings.group_name.trim() !== '' 
           ? `GROUP-${settings.group_name}` 
           : row.client_id;
@@ -264,7 +258,6 @@ export default function AdsPage() {
           ? settings.group_name 
           : row.client_name;
 
-        // Presupuesto Manual de Grupo
         const groupSettings = clientSettings[groupKey];
         const manualGroupBudget = (groupKey.startsWith('GROUP-') && groupSettings?.budget > 0) 
             ? groupSettings.budget 
@@ -278,6 +271,7 @@ export default function AdsPage() {
             total_conversions_val: 0,
             is_group: groupKey.startsWith('GROUP-'),
             isHidden: settings.is_hidden, 
+            isSalesAccount: settings.is_sales_account !== false,
             realIds: [],
             realIdsNames: [],
             campaigns: [],
@@ -289,7 +283,6 @@ export default function AdsPage() {
         entry.spent += row.cost;
         entry.total_conversions_val += (row.conversions_value || 0);
         
-        // Registrar sub-clientes para poder desvincularlos
         if (!entry.realIds.includes(row.client_id)) {
            entry.realIds.push(row.client_id);
            entry.realIdsNames.push({id: row.client_id, name: row.client_name});
@@ -300,7 +293,7 @@ export default function AdsPage() {
            if (!settings.is_hidden) entry.isHidden = false;
         }
         
-        if (row.cost > 0) { // Solo añadir campañas con gasto para limpiar visualización
+        if (row.cost > 0) { 
             entry.campaigns.push({
                 campaign_id: row.campaign_id,
                 campaign_name: row.campaign_name,
@@ -347,6 +340,7 @@ export default function AdsPage() {
           status, 
           remainingBudget,
           isHidden: value.isHidden,
+          isSalesAccount: value.isSalesAccount,
           groupName: value.is_group ? value.name : undefined,
           isManualGroupBudget: value.isManualGroupBudget,
           realIdsList: value.realIdsNames,
@@ -355,7 +349,6 @@ export default function AdsPage() {
       });
     });
 
-    // Filtros visuales
     let filtered = report;
     if (!showHidden) {
       filtered = filtered.filter(c => !c.isHidden);
@@ -434,7 +427,9 @@ export default function AdsPage() {
          {/* LISTADO */}
          <div className="space-y-4">
             <Accordion type="single" collapsible className="w-full space-y-2">
-              {reportData.map((client) => (
+              {reportData.map((client) => {
+                  const diffFromBudget = client.forecast - client.budget;
+                  return (
                 <AccordionItem 
                   key={client.client_id} 
                   value={client.client_id} 
@@ -455,8 +450,8 @@ export default function AdsPage() {
                                     </span>
                                     {client.is_group && <Badge variant="secondary" className="text-[10px] gap-1"><Layers className="w-3 h-3"/> GRUPO</Badge>}
                                     
-                                    {/* ALERTA ROAS BAJO */}
-                                    {client.globalRoas < 2 && client.spent > 100 && (
+                                    {/* ALERTA ROAS - Solo si es cuenta de Ventas */}
+                                    {client.isSalesAccount && client.globalRoas < 2 && client.spent > 100 && (
                                         <TooltipProvider>
                                             <Tooltip>
                                                 <TooltipTrigger>
@@ -489,7 +484,8 @@ export default function AdsPage() {
                                             id: client.client_id,
                                             name: client.client_name,
                                             group: clientSettings[client.client_id]?.group_name || '',
-                                            hidden: clientSettings[client.client_id]?.is_hidden || false
+                                            hidden: clientSettings[client.client_id]?.is_hidden || false,
+                                            isSales: clientSettings[client.client_id]?.is_sales_account !== false
                                         });
                                     } else {
                                        toast.info("Abre el grupo para editar las cuentas individuales.");
@@ -511,7 +507,7 @@ export default function AdsPage() {
                   <AccordionContent className="border-t border-slate-100 mt-2 pt-6 pb-6 px-2">
                     <div className="grid md:grid-cols-1 gap-8">
                         
-                        {/* GESTIÓN DE GRUPOS - SOLO SI ES GRUPO */}
+                        {/* GESTIÓN DE GRUPOS */}
                         {client.is_group && (
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                                 <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
@@ -526,12 +522,13 @@ export default function AdsPage() {
                                                     id: subClient.id,
                                                     name: subClient.name,
                                                     group: client.groupName || '',
-                                                    hidden: false
+                                                    hidden: false,
+                                                    isSales: clientSettings[subClient.id]?.is_sales_account !== false
                                                 })}
                                                 className="text-slate-400 hover:text-red-500 transition-colors ml-1"
-                                                title="Desvincular / Editar"
+                                                title="Configurar / Desvincular"
                                             >
-                                                <Unlink className="w-3 h-3" />
+                                                <Settings className="w-3 h-3" />
                                             </button>
                                         </div>
                                     ))}
@@ -540,15 +537,10 @@ export default function AdsPage() {
                         )}
 
                         <div className="grid md:grid-cols-2 gap-8">
-                            {/* FINANZAS */}
+                            {/* FINANZAS - DISEÑO AJUSTADO */}
                             <div className="space-y-6">
                                 <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                                     Control Financiero
-                                    {client.is_group && (
-                                        <span className="text-xs font-normal text-slate-400 normal-case">
-                                            {client.isManualGroupBudget ? '(Presupuesto Fijo de Grupo)' : '(Suma de cuentas)'}
-                                        </span>
-                                    )}
                                 </h3>
                                 
                                 <div className="space-y-4 bg-slate-50 p-4 rounded-md border border-slate-100 h-full">
@@ -558,12 +550,7 @@ export default function AdsPage() {
                                                 Presupuesto {client.is_group ? 'Total' : 'Mensual'}
                                             </label>
                                             {client.isManualGroupBudget && (
-                                                <TooltipProvider>
-                                                    <Tooltip>
-                                                        <TooltipTrigger><Info className="w-3 h-3 text-blue-400" /></TooltipTrigger>
-                                                        <TooltipContent><p>Este presupuesto ignora la suma de las cuentas individuales.</p></TooltipContent>
-                                                    </Tooltip>
-                                                </TooltipProvider>
+                                                <TooltipProvider><Tooltip><TooltipTrigger><Info className="w-3 h-3 text-blue-400" /></TooltipTrigger><TooltipContent><p>Presupuesto manual.</p></TooltipContent></Tooltip></TooltipProvider>
                                             )}
                                         </div>
                                         <div className="flex items-center gap-2">
@@ -573,7 +560,7 @@ export default function AdsPage() {
                                                 defaultValue={client.budget > 0 ? client.budget : ''} 
                                                 onBlur={(e) => handleSaveBudget(client.client_id, e.target.value)}
                                                 className={`h-8 w-24 text-right bg-white ${client.isManualGroupBudget ? 'border-blue-300 ring-1 ring-blue-100' : ''}`}
-                                                placeholder={client.is_group ? "Auto (0)" : "0"}
+                                                placeholder={client.is_group ? "Auto" : "0"}
                                             />
                                         </div>
                                     </div>
@@ -582,7 +569,7 @@ export default function AdsPage() {
                                         <div className="flex justify-between text-xs text-slate-500">
                                             <span>Consumo ({client.progress.toFixed(1)}%)</span>
                                             <span className={client.remainingBudget < 0 ? 'text-red-500 font-bold' : ''}>
-                                                Quedan: {formatCurrency(client.remainingBudget)}
+                                                Disp: {formatCurrency(client.remainingBudget)}
                                             </span>
                                         </div>
                                         <Progress 
@@ -591,34 +578,48 @@ export default function AdsPage() {
                                         />
                                     </div>
 
+                                    {/* GRID NUEVO DISEÑO */}
                                     <div className="grid grid-cols-2 gap-4 pt-2">
-                                        <div className="bg-white p-3 rounded border border-slate-200">
-                                            <div className="text-xs text-slate-500 mb-1">Límite Diario</div>
+                                        
+                                        {/* TARJETA: LÍMITE DIARIO + RITMO + ACCIÓN */}
+                                        <div className="bg-white p-3 rounded border border-slate-200 relative overflow-hidden">
+                                            <div className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Límite Diario</div>
                                             <div className="text-lg font-bold text-indigo-600">
                                                 {formatCurrency(client.recommendedDaily)}
                                             </div>
-                                            {/* CONSEJO DE AUMENTO/REDUCCIÓN */}
+                                            {/* RITMO ACTUAL */}
+                                            <div className="flex items-center gap-1 mt-2 mb-1">
+                                                <span className="text-[10px] text-slate-400">Ritmo:</span>
+                                                <span className="text-xs font-semibold text-slate-700">{formatCurrency(client.avgDailySpend)}</span>
+                                            </div>
+                                            {/* ACCIÓN (REDUCIR/AUMENTAR) */}
                                             {client.budget > 0 && (
-                                                <div className="mt-2 text-[10px] leading-tight border-t pt-2 border-slate-100">
+                                                <div className="text-[10px] leading-tight border-t pt-2 border-slate-100">
                                                     {client.recommendedDaily < client.avgDailySpend ? (
-                                                        <span className="text-amber-600 flex items-center gap-1">
+                                                        <span className="text-amber-600 flex items-center gap-1 font-medium">
                                                             <TrendingDown className="w-3 h-3" /> Reducir {formatCurrency(client.avgDailySpend - client.recommendedDaily)}/día
                                                         </span>
                                                     ) : (
-                                                        <span className="text-emerald-600 flex items-center gap-1">
+                                                        <span className="text-emerald-600 flex items-center gap-1 font-medium">
                                                             <TrendingUp className="w-3 h-3" /> Aumentar {formatCurrency(client.recommendedDaily - client.avgDailySpend)}/día
                                                         </span>
                                                     )}
                                                 </div>
                                             )}
                                         </div>
+
+                                        {/* TARJETA: PROYECCIÓN + DIFERENCIA */}
                                         <div className="bg-white p-3 rounded border border-slate-200">
-                                            <div className="text-xs text-slate-500 mb-1">Proyección</div>
+                                            <div className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Proyección Mes</div>
                                             <div className={`text-lg font-bold ${client.status === 'risk' ? 'text-amber-600' : 'text-slate-700'}`}>
                                                 {formatCurrency(client.forecast)}
                                             </div>
-                                            <div className="mt-2 text-[10px] text-slate-400 border-t pt-2 border-slate-100">
-                                                Ritmo actual: {formatCurrency(client.avgDailySpend)}/día
+                                            {/* DIFERENCIA CON PRESUPUESTO */}
+                                            <div className="mt-2 text-[10px] border-t pt-2 border-slate-100 flex justify-between items-center">
+                                                <span className="text-slate-400">Desvío:</span>
+                                                <span className={`font-bold ${diffFromBudget > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                    {diffFromBudget > 0 ? '+' : ''}{formatCurrency(diffFromBudget)}
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -637,7 +638,7 @@ export default function AdsPage() {
                                                 <th className="px-2 py-2 text-right">Presup.</th>
                                                 <th className="px-2 py-2 text-right">Gasto</th>
                                                 <th className="px-2 py-2 text-right">Conv.</th>
-                                                <th className="px-2 py-2 text-center">ROAS</th>
+                                                {client.isSalesAccount && <th className="px-2 py-2 text-center">ROAS</th>}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -656,27 +657,34 @@ export default function AdsPage() {
                                                             )}
                                                         </td>
                                                         <td className="px-2 py-2 align-middle">
-                                                            <div className="w-12 bg-slate-100 h-1.5 rounded-full overflow-hidden mx-auto" title={`${weight.toFixed(0)}% del gasto`}>
-                                                                <div className="bg-slate-400 h-full" style={{ width: `${weight}%` }}></div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden max-w-[40px]">
+                                                                    <div className="bg-slate-400 h-full" style={{ width: `${weight}%` }}></div>
+                                                                </div>
+                                                                <span className="text-[9px] text-slate-400 w-6 text-right">{weight.toFixed(0)}%</span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-2 py-2 text-right text-slate-500">
+                                                        <td className="px-2 py-2 text-right text-slate-500 font-mono text-[10px]">
                                                             {camp.daily_budget ? formatCurrency(camp.daily_budget).replace('€', '') : '-'}
                                                         </td>
                                                         <td className="px-2 py-2 text-right font-medium text-slate-700">
                                                             {formatCurrency(camp.cost).replace('€', '')}
                                                         </td>
                                                         <td className="px-2 py-2 text-right">
-                                                            <div className="flex flex-col items-end">
+                                                            <div className="flex flex-col items-end leading-none gap-0.5">
                                                                 <span className="font-bold">{camp.conversions || 0}</span>
-                                                                <span className="text-[9px] text-slate-400">{formatCurrency(camp.conversions_value || 0).replace('€','')}</span>
+                                                                {client.isSalesAccount && (
+                                                                    <span className="text-[9px] text-slate-400">{formatCurrency(camp.conversions_value || 0).replace('€','')}</span>
+                                                                )}
                                                             </div>
                                                         </td>
-                                                        <td className="px-2 py-2 text-center">
-                                                            <Badge variant="outline" className={`text-[10px] px-1 py-0 ${getRoasColor(campRoas)}`}>
-                                                                {campRoas.toFixed(2)}
-                                                            </Badge>
-                                                        </td>
+                                                        {client.isSalesAccount && (
+                                                            <td className="px-2 py-2 text-center">
+                                                                <Badge variant="outline" className={`text-[9px] px-1 py-0 h-4 ${getRoasColor(campRoas)}`}>
+                                                                    {campRoas.toFixed(2)}
+                                                                </Badge>
+                                                            </td>
+                                                        )}
                                                     </tr>
                                                 );
                                             })}
@@ -688,7 +696,8 @@ export default function AdsPage() {
                     </div>
                   </AccordionContent>
                 </AccordionItem>
-              ))}
+              );
+              })}
             </Accordion>
          </div>
 
@@ -713,6 +722,19 @@ export default function AdsPage() {
                             Escribe un nombre para agruparlo. <strong>Borra el nombre para sacarlo del grupo.</strong>
                         </p>
                     </div>
+                    
+                    <div className="flex items-center justify-between border-t pt-4 border-slate-100">
+                        <Label htmlFor="sales-mode" className="flex flex-col">
+                            <span>Es Cuenta de Ventas (Ecommerce)</span>
+                            <span className="text-xs font-normal text-slate-500">Habilita métricas de ROAS y Valor de Conversión.</span>
+                        </Label>
+                        <Switch 
+                            id="sales-mode" 
+                            checked={editingClient?.isSales !== false} // True por defecto
+                            onCheckedChange={(checked) => setEditingClient(prev => prev ? {...prev, isSales: checked} : null)}
+                        />
+                    </div>
+
                     <div className="flex items-center space-x-2 pt-2">
                         <Switch 
                             id="hide-mode" 
