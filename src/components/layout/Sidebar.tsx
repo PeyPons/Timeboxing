@@ -47,13 +47,16 @@ export function Sidebar() {
           Clientes
         </NavLink>
 
-        {/* 2. MOVIDO AQUÍ: Google Ads ahora está dentro de la navegación correcta */}
-        <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
-          Google Ads
-        </NavLink>
-
         <NavLink to="/team" icon={Users} active={location.pathname === '/team'}>
           Equipo
+        </NavLink>
+
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
+          PPC
+        </div>
+        
+        <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
+          Google Ads
         </NavLink>
 
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
