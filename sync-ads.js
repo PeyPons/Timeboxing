@@ -38,7 +38,7 @@ async function getAccessToken() {
 }
 
 async function getClientAccounts(accessToken) {
-  console.log(`📡 Buscando clientes...`);
+  console.log(`📡 Buscando clientes en el MCC...`);
   const query = `
     SELECT customer_client.client_customer, customer_client.descriptive_name 
     FROM customer_client 
@@ -74,8 +74,12 @@ async function getClientAccounts(accessToken) {
   return clients;
 }
 
-async function getCampaignsDaily(customerId, accessToken) {
-  // GAQL MÁGICO: Pedimos segments.date y filtramos los últimos 30 días
+async function getAccountLevelSpend(customerId, accessToken) {
+  // ESTRATEGIA: "Account Level Real"
+  // No filtramos por status = 'ENABLED'.
+  // Pedimos TODO lo que haya tenido coste (metrics.cost_micros > 0)
+  // Esto incluye campañas pausadas o eliminadas que hayan gastado dinero en el periodo.
+  
   const query = `
     SELECT 
       campaign.id, 
@@ -86,9 +90,9 @@ async function getCampaignsDaily(customerId, accessToken) {
       metrics.clicks, 
       metrics.impressions 
     FROM campaign 
-    WHERE campaign.status = 'ENABLED' 
-    AND metrics.cost_micros > 0 -- Solo traemos días con gasto para no llenar la DB de ceros
-    AND segments.date DURING LAST_30_DAYS`;
+    WHERE 
+      segments.date DURING LAST_90_DAYS 
+      AND metrics.cost_micros > 0`; 
 
   const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
     method: 'POST',
@@ -101,64 +105,82 @@ async function getCampaignsDaily(customerId, accessToken) {
     body: JSON.stringify({ query }),
   });
 
-  if (!response.ok) return [];
-
-  const data = await response.json();
-  const rows = [];
-  if (data && Array.isArray(data)) {
-    data.forEach(batch => {
-      if (batch.results) {
-        batch.results.forEach(row => {
-          rows.push({
-            client_id: customerId,
-            campaign_id: row.campaign.id.toString(),
-            campaign_name: row.campaign.name,
-            status: row.campaign.status,
-            date: row.segments.date, // La fecha del dato (ej: 2023-10-25)
-            cost: row.metrics ? (parseInt(row.metrics.costMicros) / 1000000) : 0,
-            clicks: row.metrics ? parseInt(row.metrics.clicks) : 0,
-            impressions: row.metrics ? parseInt(row.metrics.impressions) : 0
+  let rows = [];
+  if (response.ok) {
+    const data = await response.json();
+    if (data && Array.isArray(data)) {
+      data.forEach(batch => {
+        if (batch.results) {
+          batch.results.forEach(row => {
+            rows.push({
+              client_id: customerId,
+              campaign_id: row.campaign.id.toString(),
+              campaign_name: row.campaign.name,
+              status: row.campaign.status, // Guardamos el estado real (PAUSED, ENABLED, REMOVED)
+              date: row.segments.date,
+              cost: row.metrics ? (parseInt(row.metrics.costMicros) / 1000000) : 0,
+              clicks: row.metrics ? parseInt(row.metrics.clicks) : 0,
+              impressions: row.metrics ? parseInt(row.metrics.impressions) : 0
+            });
           });
-        });
-      }
-    });
+        }
+      });
+    }
   }
+
+  // Si no hay gasto en 90 días, insertamos una fila dummy HOY con coste 0
+  // para que el cliente al menos aparezca en la lista como "activo sin gasto".
+  if (rows.length === 0) {
+     const today = new Date().toISOString().split('T')[0];
+     // Verificamos si la cuenta existe y está viva
+     rows.push({
+       client_id: customerId,
+       campaign_id: 'account-level',
+       campaign_name: '(Sin Gasto Reciente)',
+       status: 'UNKNOWN',
+       date: today,
+       cost: 0,
+       clicks: 0,
+       impressions: 0
+     });
+  }
+
   return rows;
 }
 
 // Ejecución
 try {
-  console.log("🚀 INICIANDO SINCRONIZACIÓN DIARIA...");
+  console.log("🚀 INICIANDO SINCRONIZACIÓN (Modo Facturación Real)...");
+  
   const token = await getAccessToken();
   const clients = await getClientAccounts(token);
-  console.log(`📋 Clientes: ${clients.length}`);
+  console.log(`📋 Clientes detectados en MCC: ${clients.length}`);
 
   let totalRows = 0;
   for (const client of clients) {
     process.stdout.write(`   procesando ${client.name}... `);
-    const dailyData = await getCampaignsDaily(client.id, token);
+    const dailyData = await getAccountLevelSpend(client.id, token);
     
     if (dailyData.length > 0) {
-      // Añadimos el nombre del cliente a cada fila
       const rowsToInsert = dailyData.map(d => ({ ...d, client_name: client.name }));
 
-      // UPSERT: Si ya existe el dato para ese día/campaña, lo actualiza
+      // Usamos UPSERT para actualizar si ya existe el dato
       const { error } = await supabase
         .from('google_ads_campaigns')
         .upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
       
       if (!error) {
-        console.log(`✅ ${dailyData.length} reg.`);
+        console.log(`✅ ${dailyData.length} registros.`);
         totalRows += dailyData.length;
       } else {
-        console.log(`❌ Error: ${error.message}`);
+        console.log(`❌ Error DB: ${error.message}`);
       }
     } else {
-      console.log(`(sin gasto reciente)`);
+      console.log(`(error de lectura)`);
     }
   }
-  console.log(`\n🎉 FIN. Total registros diarios: ${totalRows}`);
+  console.log(`\n🎉 FIN. Base de datos actualizada con ${totalRows} registros.`);
 
 } catch (error) {
-  console.error("\n💥 ERROR:", error.message);
+  console.error("\n💥 ERROR FATAL:", error.message);
 }
