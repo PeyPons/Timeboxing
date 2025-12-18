@@ -1,174 +1,87 @@
+/* Ejecutar con: node meta-worker.js */
 import 'dotenv/config'; 
 import { createClient } from '@supabase/supabase-js';
 
-// Utilitario para limpiar comillas si Docker las inyecta mal
 const cleanEnv = (val) => val ? val.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim() : '';
-
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const META_ACCESS_TOKEN = cleanEnv(process.env.META_ACCESS_TOKEN);
 const API_VERSION = 'v19.0';
 
-if (!SUPABASE_URL || !SUPABASE_KEY || !META_ACCESS_TOKEN) { 
-    console.error("❌ Faltan claves en .env"); process.exit(1); 
-}
-
+if (!SUPABASE_URL || !SUPABASE_KEY || !META_ACCESS_TOKEN) { console.error("❌ Faltan claves"); process.exit(1); }
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- FUNCIONES AUXILIARES ---
-
-// Obtener el NOMBRE REAL de la cuenta desde la API de Meta
-async function getAccountName(adAccountId) {
+async function getAccountName(id) {
     try {
-        const url = `https://graph.facebook.com/${API_VERSION}/${adAccountId}?fields=name&access_token=${META_ACCESS_TOKEN}`;
-        const res = await fetch(url);
+        const res = await fetch(`https://graph.facebook.com/${API_VERSION}/${id}?fields=name&access_token=${META_ACCESS_TOKEN}`);
         const data = await res.json();
-        return data.name || adAccountId; // Devuelve el nombre o el ID si falla
-    } catch (e) {
-        return adAccountId;
-    }
+        return data.name || id;
+    } catch { return id; }
 }
 
-function getMonthRanges() {
-    const now = new Date();
-    const ranges = [];
-    for (let i = 0; i < 3; i++) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const start = new Date(d.getFullYear(), d.getMonth(), 1);
-        const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-        const startStr = start.toISOString().split('T')[0];
-        const endStr = end.toISOString().split('T')[0];
-        const dbDate = startStr.substring(0, 8) + '01'; 
-        ranges.push({ start: startStr, end: endStr, dbDate });
-    }
-    return ranges;
-}
-
-async function fetchMetaInsights(adAccountId, range) {
-    const fields = 'campaign_id,campaign_name,spend,impressions,clicks,actions,action_values';
-    const url = `https://graph.facebook.com/${API_VERSION}/${adAccountId}/insights?level=campaign&fields=${fields}&time_range={'since':'${range.start}','until':'${range.end}'}&access_token=${META_ACCESS_TOKEN}&limit=500`;
-
-    try {
-        const response = await fetch(url);
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
-        return data.data || [];
-    } catch (err) {
-        throw new Error(`Meta API: ${err.message}`);
-    }
-}
-
-function parseMetaMetrics(row) {
-    let conv = 0;
-    let val = 0;
-    const conversionEvents = ['purchase', 'lead', 'submit_application', 'contact', 'schedule', 'subscribe', 'start_trial', 'initiate_checkout'];
-
-    if (row.actions) {
-        row.actions.forEach(a => {
-            if (conversionEvents.includes(a.action_type) || a.action_type.includes('purchase')) conv += parseFloat(a.value);
-        });
-    }
-    if (row.action_values) {
-        row.action_values.forEach(a => {
-            if (a.action_type === 'purchase' || a.action_type === 'omni_purchase') val += parseFloat(a.value);
-        });
-    }
-    return { conv, val };
-}
-
-// --- LÓGICA PRINCIPAL ---
 async function processSyncJob(jobId) {
     const log = async (msg) => {
-        console.log(`[Job ${jobId}] ${msg}`);
         const { data } = await supabase.from('meta_sync_logs').select('logs').eq('id', jobId).single();
-        const currentLogs = data?.logs || [];
-        await supabase.from('meta_sync_logs').update({ logs: [...currentLogs, msg] }).eq('id', jobId);
+        await supabase.from('meta_sync_logs').update({ logs: [...(data?.logs||[]), msg].slice(-50) }).eq('id', jobId);
     };
 
     try {
         await supabase.from('meta_sync_logs').update({ status: 'running' }).eq('id', jobId);
-        await log(`🚀 Iniciando Sync Meta.`);
+        await log("🚀 Iniciando Meta Sync...");
+
+        // 1. Leer cuentas de DB
+        const { data: dbAccounts } = await supabase.from('ad_accounts_config').select('account_id').eq('platform', 'meta').eq('is_active', true);
+        let ids = dbAccounts?.map(a => a.account_id) || [];
         
-        // 1. INTENTAR LEER CUENTAS DESDE LA BASE DE DATOS (Configuración de Empleados)
-        const { data: dbAccounts } = await supabase.from('ad_accounts_config')
-            .select('account_id')
-            .eq('platform', 'meta')
-            .eq('is_active', true);
-        
-        let accountIds = [];
-        
-        // Si hay cuentas en DB, las usamos. Si no, fallback al .env
-        if (dbAccounts && dbAccounts.length > 0) {
-            accountIds = dbAccounts.map(a => a.account_id);
-            await log(`📋 Leyendo ${accountIds.length} cuentas desde configuración.`);
-        } else {
-            const envIds = cleanEnv(process.env.META_AD_ACCOUNT_IDS);
-            if (envIds) {
-                accountIds = envIds.split(',').map(id => id.trim());
-                await log(`⚠️ Usando configuración .env (No hay cuentas en DB).`);
-            }
+        // Fallback al .env si DB está vacía
+        if (!ids.length && process.env.META_AD_ACCOUNT_IDS) {
+            ids = cleanEnv(process.env.META_AD_ACCOUNT_IDS).split(',').map(i => i.trim());
         }
 
-        const ranges = getMonthRanges();
-        let totalRows = 0;
+        if (!ids.length) { await log("⚠️ No hay cuentas configuradas."); return; }
 
-        for (const accountId of accountIds) {
-            // Obtener nombre real (Empresa S.L.) en lugar de act_12345
-            const accountName = await getAccountName(accountId);
-            await log(`👉 Cuenta: ${accountName} (${accountId})`);
+        for (const id of ids) {
+            const name = await getAccountName(id);
+            await log(`👉 Procesando: ${name}`);
             
-            for (const range of ranges) {
-                try {
-                    const insights = await fetchMetaInsights(accountId, range);
-                    if (insights.length > 0) {
-                        const rowsToInsert = insights.map(row => {
-                            const metrics = parseMetaMetrics(row);
-                            return {
-                                client_id: accountId,
-                                client_name: accountName, // GUARDAMOS EL NOMBRE REAL
-                                campaign_id: row.campaign_id,
-                                campaign_name: row.campaign_name,
-                                status: 'ENABLED', 
-                                date: range.dbDate,
-                                cost: parseFloat(row.spend || 0),
-                                impressions: parseInt(row.impressions || 0),
-                                clicks: parseInt(row.clicks || 0),
-                                conversions: metrics.conv,
-                                conversions_value: metrics.val
-                            };
-                        });
+            // Actualizar nombre en config
+            await supabase.from('ad_accounts_config').update({ account_name: name }).eq('account_id', id);
 
-                        const { error } = await supabase.from('meta_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
-                        if (error) await log(`❌ Error DB: ${error.message}`);
-                        else totalRows += rowsToInsert.length;
-                    }
-                } catch (err) {
-                    await log(`⚠️ ${err.message}`);
-                }
+            // Fetch Insights (Resumido)
+            const range = { start: new Date().toISOString().slice(0,8)+'01', end: new Date().toISOString().slice(0,10) };
+            const url = `https://graph.facebook.com/${API_VERSION}/${id}/insights?level=campaign&fields=campaign_id,campaign_name,spend,actions,action_values&time_range={'since':'${range.start}','until':'${range.end}'}&access_token=${META_ACCESS_TOKEN}`;
+            const res = await fetch(url);
+            const json = await res.json();
+            
+            if (json.data) {
+                const upsertData = json.data.map(row => {
+                    let conv = 0, val = 0;
+                    row.actions?.forEach(a => { if(a.action_type === 'purchase' || a.action_type === 'lead') conv += parseFloat(a.value); });
+                    row.action_values?.forEach(a => { if(a.action_type === 'purchase') val += parseFloat(a.value); });
+                    
+                    return {
+                        client_id: id, client_name: name,
+                        campaign_id: row.campaign_id, campaign_name: row.campaign_name,
+                        status: 'ENABLED', date: range.start,
+                        cost: row.spend, conversions: conv, conversions_value: val
+                    };
+                });
+                await supabase.from('meta_ads_campaigns').upsert(upsertData, { onConflict: 'campaign_id, date' });
             }
         }
-
-        await log(`🎉 Finalizado. Datos actualizados: ${totalRows}`);
+        await log("🎉 Finalizado.");
         await supabase.from('meta_sync_logs').update({ status: 'completed' }).eq('id', jobId);
-
-    } catch (err) {
-        console.error(err);
-        await log(`💥 ERROR FATAL: ${err.message}`);
+    } catch (e) {
+        await log(`Error: ${e.message}`);
         await supabase.from('meta_sync_logs').update({ status: 'error' }).eq('id', jobId);
     }
 }
 
-// --- REALTIME LISTENER ---
-supabase.channel('meta-worker-listener')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'meta_sync_logs' }, (payload) => {
-        if(payload.new.status === 'pending') processSyncJob(payload.new.id);
-    })
-    .subscribe();
+supabase.channel('meta-listener').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'meta_sync_logs' }, p => {
+    if(p.new.status === 'pending') processSyncJob(p.new.id);
+}).subscribe();
 
-// Polling de seguridad
 setInterval(async () => {
     const { data } = await supabase.from('meta_sync_logs').select('id').eq('status', 'pending').limit(1);
     if (data?.length) processSyncJob(data[0].id);
 }, 5000);
-
-console.log(`📡 Meta Worker v2.2 (DB Accounts + Names) Listo.`);
