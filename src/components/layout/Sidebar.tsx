@@ -6,6 +6,7 @@ import {
   Users, 
   Briefcase, 
   BarChart3, 
+  FolderKanban,
   Settings, 
   FolderOpen, 
   FileText,
