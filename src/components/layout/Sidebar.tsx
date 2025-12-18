@@ -84,9 +84,8 @@ export function Sidebar() {
           Reportes
         </NavLink>
 
-        {/* AQUÍ ERA EL ERROR: Usabas FileDown sin importarlo */}
         <NavLink to="/informes-clientes" icon={FileDown} active={location.pathname === '/informes-clientes'}>
-          Informes Clientes
+          <span className="truncate">Informes Clientes</span>
         </NavLink>
 
         <NavLink to="/dashboard-ai" icon={Sparkles} active={location.pathname === '/dashboard-ai'}>
