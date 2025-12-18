@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, TrendingUp, TrendingDown, Unlink, Activity, Target
+  Info, TrendingUp, TrendingDown, Activity
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
@@ -647,6 +647,9 @@ export default function AdsPage() {
                                                 const cpc = camp.clicks && camp.clicks > 0 ? camp.cost / camp.clicks : 0;
                                                 const ctr = camp.impressions && camp.impressions > 0 ? (camp.clicks / camp.impressions) * 100 : 0;
                                                 
+                                                // REDONDEO DE CONVERSIONES
+                                                const conversions = Math.round(camp.conversions || 0);
+
                                                 return (
                                                     <tr key={`${camp.campaign_id}-${idx}`} className="hover:bg-slate-50/50">
                                                         <td className="px-3 py-3 align-top">
@@ -658,29 +661,34 @@ export default function AdsPage() {
                                                                     <span className={`w-1.5 h-1.5 rounded-full ${camp.status === 'ENABLED' ? 'bg-emerald-400' : 'bg-slate-300'}`}></span>
                                                                     {camp.status === 'ENABLED' ? 'ON' : 'OFF'}
                                                                 </span>
-                                                                <span>{camp.daily_budget ? `Presup: ${formatCurrency(camp.daily_budget).replace('€','')}` : 'P: -'}</span>
+                                                                <span>{camp.daily_budget ? `Presup: ${formatCurrency(camp.daily_budget)}` : 'P: -'}</span>
                                                                 {client.is_group && <span className="text-slate-300">|</span>}
                                                                 {client.is_group && <span className="truncate max-w-[100px]">{formatProjectName(camp.original_client_name || '')}</span>}
                                                             </div>
                                                         </td>
                                                         
                                                         <td className="px-2 py-3 text-right font-medium text-slate-700 align-top">
-                                                            {formatCurrency(camp.cost).replace('€', '')}
+                                                            {formatCurrency(camp.cost)}
                                                         </td>
 
                                                         <td className="px-2 py-3 text-right hidden sm:table-cell align-top">
                                                             <div className="flex flex-col items-end leading-tight">
-                                                                <span className="text-slate-600" title="Coste por Clic">{formatCurrency(cpc).replace('€','')}</span>
+                                                                <span className="text-slate-600" title="Coste por Clic">{formatCurrency(cpc)}</span>
                                                                 <span className="text-[10px] text-slate-400" title="CTR">{ctr.toFixed(1)}% CTR</span>
                                                             </div>
                                                         </td>
 
                                                         <td className="px-2 py-3 text-right align-top">
                                                             <div className="flex flex-col items-end leading-tight">
-                                                                <span className="font-bold">{camp.conversions || 0}</span>
-                                                                {camp.conversions > 0 && (
-                                                                    <span className="text-[10px] text-slate-500" title="Coste por Acción (CPA)">
-                                                                        {formatCurrency(cpa).replace('€','')} /lead
+                                                                <span className="font-bold">{conversions}</span>
+                                                                
+                                                                {/* LÓGICA DE VALOR VS CPA */}
+                                                                {conversions > 0 && (
+                                                                    <span className="text-[10px] text-slate-500">
+                                                                        {client.isSalesAccount 
+                                                                            ? formatCurrency(camp.conversions_value || 0) 
+                                                                            : `${formatCurrency(cpa)} /lead`
+                                                                        }
                                                                     </span>
                                                                 )}
                                                             </div>
