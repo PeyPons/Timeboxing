@@ -39,18 +39,26 @@ function getDateRange() {
 // Rango específico para Historial (MÁXIMO 30 DÍAS atrás por limitación de API)
 function getHistoryDateRange() {
   const now = new Date();
+  
+  // Fecha Fin: HOY
+  const tYear = now.getFullYear();
+  const tMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const tDay = String(now.getDate()).padStart(2, '0');
+  const today = `${tYear}-${tMonth}-${tDay}`;
+
+  // Fecha Inicio: HOY - 29 días (Margen de seguridad)
   const limitDate = new Date();
-  limitDate.setDate(now.getDate() - 30); // Restar 30 días exactos
+  limitDate.setDate(now.getDate() - 29); 
 
   const lYear = limitDate.getFullYear();
   const lMonth = String(limitDate.getMonth() + 1).padStart(2, '0');
   const lDay = String(limitDate.getDate()).padStart(2, '0');
   const firstDay = `${lYear}-${lMonth}-${lDay}`;
 
-  return { firstDay };
+  return { firstDay, today };
 }
 
-// CORREGIDO: Usar camelCase (changeEvent) en lugar de snake_case
+// Generar ID único usando changeEvent (camelCase)
 function generateChangeId(row) {
     if (!row.changeEvent) return `unknown_${Date.now()}`;
     return `${row.changeEvent.changeDateTime}_${row.changeEvent.resourceName}`.replace(/[^a-zA-Z0-9]/g, '_');
@@ -149,11 +157,12 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
   return rows;
 }
 
-// --- 2. HISTORIAL DE CAMBIOS (CORREGIDO) ---
+// --- 2. HISTORIAL DE CAMBIOS (CORREGIDO V4.2) ---
 async function getChangeHistory(customerId, accessToken) {
-    // Usamos el rango corregido (max 30 días)
+    // Obtenemos inicio y fin para cerrar el rango
     const historyRange = getHistoryDateRange();
     
+    // 🔥 CAMBIO CLAVE: Usamos BETWEEN con fecha inicio Y fecha fin (incluyendo hora)
     const query = `
       SELECT 
         change_event.change_date_time,
@@ -166,7 +175,7 @@ async function getChangeHistory(customerId, accessToken) {
       FROM 
         change_event 
       WHERE 
-        change_event.change_date_time >= '${historyRange.firstDay} 00:00:00'
+        change_event.change_date_time BETWEEN '${historyRange.firstDay} 00:00:00' AND '${historyRange.today} 23:59:59'
       ORDER BY 
         change_event.change_date_time DESC
       LIMIT 50`;
@@ -178,7 +187,6 @@ async function getChangeHistory(customerId, accessToken) {
     });
 
     if (!response.ok) {
-        // Ignoramos errores si la cuenta no soporta historial o fecha inválida
         console.warn(`⚠️ Aviso History API ${customerId}:`, await response.text());
         return [];
     }
@@ -190,11 +198,8 @@ async function getChangeHistory(customerId, accessToken) {
         data.forEach(batch => {
             if (batch.results) {
                 batch.results.forEach(row => {
-                    // console.log("Row Change Debug:", JSON.stringify(row)); // Descomentar si sigue fallando
-
-                    // Simplificación de detalles
                     let detailText = "Modificación";
-                    const ce = row.changeEvent; // Abreviamos
+                    const ce = row.changeEvent; // acceso camelCase
                     
                     if (!ce) return;
 
@@ -207,7 +212,7 @@ async function getChangeHistory(customerId, accessToken) {
                     }
 
                     changes.push({
-                        id: generateChangeId(row), // Ahora usa la función corregida
+                        id: generateChangeId(row),
                         client_id: customerId,
                         change_date: ce.changeDateTime,
                         user_email: ce.userEmail || 'Sistema',
@@ -234,8 +239,8 @@ async function processSyncJob(jobId) {
 
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
-    const range = getDateRange(); // Rango normal para métricas
-    await log(`🚀 Iniciando Sync v4.1 (Fix Historial).`);
+    const range = getDateRange(); 
+    await log(`🚀 Iniciando Sync v4.2 (Fix Rango Infinito).`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
@@ -247,7 +252,7 @@ async function processSyncJob(jobId) {
     for (const [index, client] of clients.entries()) {
       await log(`[${index + 1}/${clients.length}] Procesando ${client.name}...`);
       
-      // 1. Obtener Métricas de Campaña (Rango completo)
+      // 1. Métricas
       const campaignData = await getAccountLevelSpend(client.id, token, range);
       if (campaignData.length > 0) {
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
@@ -256,7 +261,7 @@ async function processSyncJob(jobId) {
          else totalCampRows += campaignData.length;
       }
 
-      // 2. Obtener Historial (Rango restringido a 30 días)
+      // 2. Historial
       const historyData = await getChangeHistory(client.id, token);
       if (historyData.length > 0) {
           const { error } = await supabase.from('google_ads_changes').upsert(historyData, { onConflict: 'id' });
@@ -287,4 +292,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker v4.1 (Corrección Historial) Listo.`);
+console.log(`📡 Worker v4.2 (Fix Rango Infinito) Listo.`);
