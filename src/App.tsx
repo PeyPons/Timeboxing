@@ -15,6 +15,7 @@ import ProjectsPage from "./pages/ProjectsPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
 import AdsPage from '@/pages/AdsPage';
+import AdsReportGenerator from './pages/AdsReportGenerator';
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,6 +46,7 @@ const App = () => (
                 <Route path="/informes-clientes" element={<ClientReportsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/ads" element={<AdsPage />} />
+                <Route path="/ads-reports" element={<AdsReportGenerator />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </AppLayout>
