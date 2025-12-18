@@ -1,15 +1,26 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react'; // Añadido useMemo
 import { useReactToPrint } from 'react-to-print';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Loader2, Printer, TrendingDown, TrendingUp, Sparkles, FolderKanban, FileDown } from 'lucide-react';
-import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
+import { format, subMonths, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { generateAdsSummary } from '@/utils/aiReportUtils';
 import { formatCurrency } from '@/lib/utils';
+
+// --- IMPORTAMOS RECHARTS ---
+import { 
+  ComposedChart, 
+  Bar, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer 
+} from 'recharts';
 
 // --- COMPONENTES VISUALES ---
 const StatCard = ({ label, value, prevValue, formatFn = (v:any) => v, reverseColor = false }: any) => {
@@ -45,7 +56,6 @@ export default function AdsReportGenerator() {
     useEffect(() => {
         const fetchClients = async () => {
             const { data } = await supabase.from('google_ads_campaigns').select('client_id, client_name').limit(100);
-            // Deduplicar clientes
             const unique = data ? Array.from(new Set(data.map(a => a.client_id)))
                 .map(id => data.find(a => a.client_id === id)) : [];
             setClients(unique);
@@ -66,7 +76,7 @@ export default function AdsReportGenerator() {
         const startPrev = startOfMonth(subMonths(now, 1)).toISOString();
         const endPrev = endOfMonth(subMonths(now, 1)).toISOString();
 
-        // Fetch Datos (Mes Actual y Anterior)
+        // Fetch Datos
         const { data: currentRows } = await supabase.from('google_ads_campaigns')
             .select('*').eq('client_id', selectedClient).gte('date', startCurrent).lte('date', endCurrent);
             
@@ -90,39 +100,70 @@ export default function AdsReportGenerator() {
         const currStats = aggregate(currentRows || []);
         const prevStats = aggregate(prevRows || []);
 
-        // Obtener Campaigns (Solo mes actual para tabla)
+        // --- NUEVO: Agregación Diaria para la Gráfica ---
+        const dailyMap = new Map();
+        currentRows?.forEach(row => {
+            const date = row.date; // YYYY-MM-DD
+            if (!dailyMap.has(date)) {
+                dailyMap.set(date, { date, cost: 0, conversions: 0, value: 0 });
+            }
+            const entry = dailyMap.get(date);
+            entry.cost += Number(row.cost || 0);
+            entry.conversions += Number(row.conversions || 0);
+            entry.value += Number(row.conversions_value || 0);
+        });
+        
+        // Convertir a array y ordenar por fecha
+        const dailyChartData = Array.from(dailyMap.values())
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(d => ({
+                ...d,
+                shortDate: format(parseISO(d.date), 'dd MMM', { locale: es }), // Formato "15 Ene"
+                cost: Math.round(d.cost),
+                value: Math.round(d.value)
+            }));
+            
+        // Detectar si hay ingresos para mostrar o no esa barra
+        const hasRevenue = currStats.value > 0;
+
+        // Top Campaigns
         const campaigns = currentRows?.reduce((acc: any[], row) => {
             const existing = acc.find(c => c.id === row.campaign_id);
             if (existing) {
-                existing.cost += row.cost;
-                existing.conversions += (row.conversions || 0);
+                existing.cost += Number(row.cost);
+                existing.conversions += Number(row.conversions || 0);
+                existing.impressions += Number(row.impressions || 0);
+                existing.clicks += Number(row.clicks || 0);
             } else {
                 acc.push({ 
                     id: row.campaign_id, 
-                    name: row.campaign_name, 
-                    cost: row.cost, 
-                    conversions: row.conversions || 0 
+                    campaign_name: row.campaign_name, // Usamos el nombre correcto para aiReportUtils
+                    status: row.status,
+                    cost: Number(row.cost), 
+                    conversions: Number(row.conversions || 0),
+                    impressions: Number(row.impressions || 0),
+                    clicks: Number(row.clicks || 0)
                 });
             }
             return acc;
-        }, []).sort((a,b) => b.cost - a.cost).slice(0, 5); // Top 5
+        }, []).sort((a,b) => b.cost - a.cost).slice(0, 5);
 
-        setReportData({ currStats, prevStats, campaigns });
+        setReportData({ currStats, prevStats, campaigns, dailyChartData, hasRevenue });
 
-        // 3. Generar Texto con IA
+        // IA
         const summary = await generateAdsSummary(
             clients.find(c => c.client_id === selectedClient)?.client_name,
-            currStats,
-            prevStats
+            campaigns,
+            currStats.cost,
+            currStats.conversions
         );
         setAiSummary(summary);
         
         setLoading(false);
     };
 
-    // 4. Imprimir
     const handlePrint = useReactToPrint({
-        contentRef: printRef,
+        contentRef: printRef, // Actualizado para nuevas versiones de react-to-print
         documentTitle: `Reporte_Ads_${format(new Date(), 'MMM_yyyy')}`,
     });
 
@@ -169,16 +210,6 @@ export default function AdsReportGenerator() {
                             </div>
                         </div>
 
-                        {/* RESUMEN EJECUTIVO (IA) */}
-                        <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100">
-                            <h3 className="flex items-center gap-2 text-indigo-900 font-bold mb-3">
-                                <Sparkles className="w-4 h-4" /> Análisis del Mes
-                            </h3>
-                            <p className="text-indigo-800 text-sm leading-relaxed italic">
-                                "{aiSummary || 'Generando análisis inteligente...'}"
-                            </p>
-                        </div>
-
                         {/* KPIS PRINCIPALES */}
                         <div className="grid grid-cols-2 gap-4">
                             <StatCard 
@@ -198,7 +229,7 @@ export default function AdsReportGenerator() {
                                 value={reportData.currStats.cpa} 
                                 prevValue={reportData.prevStats.cpa} 
                                 formatFn={(v:number) => `${v.toFixed(2)}€`}
-                                reverseColor={true} // Rojo si sube
+                                reverseColor={true} 
                             />
                             <StatCard 
                                 label="ROAS (Retorno)" 
@@ -206,6 +237,78 @@ export default function AdsReportGenerator() {
                                 prevValue={reportData.prevStats.roas} 
                                 formatFn={(v:number) => `${v.toFixed(2)}x`}
                             />
+                        </div>
+
+                        {/* --- NUEVA GRÁFICA DE EVOLUCIÓN DIARIA --- */}
+                        <div className="bg-white p-4 rounded-lg border border-slate-200">
+                            <h3 className="text-sm font-bold text-slate-600 mb-4 uppercase tracking-wider">Evolución Diaria (Coste vs Conversiones)</h3>
+                            <div className="h-64 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <ComposedChart data={reportData.dailyChartData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis 
+                                            dataKey="shortDate" 
+                                            tick={{fontSize: 10}} 
+                                            tickLine={false} 
+                                            axisLine={false}
+                                        />
+                                        {/* Eje Izquierdo: Dinero (Coste/Ingresos) */}
+                                        <YAxis 
+                                            yAxisId="left"
+                                            orientation="left"
+                                            tick={{fontSize: 10}} 
+                                            tickLine={false} 
+                                            axisLine={false}
+                                            tickFormatter={(value) => `${value}€`}
+                                        />
+                                        {/* Eje Derecho: Cantidad (Conversiones) */}
+                                        <YAxis 
+                                            yAxisId="right" 
+                                            orientation="right" 
+                                            tick={{fontSize: 10}} 
+                                            tickLine={false} 
+                                            axisLine={false}
+                                        />
+                                        <Tooltip 
+                                            contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                                            formatter={(value:number, name:string) => [
+                                                name === 'cost' ? `${value}€` : name === 'value' ? `${value}€` : value, 
+                                                name === 'cost' ? 'Inversión' : name === 'value' ? 'Ingresos' : 'Conversiones'
+                                            ]}
+                                        />
+                                        <Legend wrapperStyle={{fontSize: '12px', paddingTop: '10px'}}/>
+                                        
+                                        {/* Barra de Coste */}
+                                        <Bar yAxisId="left" dataKey="cost" name="Inversión" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={20} />
+                                        
+                                        {/* Barra de Ingresos (Solo si existen) */}
+                                        {reportData.hasRevenue && (
+                                            <Bar yAxisId="left" dataKey="value" name="Ingresos" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
+                                        )}
+                                        
+                                        {/* Línea de Conversiones */}
+                                        <Line 
+                                            yAxisId="right" 
+                                            type="monotone" 
+                                            dataKey="conversions" 
+                                            name="Conversiones" 
+                                            stroke="#f59e0b" 
+                                            strokeWidth={3} 
+                                            dot={{r: 3, fill: '#f59e0b'}} 
+                                        />
+                                    </ComposedChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* RESUMEN EJECUTIVO (IA) */}
+                        <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100">
+                            <h3 className="flex items-center gap-2 text-indigo-900 font-bold mb-3">
+                                <Sparkles className="w-4 h-4" /> Análisis del Mes
+                            </h3>
+                            <div className="text-indigo-900 text-sm leading-relaxed whitespace-pre-line">
+                                {aiSummary || 'Generando análisis inteligente...'}
+                            </div>
                         </div>
 
                         {/* DESGLOSE CAMPAÑAS */}
@@ -217,14 +320,14 @@ export default function AdsReportGenerator() {
                                         <tr>
                                             <th className="px-4 py-3">Campaña</th>
                                             <th className="px-4 py-3 text-right">Inversión</th>
-                                            <th className="px-4 py-3 text-right">Conversiones</th>
+                                            <th className="px-4 py-3 text-right">Conv.</th>
                                             <th className="px-4 py-3 text-right">CPA</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {reportData.campaigns?.map((camp: any) => (
                                             <tr key={camp.id}>
-                                                <td className="px-4 py-3 font-medium text-slate-700 truncate max-w-[200px]">{camp.name}</td>
+                                                <td className="px-4 py-3 font-medium text-slate-700 truncate max-w-[200px]">{camp.campaign_name}</td>
                                                 <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(camp.cost)}</td>
                                                 <td className="px-4 py-3 text-right font-bold">{Math.round(camp.conversions)}</td>
                                                 <td className="px-4 py-3 text-right text-slate-500">
