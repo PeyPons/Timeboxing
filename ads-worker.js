@@ -18,16 +18,18 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- UTILIDADES ---
 
-// Rango amplio para métricas (Mes actual + Anterior)
+// Rango: Mes Actual + Mes Anterior (Suficiente para comparar)
 function getDateRange() {
   const now = new Date();
-  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   
+  // 1 del mes pasado
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const pYear = prevMonthDate.getFullYear();
   const pMonth = String(prevMonthDate.getMonth() + 1).padStart(2, '0');
-  const pDay = String(prevMonthDate.getDate()).padStart(2, '0');
+  const pDay = '01'; 
   const firstDay = `${pYear}-${pMonth}-${pDay}`;
 
+  // Hoy
   const tYear = now.getFullYear();
   const tMonth = String(now.getMonth() + 1).padStart(2, '0');
   const tDay = String(now.getDate()).padStart(2, '0');
@@ -36,7 +38,7 @@ function getDateRange() {
   return { firstDay, today };
 }
 
-// Rango específico para Historial (MÁXIMO 30 DÍAS atrás por limitación de API)
+// Historial: Últimos 30 días (Límite estricto de Google)
 function getHistoryDateRange() {
   const now = new Date();
   
@@ -46,10 +48,9 @@ function getHistoryDateRange() {
   const tDay = String(now.getDate()).padStart(2, '0');
   const today = `${tYear}-${tMonth}-${tDay}`;
 
-  // Fecha Inicio: HOY - 29 días (Margen de seguridad)
+  // Fecha Inicio: Hace 30 días
   const limitDate = new Date();
   limitDate.setDate(now.getDate() - 29); 
-
   const lYear = limitDate.getFullYear();
   const lMonth = String(limitDate.getMonth() + 1).padStart(2, '0');
   const lDay = String(limitDate.getDate()).padStart(2, '0');
@@ -58,7 +59,6 @@ function getHistoryDateRange() {
   return { firstDay, today };
 }
 
-// Generar ID único usando changeEvent (camelCase)
 function generateChangeId(row) {
     if (!row.changeEvent) return `unknown_${Date.now()}`;
     return `${row.changeEvent.changeDateTime}_${row.changeEvent.resourceName}`.replace(/[^a-zA-Z0-9]/g, '_');
@@ -97,11 +97,13 @@ async function getClientAccounts(accessToken) {
   return clients;
 }
 
-// --- 1. DATOS DE CAMPAÑAS ---
+// --- 1. DATOS MENSUALES (ESTABILIDAD) ---
 async function getAccountLevelSpend(customerId, accessToken, dateRange) {
-  const queryDaily = `
+  // CAMBIO CLAVE: Usamos segments.month en lugar de segments.date
+  // Esto devuelve 1 sola fila por campaña y mes (acumulado).
+  const queryMonthly = `
     SELECT 
-      segments.date,
+      segments.month,
       campaign.id, 
       campaign.name, 
       campaign.status, 
@@ -119,19 +121,19 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
   const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'developer-token': DEVELOPER_TOKEN, 'Content-Type': 'application/json', 'login-customer-id': MCC_ID },
-      body: JSON.stringify({ query: queryDaily }),
+      body: JSON.stringify({ query: queryMonthly }),
   });
 
   if (!response.ok) {
-      console.error(`🔴 Error Google API Campañas ${customerId}:`, await response.text());
+      console.error(`🔴 Error Campañas ${customerId}:`, await response.text());
       return [];
   }
 
-  const dataDaily = await response.json();
+  const data = await response.json();
   let rows = [];
 
-  if (dataDaily && Array.isArray(dataDaily)) {
-    dataDaily.forEach(batch => { 
+  if (data && Array.isArray(data)) {
+    data.forEach(batch => { 
       if (batch.results) { 
         batch.results.forEach(row => { 
           const cost = parseInt(row.metrics.costMicros || '0') / 1000000;
@@ -142,7 +144,8 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
             campaign_id: `${row.campaign.id}`, 
             campaign_name: row.campaign.name, 
             status: row.campaign.status, 
-            date: row.segments.date, 
+            // segments.month devuelve el primer día del mes (ej: 2023-10-01)
+            date: row.segments.month, 
             cost: cost,
             conversions_value: row.metrics.conversionsValue ? parseFloat(row.metrics.conversionsValue) : 0,
             conversions: row.metrics.conversions ? parseFloat(row.metrics.conversions) : 0,
@@ -157,12 +160,10 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
   return rows;
 }
 
-// --- 2. HISTORIAL DE CAMBIOS (CORREGIDO V4.2) ---
+// --- 2. HISTORIAL DE CAMBIOS (Mantenemos el fix v4.2) ---
 async function getChangeHistory(customerId, accessToken) {
-    // Obtenemos inicio y fin para cerrar el rango
     const historyRange = getHistoryDateRange();
     
-    // 🔥 CAMBIO CLAVE: Usamos BETWEEN con fecha inicio Y fecha fin (incluyendo hora)
     const query = `
       SELECT 
         change_event.change_date_time,
@@ -187,7 +188,7 @@ async function getChangeHistory(customerId, accessToken) {
     });
 
     if (!response.ok) {
-        console.warn(`⚠️ Aviso History API ${customerId}:`, await response.text());
+        // Silenciamos errores comunes de historial
         return [];
     }
 
@@ -199,8 +200,7 @@ async function getChangeHistory(customerId, accessToken) {
             if (batch.results) {
                 batch.results.forEach(row => {
                     let detailText = "Modificación";
-                    const ce = row.changeEvent; // acceso camelCase
-                    
+                    const ce = row.changeEvent; 
                     if (!ce) return;
 
                     if(ce.oldResource && ce.newResource) {
@@ -240,37 +240,38 @@ async function processSyncJob(jobId) {
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
     const range = getDateRange(); 
-    await log(`🚀 Iniciando Sync v4.2 (Fix Rango Infinito).`);
+    await log(`🚀 Iniciando Sync v5.0 (Modo Mensual).`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
-    await log(`📋 Clientes encontrados: ${clients.length}`);
+    await log(`📋 Clientes: ${clients.length}`);
 
     let totalCampRows = 0;
     let totalChangeRows = 0;
 
     for (const [index, client] of clients.entries()) {
-      await log(`[${index + 1}/${clients.length}] Procesando ${client.name}...`);
+      // Log cada 5 clientes para no saturar la consola/DB
+      if (index % 5 === 0) await log(`[${index + 1}/${clients.length}] Procesando lote...`);
       
-      // 1. Métricas
+      // 1. Métricas Mensuales
       const campaignData = await getAccountLevelSpend(client.id, token, range);
       if (campaignData.length > 0) {
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
+         // Upsert funciona igual porque la fecha será "YYYY-MM-01" siempre
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
-         if (error) console.error(`❌ Error DB Campaigns: ${error.message}`);
+         if (error) console.error(`❌ DB Error: ${error.message}`);
          else totalCampRows += campaignData.length;
       }
 
-      // 2. Historial
+      // 2. Historial (Opcional: Si tarda mucho, coméntalo)
       const historyData = await getChangeHistory(client.id, token);
       if (historyData.length > 0) {
           const { error } = await supabase.from('google_ads_changes').upsert(historyData, { onConflict: 'id' });
-          if (error) console.error(`❌ Error DB History: ${error.message}`);
-          else totalChangeRows += historyData.length;
+          if (!error) totalChangeRows += historyData.length;
       }
     }
 
-    await log(`🎉 FIN. Métricas: ${totalCampRows} | Cambios: ${totalChangeRows}`);
+    await log(`🎉 FIN. Filas Mensuales: ${totalCampRows} | Cambios: ${totalChangeRows}`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
@@ -292,4 +293,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker v4.2 (Fix Rango Infinito) Listo.`);
+console.log(`📡 Worker v5.0 (Mensual Estable) Listo.`);
