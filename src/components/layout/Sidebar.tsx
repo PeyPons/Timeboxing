@@ -6,9 +6,7 @@ import {
   Briefcase, 
   BarChart3, 
   FolderKanban,
-  Settings, 
-  // FolderOpen, (No parece usarse, pero lo dejo por si acaso)
-  // FileText, (Redundante o no usado, pero lo mantengo limpio abajo)
+  Settings,
   Megaphone, 
   Sparkles,
   FileStack,
@@ -61,19 +59,8 @@ export function Sidebar() {
           Google Ads
         </NavLink>
 
-        <NavLink 
-          to="/ads-reports" 
-          className={({ isActive }) =>
-            `flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-indigo-600 ${
-              isActive ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-slate-500 hover:bg-slate-50'
-            }`
-          }
-        >
-          <div className="relative flex items-center justify-center">
-            <FileStack className="h-4 w-4" />
-            <Sparkles className="h-2 w-2 text-amber-500 absolute -top-1.5 -right-1.5 animate-pulse" />
-          </div>
-          Informes IA
+        <NavLink to="/ads-reports" icon={FileDown} active={location.pathname === '/ads-reports'}>
+          Informes automatizados
         </NavLink>
 
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
