@@ -17,10 +17,10 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env")
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- UTILIDADES ---
+
+// Rango amplio para métricas (Mes actual + Anterior)
 function getDateRange() {
   const now = new Date();
-  
-  // Calcular el 1er día del MES ANTERIOR
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   
   const pYear = prevMonthDate.getFullYear();
@@ -28,7 +28,6 @@ function getDateRange() {
   const pDay = String(prevMonthDate.getDate()).padStart(2, '0');
   const firstDay = `${pYear}-${pMonth}-${pDay}`;
 
-  // Fecha de hoy
   const tYear = now.getFullYear();
   const tMonth = String(now.getMonth() + 1).padStart(2, '0');
   const tDay = String(now.getDate()).padStart(2, '0');
@@ -37,9 +36,24 @@ function getDateRange() {
   return { firstDay, today };
 }
 
-// Genera un ID único para el historial para evitar duplicados en DB
+// Rango específico para Historial (MÁXIMO 30 DÍAS atrás por limitación de API)
+function getHistoryDateRange() {
+  const now = new Date();
+  const limitDate = new Date();
+  limitDate.setDate(now.getDate() - 30); // Restar 30 días exactos
+
+  const lYear = limitDate.getFullYear();
+  const lMonth = String(limitDate.getMonth() + 1).padStart(2, '0');
+  const lDay = String(limitDate.getDate()).padStart(2, '0');
+  const firstDay = `${lYear}-${lMonth}-${lDay}`;
+
+  return { firstDay };
+}
+
+// CORREGIDO: Usar camelCase (changeEvent) en lugar de snake_case
 function generateChangeId(row) {
-    return `${row.change_event.change_date_time}_${row.change_event.resource_name}`.replace(/[^a-zA-Z0-9]/g, '_');
+    if (!row.changeEvent) return `unknown_${Date.now()}`;
+    return `${row.changeEvent.changeDateTime}_${row.changeEvent.resourceName}`.replace(/[^a-zA-Z0-9]/g, '_');
 }
 
 async function getAccessToken() {
@@ -75,9 +89,8 @@ async function getClientAccounts(accessToken) {
   return clients;
 }
 
-// --- 1. DATOS DE CAMPAÑAS (OPTIMIZADO) ---
+// --- 1. DATOS DE CAMPAÑAS ---
 async function getAccountLevelSpend(customerId, accessToken, dateRange) {
-  // Solo usamos queryDaily. Eliminada la query redundante.
   const queryDaily = `
     SELECT 
       segments.date,
@@ -136,9 +149,11 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
   return rows;
 }
 
-// --- 2. HISTORIAL DE CAMBIOS (NUEVO) ---
-async function getChangeHistory(customerId, accessToken, dateRange) {
-    // Pedimos los últimos cambios. Limitamos a 50 por cliente para no saturar.
+// --- 2. HISTORIAL DE CAMBIOS (CORREGIDO) ---
+async function getChangeHistory(customerId, accessToken) {
+    // Usamos el rango corregido (max 30 días)
+    const historyRange = getHistoryDateRange();
+    
     const query = `
       SELECT 
         change_event.change_date_time,
@@ -151,7 +166,7 @@ async function getChangeHistory(customerId, accessToken, dateRange) {
       FROM 
         change_event 
       WHERE 
-        change_event.change_date_time >= '${dateRange.firstDay} 00:00:00'
+        change_event.change_date_time >= '${historyRange.firstDay} 00:00:00'
       ORDER BY 
         change_event.change_date_time DESC
       LIMIT 50`;
@@ -163,7 +178,7 @@ async function getChangeHistory(customerId, accessToken, dateRange) {
     });
 
     if (!response.ok) {
-        // change_event a veces falla si la cuenta es muy nueva o no tiene historial, no bloqueamos el proceso.
+        // Ignoramos errores si la cuenta no soporta historial o fecha inválida
         console.warn(`⚠️ Aviso History API ${customerId}:`, await response.text());
         return [];
     }
@@ -175,24 +190,30 @@ async function getChangeHistory(customerId, accessToken, dateRange) {
         data.forEach(batch => {
             if (batch.results) {
                 batch.results.forEach(row => {
-                    // Simplificación de detalles para la IA
-                    let detailText = "Modificación de recurso";
-                    if(row.changeEvent.oldResource && row.changeEvent.newResource) {
-                        detailText = "Actualización de configuración";
-                    } else if (row.changeEvent.newResource) {
+                    // console.log("Row Change Debug:", JSON.stringify(row)); // Descomentar si sigue fallando
+
+                    // Simplificación de detalles
+                    let detailText = "Modificación";
+                    const ce = row.changeEvent; // Abreviamos
+                    
+                    if (!ce) return;
+
+                    if(ce.oldResource && ce.newResource) {
+                        detailText = "Actualización";
+                    } else if (ce.newResource) {
                         detailText = "Creación";
-                    } else if (row.changeEvent.oldResource) {
+                    } else if (ce.oldResource) {
                         detailText = "Eliminación";
                     }
 
                     changes.push({
-                        id: generateChangeId(row),
+                        id: generateChangeId(row), // Ahora usa la función corregida
                         client_id: customerId,
-                        change_date: row.changeEvent.changeDateTime,
-                        user_email: row.changeEvent.userEmail || 'Sistema/Google',
-                        change_type: row.changeEvent.changeResourceType,
-                        campaign_name: row.changeEvent.campaign || 'N/A', // A veces viene el resource name de la campaña
-                        resource_name: row.changeEvent.resourceName,
+                        change_date: ce.changeDateTime,
+                        user_email: ce.userEmail || 'Sistema',
+                        change_type: ce.changeResourceType,
+                        campaign_name: ce.campaign || 'N/A', 
+                        resource_name: ce.resourceName,
                         details: detailText
                     });
                 });
@@ -213,13 +234,12 @@ async function processSyncJob(jobId) {
 
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
-    const range = getDateRange();
-    await log(`🚀 Iniciando Sync v4 (Datos + Historial).`);
-    await log(`📅 Periodo: ${range.firstDay} al ${range.today}`);
+    const range = getDateRange(); // Rango normal para métricas
+    await log(`🚀 Iniciando Sync v4.1 (Fix Historial).`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
-    await log(`📋 Clientes: ${clients.length}`);
+    await log(`📋 Clientes encontrados: ${clients.length}`);
 
     let totalCampRows = 0;
     let totalChangeRows = 0;
@@ -227,27 +247,21 @@ async function processSyncJob(jobId) {
     for (const [index, client] of clients.entries()) {
       await log(`[${index + 1}/${clients.length}] Procesando ${client.name}...`);
       
-      // 1. Obtener Métricas de Campaña
+      // 1. Obtener Métricas de Campaña (Rango completo)
       const campaignData = await getAccountLevelSpend(client.id, token, range);
       if (campaignData.length > 0) {
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
-         if (error) {
-            console.error(`❌ Error DB Campaigns: ${error.message}`);
-         } else {
-            totalCampRows += campaignData.length;
-         }
+         if (error) console.error(`❌ Error DB Campaigns: ${error.message}`);
+         else totalCampRows += campaignData.length;
       }
 
-      // 2. Obtener Historial de Cambios (NUEVO)
-      const historyData = await getChangeHistory(client.id, token, range);
+      // 2. Obtener Historial (Rango restringido a 30 días)
+      const historyData = await getChangeHistory(client.id, token);
       if (historyData.length > 0) {
           const { error } = await supabase.from('google_ads_changes').upsert(historyData, { onConflict: 'id' });
-          if (error) {
-             console.error(`❌ Error DB History: ${error.message}`);
-          } else {
-             totalChangeRows += historyData.length;
-          }
+          if (error) console.error(`❌ Error DB History: ${error.message}`);
+          else totalChangeRows += historyData.length;
       }
     }
 
@@ -273,4 +287,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker v4.0 (Campañas + Historial) Listo.`);
+console.log(`📡 Worker v4.1 (Corrección Historial) Listo.`);
