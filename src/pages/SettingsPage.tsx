@@ -1,80 +1,100 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Settings, Upload } from 'lucide-react';
+import { useState } from 'react';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
+import { PlusCircle, ShieldCheck } from 'lucide-react';
 
 export default function SettingsPage() {
-  return (
-    <div className="p-6">
-      <div className="mb-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Settings className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Configuración</h1>
-            <p className="text-muted-foreground">
-              Ajustes generales de la aplicación
-            </p>
-          </div>
-        </div>
-      </div>
+    const [platform, setPlatform] = useState('meta');
+    const [accountId, setAccountId] = useState('');
+    const [loading, setLoading] = useState(false);
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Importar datos
-            </CardTitle>
-            <CardDescription>
-              Importa datos desde archivos CSV o Excel
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-lg border-2 border-dashed border-muted p-8 text-center">
-              <Upload className="mx-auto h-10 w-10 text-muted-foreground" />
-              <p className="mt-2 text-sm text-muted-foreground">
-                Arrastra un archivo CSV o haz clic para seleccionar
-              </p>
-              <Button variant="outline" className="mt-4">
-                Seleccionar archivo
-              </Button>
+    const handleAddAccount = async () => {
+        if (!accountId) return toast.error("Por favor, escribe un ID de cuenta.");
+        
+        setLoading(true);
+        // Insertamos en la nueva tabla de configuración
+        const { error } = await supabase.from('ad_accounts_config').insert({
+            platform: platform,
+            account_id: accountId,
+            is_active: true
+        });
+
+        if (error) {
+            console.error(error);
+            if (error.code === '23505') toast.error("Esta cuenta ya está registrada.");
+            else toast.error("Error al guardar la cuenta.");
+        } else {
+            toast.success(`Cuenta ${platform} añadida. Sincroniza ahora para ver datos.`);
+            setAccountId('');
+        }
+        setLoading(false);
+    };
+
+    return (
+        <AppLayout>
+            <div className="max-w-4xl mx-auto p-6 space-y-6">
+                <h1 className="text-2xl font-bold text-slate-900">Configuración</h1>
+                
+                {/* TARJETA PARA AÑADIR CUENTAS */}
+                <Card className="border-slate-200 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <PlusCircle className="w-5 h-5 text-blue-600"/> 
+                            Gestión de Cuentas Publicitarias
+                        </CardTitle>
+                        <CardDescription>
+                            Añade aquí los IDs de las cuentas de tus clientes para que el sistema las sincronice.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex flex-col md:flex-row gap-4 items-end">
+                            <div className="space-y-2 w-full md:w-1/4">
+                                <Label>Plataforma</Label>
+                                <Select value={platform} onValueChange={setPlatform}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="meta">Meta Ads (Facebook)</SelectItem>
+                                        <SelectItem value="google">Google Ads</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2 w-full md:w-2/4">
+                                <Label>ID de la Cuenta</Label>
+                                <Input 
+                                    placeholder={platform === 'meta' ? 'Ej: act_123456789' : 'Ej: 123-456-7890'} 
+                                    value={accountId} 
+                                    onChange={(e) => setAccountId(e.target.value)} 
+                                />
+                            </div>
+                            <Button onClick={handleAddAccount} disabled={loading} className="w-full md:w-1/4 bg-slate-900 hover:bg-slate-800">
+                                {loading ? 'Guardando...' : 'Añadir Cuenta'}
+                            </Button>
+                        </div>
+                        <div className="bg-slate-50 p-3 rounded text-xs text-slate-500 border border-slate-100">
+                            <strong>Nota importante:</strong> 
+                            <ul className="list-disc pl-4 mt-1 space-y-1">
+                                <li>Para <strong>Meta</strong>: El ID debe incluir el prefijo (ej: <code>act_147...</code>).</li>
+                                <li>Para <strong>Google</strong>: Usa el formato con guiones si es posible (<code>123-456-7890</code>).</li>
+                            </ul>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-emerald-600"/> Estado</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-sm text-slate-600">Sistema operativo y conectado a base de datos.</div>
+                    </CardContent>
+                </Card>
             </div>
-            <p className="mt-4 text-xs text-muted-foreground">
-              El importador detectará automáticamente las columnas de empleados, proyectos y horas.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Próximas funcionalidades</CardTitle>
-            <CardDescription>
-              Características en desarrollo
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-primary" />
-                Importador inteligente de Excel
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-muted-foreground/30" />
-                Exportación de reportes PDF
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-muted-foreground/30" />
-                Integración con Google Calendar
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-muted-foreground/30" />
-                Notificaciones por email
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
+        </AppLayout>
+    );
 }
