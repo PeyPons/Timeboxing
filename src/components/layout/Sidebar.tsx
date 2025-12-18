@@ -10,7 +10,8 @@ import {
   Megaphone, 
   Sparkles,
   FileStack,
-  FileDown // <--- ¡AQUÍ FALTABA ESTE IMPORT!
+  Facebook,
+  FileDown
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -57,6 +58,10 @@ export function Sidebar() {
         
         <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
           Google Ads
+        </NavLink>
+
+        <NavLink to="/meta-ads" icon={Facebook} active={location.pathname === '/meta-ads'}>
+          Meta Ads
         </NavLink>
 
         <NavLink to="/ads-reports" icon={FileDown} active={location.pathname === '/ads-reports'}>
