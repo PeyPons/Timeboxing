@@ -6,319 +6,209 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { RefreshCw, Facebook, Search, TrendingUp, BarChart3 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { RefreshCw, Facebook, Search, TrendingUp, BarChart3, Settings, Calculator, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, getDaysInMonth, getDate } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 
 export default function MetaAdsPage() {
   const [data, setData] = useState<any[]>([]);
+  const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Configuración Manual
+  const [configOpen, setConfigOpen] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [budgetInput, setBudgetInput] = useState('');
+  const [isSales, setIsSales] = useState(true);
   
   // Estado Sync
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 1. CARGAR DATOS (Tabla META)
   const fetchData = async () => {
     try {
-      const { data: rows, error } = await supabase
-        .from('meta_ads_campaigns') // <--- Asegúrate de que lee la tabla META
-        .select('*')
-        .order('date', { ascending: false });
-        
-      if (error) console.error("Error cargando datos:", error);
-      setData(rows || []);
-    } catch (e) { 
-        console.error(e); 
-    } finally { 
-        setLoading(false); 
-    }
+      const [campRes, confRes] = await Promise.all([
+          supabase.from('meta_ads_campaigns').select('*').order('date', { ascending: false }),
+          supabase.from('ad_accounts_config').select('*').eq('platform', 'meta')
+      ]);
+      setData(campRes.data || []);
+      setConfigs(confRes.data || []);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
-  // 2. SINCRONIZACIÓN (Logs META)
   const handleStartSync = async () => {
     setIsSyncing(true);
-    setSyncLogs(['🚀 Conectando con Meta Worker...']);
-
-    try {
-      // Crear trabajo en meta_sync_logs
-      const { data: job, error } = await supabase
-        .from('meta_sync_logs')
-        .insert({ status: 'pending', logs: ['Iniciando...'] })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Escuchar cambios
-      const channel = supabase.channel(`meta-sync-${job.id}`)
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'meta_sync_logs', filter: `id=eq.${job.id}` }, 
-        (payload) => {
-            const newRow = payload.new;
-            if (newRow.logs) setSyncLogs(newRow.logs);
-            
-            if (newRow.status === 'completed') {
-              toast.success('Sincronización Meta finalizada');
-              fetchData(); // Recargar datos al terminar
-              setTimeout(() => {
-                  supabase.removeChannel(channel);
-                  setIsSyncing(false);
-              }, 2000);
-            } else if (newRow.status === 'error') {
-              toast.error('Ocurrió un error en la sincronización');
-            }
-        })
-        .subscribe();
-
-    } catch (err: any) {
-      setSyncLogs(prev => [...prev, `❌ Error: ${err.message}`]);
-    }
+    setSyncLogs(['🚀 Iniciando...']);
+    const { data: job } = await supabase.from('meta_sync_logs').insert({ status: 'pending', logs: ['Esperando worker...'] }).select().single();
+    
+    const channel = supabase.channel(`meta-sync-${job.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'meta_sync_logs', filter: `id=eq.${job.id}` }, 
+      (p) => {
+          if (p.new.logs) setSyncLogs(p.new.logs);
+          if (p.new.status === 'completed') {
+            toast.success('Finalizado');
+            fetchData();
+            setTimeout(() => { supabase.removeChannel(channel); setIsSyncing(false); }, 2000);
+          }
+      }).subscribe();
   };
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [syncLogs]);
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [syncLogs]);
 
-  // 3. PROCESAR DATOS
+  // Guardar Configuración
+  const openConfig = (client: any) => {
+      const conf = configs.find(c => c.account_id === client.id) || {};
+      setSelectedClient(client);
+      setBudgetInput(conf.budget || '0');
+      setIsSales(conf.is_sales_objective !== false);
+      setConfigOpen(true);
+  };
+
+  const saveConfig = async () => {
+      await supabase.from('ad_accounts_config').upsert({
+          platform: 'meta',
+          account_id: selectedClient.id,
+          budget: parseFloat(budgetInput),
+          is_sales_objective: isSales,
+          account_name: selectedClient.name
+      }, { onConflict: 'platform, account_id' });
+      
+      toast.success("Guardado");
+      setConfigOpen(false);
+      fetchData();
+  };
+
+  // Procesar Datos
   const reportData = useMemo(() => {
     if (!data.length) return [];
-    
     const now = new Date();
     const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const daysInMonth = getDaysInMonth(now);
+    const currentDay = getDate(now);
     const clientsMap = new Map();
 
     data.forEach(row => {
-      // Agrupar por ID de cliente
       if (!clientsMap.has(row.client_id)) {
           clientsMap.set(row.client_id, {
               id: row.client_id,
-              name: row.client_name || row.client_id, // Usa el nombre si existe
+              name: row.client_name || row.client_id,
               currentMonth: { spend: 0, conversions: 0, revenue: 0 },
               campaigns: [],
               history: []
           });
       }
-      
       const client = clientsMap.get(row.client_id);
-
-      // Métricas del mes actual
       if (row.date === currentMonthPrefix) {
           client.currentMonth.spend += Number(row.cost);
           client.currentMonth.conversions += Number(row.conversions);
           client.currentMonth.revenue += Number(row.conversions_value);
           client.campaigns.push(row);
       }
-
-      // Histórico para la gráfica
-      const existingHistory = client.history.find((h: any) => h.date === row.date);
-      if (existingHistory) {
-          existingHistory.spend += Number(row.cost);
-          existingHistory.revenue += Number(row.conversions_value);
-      } else {
-          client.history.push({
-              date: row.date,
-              shortDate: format(parseISO(row.date), 'MMM', { locale: es }),
-              spend: Number(row.cost),
-              revenue: Number(row.conversions_value)
-          });
-      }
+      // Historial simple
+      const exists = client.history.find((h:any) => h.date === row.date);
+      if(exists) { exists.spend += Number(row.cost); exists.revenue += Number(row.conversions_value); }
+      else client.history.push({ date: row.date, shortDate: format(parseISO(row.date), 'MMM'), spend: Number(row.cost), revenue: Number(row.conversions_value) });
     });
 
     return Array.from(clientsMap.values())
         .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
-        .map(c => ({
-            ...c,
-            history: c.history.sort((a: any, b: any) => a.date.localeCompare(b.date))
-        }));
-  }, [data, searchTerm]);
-
-  const totalSpent = reportData.reduce((acc, r) => acc + r.currentMonth.spend, 0);
-  const totalRevenue = reportData.reduce((acc, r) => acc + r.currentMonth.revenue, 0);
-  const totalRoas = totalSpent > 0 ? totalRevenue / totalSpent : 0;
+        .map(c => {
+            const conf = configs.find(cfg => cfg.account_id === c.id) || { budget: 0, is_sales_objective: true };
+            const daily = c.currentMonth.spend / (currentDay || 1);
+            const projected = daily * daysInMonth;
+            const progress = conf.budget > 0 ? (c.currentMonth.spend / conf.budget) * 100 : 0;
+            const roas = c.currentMonth.spend > 0 ? c.currentMonth.revenue / c.currentMonth.spend : 0;
+            
+            return { ...c, conf, stats: { daily, projected, progress, roas, isOver: projected > conf.budget && conf.budget > 0 } };
+        });
+  }, [data, configs, searchTerm]);
 
   return (
     <AppLayout>
       <div className="max-w-7xl mx-auto p-6 space-y-6 pb-20">
-        
-        {/* HEADER META (AZUL FACEBOOK) */}
-        <div className="flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
+        <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-                <div className="p-3 bg-[#1877F2] rounded-xl shadow-lg shadow-blue-900/10">
-                    <Facebook className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Meta Ads Manager</h1>
-                    <p className="text-sm text-slate-500">Facebook & Instagram Ads</p>
-                </div>
+                <div className="p-3 bg-[#1877F2] rounded-xl text-white"><Facebook /></div>
+                <h1 className="text-2xl font-bold">Meta Ads Manager</h1>
             </div>
-            <Button 
-                onClick={handleStartSync} 
-                disabled={isSyncing} 
-                className={`${isSyncing ? 'bg-slate-100 text-slate-400' : 'bg-[#1877F2] hover:bg-blue-700'} text-white border-0`}
-            >
-                <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-                {isSyncing ? 'Sincronizando...' : 'Sincronizar Datos'}
+            <Button onClick={handleStartSync} disabled={isSyncing} className="bg-[#1877F2]">
+                <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} /> Sincronizar
             </Button>
         </div>
 
-        {/* KPIs */}
-        <div className="grid gap-4 md:grid-cols-3">
-            <Card className="bg-white border-slate-200 shadow-sm">
-                <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold text-slate-400 uppercase">Inversión (Mes)</CardTitle></CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold text-slate-900">{formatCurrency(totalSpent)}</div>
-                    <Progress value={100} className="h-1.5 mt-3 bg-slate-100 [&>div]:bg-[#1877F2]" />
-                </CardContent>
-            </Card>
-            <Card className="bg-white border-slate-200 shadow-sm">
-                <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold text-slate-400 uppercase">ROAS Global</CardTitle></CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold text-blue-600">{totalRoas.toFixed(2)}x</div>
-                    <Progress value={(totalRoas / 5) * 100} className="h-1.5 mt-3 bg-slate-100 [&>div]:bg-blue-500" />
-                </CardContent>
-            </Card>
-            <Card className="bg-white border-slate-200 shadow-sm">
-                <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold text-slate-400 uppercase">Ingresos</CardTitle></CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold text-slate-900">{formatCurrency(totalRevenue)}</div>
-                    <div className="text-xs text-emerald-600 mt-3 flex items-center font-medium"><TrendingUp className="w-3 h-3 mr-1" /> Conversiones</div>
-                </CardContent>
-            </Card>
-        </div>
+        {/* Buscador */}
+        <div className="relative"><Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" /><Input className="pl-9 bg-white" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
 
-        {/* LISTA DE CUENTAS */}
-        <div className="space-y-4">
-            <div className="relative">
-                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                 <Input 
-                    placeholder="Buscar cuenta..." 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9 bg-white border-slate-200 max-w-md"
-                 />
-            </div>
-
-            {loading && <div className="text-center py-10 text-slate-400">Cargando datos...</div>}
-            
-            {!loading && reportData.length === 0 && (
-                <div className="text-center py-10 bg-slate-50 rounded-lg border border-slate-200">
-                    <p className="text-slate-500 mb-2">No hay datos de campañas.</p>
-                    <p className="text-xs text-slate-400">Asegúrate de añadir una cuenta en "Ajustes" y pulsar Sincronizar.</p>
-                </div>
-            )}
-
-            <Accordion type="single" collapsible className="w-full space-y-4">
-                {reportData.map((client) => {
-                    const clientRoas = client.currentMonth.spend > 0 ? client.currentMonth.revenue / client.currentMonth.spend : 0;
-                    
-                    return (
-                    <AccordionItem key={client.id} value={client.id} className="bg-white border border-slate-200 rounded-xl px-4 shadow-sm">
-                        <AccordionTrigger className="hover:no-underline py-5">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between w-full pr-4 gap-4">
-                                <div className="flex items-center gap-4">
-                                    {/* Indicador de ROAS */}
-                                    <div className={`w-2 h-10 rounded-full ${clientRoas >= 2 ? 'bg-blue-500' : 'bg-amber-500'}`}></div>
-                                    <div>
-                                        <div className="font-bold text-lg text-slate-900">{client.name}</div>
-                                        <div className="text-xs text-slate-500">ID: {client.id}</div>
-                                    </div>
-                                </div>
-                                <div className="text-right hidden md:block">
-                                    <div className="text-xs text-slate-400 uppercase font-semibold">Gasto</div>
-                                    <div className="font-mono font-bold text-slate-700">{formatCurrency(client.currentMonth.spend)}</div>
+        <Accordion type="single" collapsible className="space-y-4">
+            {reportData.map(client => (
+                <AccordionItem key={client.id} value={client.id} className="bg-white border rounded-xl px-4">
+                    <AccordionTrigger className="hover:no-underline py-5">
+                        <div className="flex justify-between w-full pr-4 items-center">
+                            <div className="flex items-center gap-4">
+                                <div className={`w-2 h-10 rounded-full ${client.stats.roas >= 2 ? 'bg-blue-500' : 'bg-amber-500'}`}></div>
+                                <div className="text-left">
+                                    <div className="font-bold text-lg">{client.name}</div>
+                                    <div className="text-xs text-gray-500">{client.id} {client.stats.isOver && <span className="text-red-500 font-bold ml-2">⚠️ Excede PPT</span>}</div>
                                 </div>
                             </div>
-                        </AccordionTrigger>
-                        
-                        <AccordionContent className="border-t border-slate-100 mt-2 pt-6">
-                            <div className="grid lg:grid-cols-3 gap-8">
-                                {/* GRÁFICA */}
-                                <div className="col-span-1 bg-slate-50 rounded-lg p-4 border border-slate-100">
-                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-4 flex items-center gap-2">
-                                        <BarChart3 className="w-4 h-4" /> Tendencia
-                                    </h4>
-                                    <div className="h-48 w-full">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={client.history}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                                <XAxis dataKey="shortDate" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-                                                <RechartsTooltip />
-                                                <Bar dataKey="spend" name="Inversión" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                                                <Bar dataKey="revenue" name="Retorno" fill="#1877F2" radius={[4, 4, 0, 0]} />
-                                            </BarChart>
-                                        </ResponsiveContainer>
+                            <div className="flex items-center gap-6 text-right">
+                                <div><div className="text-xs text-gray-400 font-bold">GASTO</div><div className="font-mono font-bold">{formatCurrency(client.currentMonth.spend)}</div></div>
+                                {client.conf.budget > 0 && (
+                                    <div className="w-32 hidden md:block">
+                                        <div className="flex justify-between text-[10px] text-gray-500"><span>{client.stats.progress.toFixed(0)}%</span><span>{formatCurrency(client.conf.budget)}</span></div>
+                                        <Progress value={client.stats.progress} className={`h-2 ${client.stats.isOver ? '[&>div]:bg-red-500' : '[&>div]:bg-blue-500'}`} />
                                     </div>
-                                </div>
-
-                                {/* TABLA CAMPAÑAS */}
-                                <div className="lg:col-span-2">
-                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-4 flex items-center gap-2">
-                                        <TrendingUp className="w-4 h-4" /> Campañas Activas
-                                    </h4>
-                                    <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="bg-slate-50 font-medium text-slate-500 text-xs uppercase">
-                                                <tr>
-                                                    <th className="px-4 py-3">Nombre</th>
-                                                    <th className="px-4 py-3 text-right">Inversión</th>
-                                                    <th className="px-4 py-3 text-right">ROAS</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {client.campaigns.map((camp: any) => {
-                                                    const roas = camp.cost > 0 ? camp.conversions_value / camp.cost : 0;
-                                                    return (
-                                                        <tr key={camp.campaign_id}>
-                                                            <td className="px-4 py-3 font-medium text-slate-700 truncate max-w-[200px]">{camp.campaign_name}</td>
-                                                            <td className="px-4 py-3 text-right font-mono">{formatCurrency(camp.cost)}</td>
-                                                            <td className="px-4 py-3 text-right">
-                                                                <Badge variant="outline" className={roas >= 2 ? 'text-blue-600 bg-blue-50 border-blue-200' : ''}>
-                                                                    {roas.toFixed(2)}x
-                                                                </Badge>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                                {client.campaigns.length === 0 && (
-                                                    <tr><td colSpan={3} className="p-4 text-center text-slate-400 text-xs">Sin campañas con gasto este mes</td></tr>
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                                )}
+                                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openConfig(client); }}><Settings className="w-4 h-4" /></Button>
                             </div>
-                        </AccordionContent>
-                    </AccordionItem>
-                    );
-                })}
-            </Accordion>
-        </div>
+                        </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="border-t pt-6">
+                        <div className="grid lg:grid-cols-3 gap-8">
+                            <div className="col-span-1 space-y-4">
+                                <div className="bg-slate-50 p-4 rounded-lg border">
+                                    <h4 className="text-xs font-bold text-gray-500 mb-3 flex gap-2"><Calculator className="w-4"/> Previsión</h4>
+                                    <div className="flex justify-between text-sm"><span>Proyección Fin Mes</span><span className="font-bold">{formatCurrency(client.stats.projected)}</span></div>
+                                    <div className="flex justify-between text-sm mt-2"><span>{client.conf.is_sales_objective ? 'ROAS' : 'CPA'}</span><Badge variant="outline">{client.stats.roas.toFixed(2)}x</Badge></div>
+                                </div>
+                                <div className="h-32"><ResponsiveContainer><BarChart data={client.history}><Bar dataKey="spend" fill="#cbd5e1"/><Bar dataKey="revenue" fill="#3b82f6"/></BarChart></ResponsiveContainer></div>
+                            </div>
+                            <div className="lg:col-span-2">
+                                <table className="w-full text-sm"><thead className="bg-slate-50 text-xs uppercase"><tr><th className="p-2 text-left">Campaña</th><th className="p-2 text-right">Gasto</th><th className="p-2 text-right">Res.</th></tr></thead>
+                                <tbody>{client.campaigns.map((c:any) => <tr key={c.campaign_id} className="border-t"><td className="p-2 truncate max-w-[200px]">{c.campaign_name}</td><td className="p-2 text-right">{formatCurrency(c.cost)}</td><td className="p-2 text-right font-bold">{Math.round(c.conversions)}</td></tr>)}</tbody></table>
+                            </div>
+                        </div>
+                    </AccordionContent>
+                </AccordionItem>
+            ))}
+        </Accordion>
 
-        {/* MODAL DE SYNC */}
-        <Dialog open={isSyncing} onOpenChange={setIsSyncing}>
-            <DialogContent className="bg-slate-950 border-slate-800 text-white sm:max-w-md">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
-                        Sincronización Meta
-                    </DialogTitle>
-                    <DialogDescription className="text-slate-400">Descargando últimos datos de Facebook Ads...</DialogDescription>
-                </DialogHeader>
-                <div className="bg-black/50 p-4 rounded-lg font-mono text-xs h-64 overflow-y-auto border border-slate-800 text-blue-400 space-y-1" ref={scrollRef}>
-                    {syncLogs.map((log, i) => <div key={i}>{log}</div>)}
+        {/* Modal Config */}
+        <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+            <DialogContent className="bg-white text-black"><DialogHeader><DialogTitle>Configurar {selectedClient?.name}</DialogTitle></DialogHeader>
+                <div className="space-y-4">
+                    <div><Label>Presupuesto Mensual</Label><Input type="number" value={budgetInput} onChange={e => setBudgetInput(e.target.value)} /></div>
+                    <div className="flex justify-between items-center border p-3 rounded">
+                        <Label>Objetivo Ventas (ROAS)</Label><Switch checked={isSales} onCheckedChange={setIsSales} />
+                    </div>
                 </div>
+                <DialogFooter><Button onClick={saveConfig}>Guardar</Button></DialogFooter>
             </DialogContent>
         </Dialog>
 
+        {/* Modal Sync */}
+        <Dialog open={isSyncing} onOpenChange={setIsSyncing}><DialogContent className="bg-black text-white border-gray-800"><DialogHeader><DialogTitle>Sincronizando</DialogTitle></DialogHeader><div className="h-64 overflow-y-auto font-mono text-xs text-blue-400" ref={scrollRef}>{syncLogs.map((l, i) => <div key={i}>{l}</div>)}</div></DialogContent></Dialog>
       </div>
     </AppLayout>
   );
