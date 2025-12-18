@@ -1,3 +1,4 @@
+cat << 'EOF' > meta-worker.js
 /* Ejecutar con: node meta-worker.js */
 import 'dotenv/config'; 
 import { createClient } from '@supabase/supabase-js';
@@ -17,19 +18,20 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // --- UTILIDADES ---
 function getMonthRanges() {
     const now = new Date();
-    // Traemos los últimos 3 meses para tener contexto en las gráficas
     const ranges = [];
+    // Analizamos los últimos 3 meses
     for (let i = 0; i < 3; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const start = new Date(d.getFullYear(), d.getMonth(), 1);
         const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-        ranges.push({ 
-            start: start.toISOString().split('T')[0], 
-            end: end.toISOString().split('T')[0],
-            label: `${d.toLocaleString('es-ES', { month: 'long' })}`
-        });
+        const startStr = start.toISOString().split('T')[0];
+        const endStr = end.toISOString().split('T')[0];
+        // Formato para DB: Primer día del mes
+        const dbDate = startStr.substring(0, 8) + '01'; 
+        
+        ranges.push({ start: startStr, end: endStr, dbDate });
     }
-    return ranges; // Devuelve [Mes Actual, Mes Pasado, Hace 2 meses]
+    return ranges;
 }
 
 async function fetchMetaInsights(adAccountId, range) {
@@ -42,7 +44,7 @@ async function fetchMetaInsights(adAccountId, range) {
         if (data.error) throw new Error(data.error.message);
         return data.data || [];
     } catch (err) {
-        throw new Error(`Meta API Error: ${err.message}`);
+        throw new Error(`Meta API: ${err.message}`);
     }
 }
 
@@ -64,7 +66,7 @@ function parseMetaMetrics(row) {
     return { conv, val };
 }
 
-// --- LOGICA DEL PROCESO ---
+// --- LÓGICA DEL PROCESO ---
 async function processSyncJob(jobId) {
     const log = async (msg) => {
         console.log(`[Job ${jobId}] ${msg}`);
@@ -88,16 +90,15 @@ async function processSyncJob(jobId) {
                 try {
                     const insights = await fetchMetaInsights(accountId, range);
                     if (insights.length > 0) {
-                        const monthDate = range.start.substring(0, 8) + '01'; 
                         const rowsToInsert = insights.map(row => {
                             const metrics = parseMetaMetrics(row);
                             return {
                                 client_id: accountId,
-                                client_name: `Cuenta ${accountId}`,
+                                client_name: `Cuenta ${accountId}`, // Idealmente hacer fetch al nombre real
                                 campaign_id: row.campaign_id,
                                 campaign_name: row.campaign_name,
                                 status: 'ENABLED', 
-                                date: monthDate,
+                                date: range.dbDate,
                                 cost: parseFloat(row.spend || 0),
                                 impressions: parseInt(row.impressions || 0),
                                 clicks: parseInt(row.clicks || 0),
@@ -111,7 +112,7 @@ async function processSyncJob(jobId) {
                         else totalRows += rowsToInsert.length;
                     }
                 } catch (err) {
-                    await log(`⚠️ Aviso: ${err.message}`);
+                    await log(`⚠️ ${err.message}`);
                 }
             }
         }
@@ -140,3 +141,4 @@ setInterval(async () => {
 }, 5000);
 
 console.log(`📡 Meta Worker v2.0 (Realtime) Listo.`);
+EOF
