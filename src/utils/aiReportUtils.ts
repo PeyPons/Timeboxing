@@ -12,43 +12,48 @@ export interface CampaignData {
 export const generateAdsSummary = (
   accountName: string,
   campaigns: CampaignData[],
-  totalSpend: number,
-  totalConversions: number
+  totalSpend: any,       // Cambiado a 'any' para aceptar strings de la DB
+  totalConversions: any  // Cambiado a 'any'
 ): string => {
 
-  // 1. Formatear el detalle de cada campaña para que la IA lo entienda
-  // Si no hay campañas, ponemos un mensaje por defecto.
+  // 1. Sanitización de datos (Conversión segura a números)
+  const safeSpend = Number(totalSpend) || 0;
+  const safeConversions = Number(totalConversions) || 0;
+
+  // 2. Formatear campañas
   const campaignsSummary = campaigns && campaigns.length > 0 
     ? campaigns.map(c => {
-        // Evitar división por cero
-        const ctr = c.impressions > 0 ? ((c.clicks / c.impressions) * 100).toFixed(2) : '0.00';
-        const cpa = c.conversions > 0 ? (c.cost / c.conversions).toFixed(2) : '0.00';
+        const cCost = Number(c.cost) || 0;
+        const cClicks = Number(c.clicks) || 0;
+        const cImpr = Number(c.impressions) || 0;
+        const cConv = Number(c.conversions) || 0;
+
+        const ctr = cImpr > 0 ? ((cClicks / cImpr) * 100).toFixed(2) : '0.00';
+        const cpa = cConv > 0 ? (cCost / cConv).toFixed(2) : '0.00';
         
         return `
     - Campaña: "${c.campaign_name}" (Estado: ${c.status})
-      * Inversión: ${c.cost.toFixed(2)}€
-      * Impresiones: ${c.impressions} | Clicks: ${c.clicks} | CTR: ${ctr}%
-      * Conversiones: ${c.conversions} | CPA: ${cpa}€`;
+      * Inversión: ${cCost.toFixed(2)}€
+      * Impresiones: ${cImpr} | Clicks: ${cClicks} | CTR: ${ctr}%
+      * Conversiones: ${cConv} | CPA: ${cpa}€`;
       }).join('\n')
-    : "    - No hay datos detallados de campañas disponibles para este periodo.";
+    : "    - No hay datos detallados de campañas disponibles.";
 
-  // 2. Construir el Prompt enriquecido
+  // 3. Construir el Prompt
   const prompt = `
-    Actúa como un analista experto en Google Ads (PPC) Senior.
-    Estás analizando la cuenta: "${accountName}".
+    Actúa como un analista experto en Google Ads. Cuenta: "${accountName}".
     
-    RESUMEN GLOBAL DEL PERIODO:
-    - Inversión Total: ${totalSpend.toFixed(2)}€
-    - Conversiones Totales: ${totalConversions}
+    RESUMEN:
+    - Inversión Total: ${safeSpend.toFixed(2)}€
+    - Conversiones: ${safeConversions}
     
-    DESGLOSE DETALLADO POR CAMPAÑA:
+    DETALLE CAMPAÑAS:
     ${campaignsSummary}
     
-    INSTRUCCIONES DE ANÁLISIS:
-    1. Análisis de Rendimiento: Identifica qué campaña es la "Ganadora" (mejor ROAS/CPA) y cuál es la "Perdedora" (gasto ineficiente).
-    2. Diagnóstico: ¿Por qué la campaña perdedora está fallando? (¿Bajo CTR? ¿CPA alto?).
-    3. Plan de Acción: Dame una lista numerada de 3 optimizaciones críticas que debería aplicar mañana mismo.
-    4. Tono: Profesional, directivo y orientado a datos. Usa negritas para resaltar métricas clave.
+    INSTRUCCIONES:
+    1. Identifica la mejor y peor campaña.
+    2. Diagnostica por qué fallan o funcionan.
+    3. Dame 3 acciones concretas de optimización.
   `;
 
   return prompt;
