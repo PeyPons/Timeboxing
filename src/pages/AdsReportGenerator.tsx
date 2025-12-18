@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Printer, TrendingDown, TrendingUp, Sparkles } from 'lucide-react';
+import { Loader2, Printer, TrendingDown, TrendingUp, Sparkles, FolderKanban, FileDown } from 'lucide-react';
 import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { generateAdsSummary } from '@/utils/aiReportUtils'; // La función del Paso 2
+import { generateAdsSummary } from '@/utils/aiReportUtils';
 import { formatCurrency } from '@/lib/utils';
 
 // --- COMPONENTES VISUALES ---
