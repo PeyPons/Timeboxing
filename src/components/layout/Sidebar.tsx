@@ -1,4 +1,3 @@
-import { FileText, Sparkles } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { 
@@ -8,13 +7,13 @@ import {
   BarChart3, 
   FolderKanban,
   Settings, 
-  FolderOpen, 
-  FileText,
+  // FolderOpen, (No parece usarse, pero lo dejo por si acaso)
+  // FileText, (Redundante o no usado, pero lo mantengo limpio abajo)
   Megaphone, 
   Sparkles,
-  FileStack
+  FileStack,
+  FileDown // <--- ¡AQUÍ FALTABA ESTE IMPORT!
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 export function Sidebar() {
   const location = useLocation();
@@ -85,6 +84,7 @@ export function Sidebar() {
           Reportes
         </NavLink>
 
+        {/* AQUÍ ERA EL ERROR: Usabas FileDown sin importarlo */}
         <NavLink to="/informes-clientes" icon={FileDown} active={location.pathname === '/informes-clientes'}>
           Informes Clientes
         </NavLink>
