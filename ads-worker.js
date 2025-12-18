@@ -16,13 +16,25 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env")
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// --- MODIFICADO: RANGO DE FECHAS AMPLIADO ---
 function getDateRange() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const firstDay = `${year}-${month}-01`;
-  const today = `${year}-${month}-${day}`;
+  
+  // Calcular el 1er día del MES ANTERIOR
+  // (Si estamos en Enero, esto nos lleva a 1 de Diciembre del año pasado automáticamente)
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  
+  const pYear = prevMonthDate.getFullYear();
+  const pMonth = String(prevMonthDate.getMonth() + 1).padStart(2, '0');
+  const pDay = String(prevMonthDate.getDate()).padStart(2, '0');
+  const firstDay = `${pYear}-${pMonth}-${pDay}`;
+
+  // Fecha de hoy
+  const tYear = now.getFullYear();
+  const tMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const tDay = String(now.getDate()).padStart(2, '0');
+  const today = `${tYear}-${tMonth}-${tDay}`;
+
   return { firstDay, today };
 }
 
@@ -60,7 +72,6 @@ async function getClientAccounts(accessToken) {
 }
 
 async function getAccountLevelSpend(customerId, accessToken, dateRange) {
-  // AÑADIDOS: metrics.clicks, metrics.impressions
   const query = `
     SELECT 
       campaign.id, 
@@ -86,9 +97,39 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
   let rows = [];
   if (response.ok) {
     const data = await response.json();
-    const dbDate = dateRange.today;
-    if (data && Array.isArray(data)) {
-      data.forEach(batch => { 
+    // OJO: Al pedir un rango, Google devuelve una fila por día si usamos segments.date,
+    // pero aquí NO estamos pidiendo segments.date en el SELECT, solo en el WHERE.
+    // ERROR COMÚN: Si no pides segments.date en el SELECT, Google te devuelve el TOTAL del rango.
+    // Pero tu worker necesita guardar DÍA a DÍA para que el dashboard funcione.
+    
+    // CORRECCIÓN IMPORTANTE: Vamos a pedir segments.date para desglosar por día.
+    const queryDaily = `
+      SELECT 
+        segments.date,
+        campaign.id, 
+        campaign.name, 
+        campaign.status, 
+        campaign_budget.amount_micros,
+        metrics.cost_micros,
+        metrics.conversions_value,
+        metrics.conversions,
+        metrics.clicks,
+        metrics.impressions
+      FROM campaign 
+      WHERE 
+        segments.date BETWEEN '${dateRange.firstDay}' AND '${dateRange.today}'
+        AND metrics.cost_micros > 0`;
+
+    const responseDaily = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'developer-token': DEVELOPER_TOKEN, 'Content-Type': 'application/json', 'login-customer-id': MCC_ID },
+        body: JSON.stringify({ query: queryDaily }),
+    });
+
+    const dataDaily = await responseDaily.json();
+
+    if (dataDaily && Array.isArray(dataDaily)) {
+      dataDaily.forEach(batch => { 
         if (batch.results) { 
           batch.results.forEach(row => { 
             const cost = parseInt(row.metrics.costMicros || '0') / 1000000;
@@ -99,7 +140,7 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
               campaign_id: `${row.campaign.id}`, 
               campaign_name: row.campaign.name, 
               status: row.campaign.status, 
-              date: dbDate, 
+              date: row.segments.date, // Usamos la fecha real del dato
               cost: cost,
               conversions_value: row.metrics.conversionsValue ? parseFloat(row.metrics.conversionsValue) : 0,
               conversions: row.metrics.conversions ? parseFloat(row.metrics.conversions) : 0,
@@ -129,28 +170,32 @@ async function processSyncJob(jobId) {
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
     const range = getDateRange();
-    await log(`🚀 Worker API ${API_VERSION} (Full PPC). Periodo: ${range.firstDay} al ${range.today}`);
+    await log(`🚀 Iniciando Sincronización Histórica.`);
+    await log(`📅 Periodo: ${range.firstDay} al ${range.today}`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
-    await log(`📋 Clientes: ${clients.length}`);
+    await log(`📋 Clientes encontrados: ${clients.length}`);
 
     let totalRows = 0;
     for (const [index, client] of clients.entries()) {
-      await log(`[${index + 1}/${clients.length}] ${client.name}...`);
+      await log(`[${index + 1}/${clients.length}] Procesando ${client.name}...`);
       const campaignData = await getAccountLevelSpend(client.id, token, range);
       
       if (campaignData.length > 0) {
+         // Batch insert para no saturar si hay muchos días
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
+         
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
          if (error) {
             console.error(`❌ Error DB: ${error.message}`);
+            await log(`❌ Error guardando datos de ${client.name}`);
          } else {
             totalRows += campaignData.length;
          }
       }
     }
-    await log(`🎉 FIN. Procesados ${totalRows} registros.`);
+    await log(`🎉 FIN. Base de datos actualizada con ${totalRows} registros.`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
@@ -172,4 +217,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker listo.`);
+console.log(`📡 Worker Histórico v3.0 (Mes actual + Anterior) Listo.`);
