@@ -75,9 +75,9 @@ export default function AdsReportGenerator() {
 
         // Agregación Simple
         const aggregate = (rows: any[]) => {
-            const cost = rows.reduce((acc, r) => acc + r.cost, 0);
-            const conv = rows.reduce((acc, r) => acc + (r.conversions || 0), 0);
-            const val = rows.reduce((acc, r) => acc + (r.conversions_value || 0), 0);
+            const cost = rows.reduce((acc, r) => acc + Number(r.cost || 0), 0);
+            const conv = rows.reduce((acc, r) => acc + Number(r.conversions || 0), 0);
+            const val = rows.reduce((acc, r) => acc + Number(r.conversions_value || 0), 0);
             return {
                 cost,
                 conversions: conv,
