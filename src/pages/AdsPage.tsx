@@ -11,27 +11,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, TrendingUp, TrendingDown, Activity, Sparkles
+  Info, TrendingUp, TrendingDown, Activity 
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns';
-import { es } from 'date-fns/locale';
-
-// --- RECHARTS ---
-import { 
-  ComposedChart, 
-  Bar, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip as RechartsTooltip, 
-  Legend, 
-  ResponsiveContainer 
-} from 'recharts';
 
 // --- TIPOS ---
 interface CampaignData {
@@ -46,14 +31,6 @@ interface CampaignData {
   impressions?: number;
   original_client_name?: string; 
   original_client_id?: string;
-}
-
-interface DailyStat {
-  date: string;
-  shortDate: string;
-  cost: number;
-  conversions: number;
-  revenue: number;
 }
 
 interface ClientPacing {
@@ -75,7 +52,6 @@ interface ClientPacing {
   isSalesAccount: boolean;
   realIdsList: {id: string, name: string}[]; 
   globalRoas: number;
-  dailyHistory: DailyStat[]; // <--- NUEVO: Para la gráfica
 }
 
 const formatProjectName = (name: string) => name.replace(/^(Cliente|Client)\s*[-:]?\s*/i, '');
@@ -109,7 +85,7 @@ export default function AdsPage() {
 
   const fetchData = async () => {
     try {
-      // Obtenemos TODO el historial (el worker guarda por días)
+      // Obtenemos todos los datos (el worker v5 trae 1 fila por mes)
       const { data: adsData } = await supabase.from('google_ads_campaigns').select('*');
       const { data: settingsData } = await supabase.from('client_settings').select('*');
       
@@ -137,7 +113,6 @@ export default function AdsPage() {
       if (logData) {
         setLastSyncTime(new Date(logData.created_at));
       } else if (adsData && adsData.length > 0) {
-         // Si no hay log, buscamos la fecha más reciente en los datos
          const dates = adsData.map(d => new Date(d.created_at || d.date).getTime());
          setLastSyncTime(new Date(Math.max(...dates)));
       }
@@ -178,12 +153,8 @@ export default function AdsPage() {
             setSyncLogs(currentLogs);
             
             if (currentLogs.length > 0) {
-                const match = currentLogs[currentLogs.length - 1].match(/\[(\d+)\/(\d+)\]/);
-                if (match) {
-                    const current = parseInt(match[1]);
-                    const total = parseInt(match[2]);
-                    setSyncProgress((current / total) * 100);
-                }
+                // Estimación de progreso simple
+                setSyncProgress(prev => Math.min(prev + 5, 95));
             }
 
             if (newRow.status === 'completed') {
@@ -244,15 +215,15 @@ export default function AdsPage() {
     toast.success('Configuración guardada');
   };
 
-  // --- LÓGICA DE AGREGACIÓN (CORREGIDA PARA MES ACTUAL) ---
+  // --- LÓGICA DE AGREGACIÓN MENSUAL ---
   const reportData = useMemo(() => {
     if (!rawData.length) return [];
     
     const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
+    // Identificar la fecha del "primer día del mes actual" en formato string (YYYY-MM-01)
+    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     
-    const daysInMonth = monthEnd.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const currentDay = now.getDate();
     const remainingDays = daysInMonth - currentDay;
 
@@ -266,15 +237,13 @@ export default function AdsPage() {
       isSalesAccount: boolean,
       realIds: string[], 
       realIdsNames: {id: string, name: string}[],
-      campaignsMap: Map<string, CampaignData>, // Usamos Map para agregar campañas repetidas por día
-      isManualGroupBudget: boolean,
-      dailyStatsMap: Map<string, DailyStat> // Para la gráfica
+      campaigns: CampaignData[],
+      isManualGroupBudget: boolean
     }>();
 
     rawData.forEach(row => {
-      // 1. FILTRO: Solo procesamos datos del mes actual
-      const rowDate = parseISO(row.date);
-      if (isWithinInterval(rowDate, { start: monthStart, end: monthEnd })) {
+      // FILTRO: Solo datos donde la fecha sea el día 1 del mes actual (formato segments.month)
+      if (row.date === currentMonthPrefix) {
         
         const settings = clientSettings[row.client_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
         
@@ -302,19 +271,17 @@ export default function AdsPage() {
             isSalesAccount: settings.is_sales_account !== false,
             realIds: [],
             realIdsNames: [],
-            campaignsMap: new Map(),
-            isManualGroupBudget: manualGroupBudget > 0,
-            dailyStatsMap: new Map()
+            campaigns: [],
+            isManualGroupBudget: manualGroupBudget > 0
           });
         }
         
         const entry = stats.get(groupKey)!;
         
-        // Acumular totales
+        // Sumamos los totales (que ya vienen acumulados del mes)
         entry.spent += row.cost;
         entry.total_conversions_val += (row.conversions_value || 0);
         
-        // Registrar IDs reales para grupos
         if (!entry.realIds.includes(row.client_id)) {
            entry.realIds.push(row.client_id);
            entry.realIdsNames.push({id: row.client_id, name: row.client_name});
@@ -323,45 +290,21 @@ export default function AdsPage() {
            }
            if (!settings.is_hidden) entry.isHidden = false;
         }
-        
-        // Acumular datos diarios para la gráfica
-        if (!entry.dailyStatsMap.has(row.date)) {
-            entry.dailyStatsMap.set(row.date, { 
-                date: row.date, 
-                shortDate: format(parseISO(row.date), 'dd MMM', {locale: es}),
-                cost: 0, 
-                conversions: 0, 
-                revenue: 0 
-            });
-        }
-        const dailyStat = entry.dailyStatsMap.get(row.date)!;
-        dailyStat.cost += row.cost;
-        dailyStat.conversions += (row.conversions || 0);
-        dailyStat.revenue += (row.conversions_value || 0);
 
-        // Acumular datos de campaña (sumando días)
-        if (row.cost > 0 || row.conversions > 0) { 
-            if (!entry.campaignsMap.has(row.campaign_id)) {
-                entry.campaignsMap.set(row.campaign_id, {
-                    campaign_id: row.campaign_id,
-                    campaign_name: row.campaign_name,
-                    status: row.status,
-                    cost: 0,
-                    conversions_value: 0,
-                    conversions: 0,
-                    daily_budget: row.daily_budget,
-                    clicks: 0,
-                    impressions: 0,
-                    original_client_name: row.client_name,
-                    original_client_id: row.client_id
-                });
-            }
-            const camp = entry.campaignsMap.get(row.campaign_id)!;
-            camp.cost += row.cost;
-            camp.conversions_value = (camp.conversions_value || 0) + (row.conversions_value || 0);
-            camp.conversions = (camp.conversions || 0) + (row.conversions || 0);
-            camp.clicks = (camp.clicks || 0) + (row.clicks || 0);
-            camp.impressions = (camp.impressions || 0) + (row.impressions || 0);
+        if (row.cost > 0) { 
+            entry.campaigns.push({
+                campaign_id: row.campaign_id,
+                campaign_name: row.campaign_name,
+                status: row.status,
+                cost: row.cost,
+                conversions_value: row.conversions_value,
+                conversions: row.conversions,
+                daily_budget: row.daily_budget,
+                clicks: row.clicks,
+                impressions: row.impressions,
+                original_client_name: row.client_name,
+                original_client_id: row.client_id
+            });
         }
       }
     });
@@ -370,6 +313,7 @@ export default function AdsPage() {
     stats.forEach((value, key) => {
       const budget = value.budget;
       const spent = value.spent;
+      // Cálculo estimado diario basado en el total acumulado
       const avgDailySpend = currentDay > 0 ? spent / currentDay : 0;
       const forecast = avgDailySpend * daysInMonth;
       const progress = budget > 0 ? (spent / budget) * 100 : 0;
@@ -383,10 +327,6 @@ export default function AdsPage() {
         else if (forecast > budget) status = 'risk';
         else if (progress < 50 && currentDay > 20) status = 'under';
       }
-
-      // Preparar datos históricos ordenados
-      const dailyHistory = Array.from(value.dailyStatsMap.values())
-        .sort((a, b) => a.date.localeCompare(b.date));
 
       report.push({ 
           client_id: key, 
@@ -405,9 +345,8 @@ export default function AdsPage() {
           groupName: value.is_group ? value.name : undefined,
           isManualGroupBudget: value.isManualGroupBudget,
           realIdsList: value.realIdsNames,
-          campaigns: Array.from(value.campaignsMap.values()).sort((a,b) => b.cost - a.cost),
-          globalRoas,
-          dailyHistory // <--- Datos para la gráfica
+          campaigns: value.campaigns.sort((a,b) => b.cost - a.cost),
+          globalRoas
       });
     });
 
@@ -437,7 +376,7 @@ export default function AdsPage() {
         <div className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Control Presupuestario</h1>
+                    <h1 className="text-2xl font-bold text-slate-900">Control Presupuestario (Mensual)</h1>
                     <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
                     <Clock className="w-4 h-4" />
                     <span>Última sinc: {lastSyncTime ? lastSyncTime.toLocaleString() : 'Pendiente...'}</span>
@@ -512,7 +451,6 @@ export default function AdsPage() {
                                     </span>
                                     {client.is_group && <Badge variant="secondary" className="text-[10px] gap-1"><Layers className="w-3 h-3"/> GRUPO</Badge>}
                                     
-                                    {/* ALERTA ROAS - Solo si es cuenta de Ventas */}
                                     {client.isSalesAccount && client.globalRoas < 2 && client.spent > 100 && (
                                         <TooltipProvider>
                                             <Tooltip>
@@ -648,7 +586,7 @@ export default function AdsPage() {
                                                 {formatCurrency(client.recommendedDaily)}
                                             </div>
                                             <div className="flex items-center gap-1 mt-2 mb-1">
-                                                <span className="text-[10px] text-slate-400">Ritmo:</span>
+                                                <span className="text-[10px] text-slate-400">Ritmo Est.:</span>
                                                 <span className="text-xs font-semibold text-slate-700">{formatCurrency(client.avgDailySpend)}</span>
                                             </div>
                                         </div>
@@ -666,80 +604,16 @@ export default function AdsPage() {
                                             </div>
                                         </div>
                                     </div>
-
-                                    {/* --- AQUÍ ESTÁ LA NUEVA GRÁFICA --- */}
-                                    <div className="pt-4 mt-auto">
-                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Evolución Diaria (Mes actual)</h4>
-                                        <div className="h-40 w-full bg-white rounded border border-slate-100 p-2">
-                                            <ResponsiveContainer width="100%" height="100%">
-                                                <ComposedChart data={client.dailyHistory}>
-                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                                                    <XAxis 
-                                                        dataKey="shortDate" 
-                                                        tick={{fontSize: 9, fill: '#64748b'}} 
-                                                        axisLine={false} 
-                                                        tickLine={false}
-                                                        minTickGap={15}
-                                                    />
-                                                    <YAxis 
-                                                        yAxisId="left"
-                                                        orientation="left" 
-                                                        tick={{fontSize: 9, fill: '#64748b'}} 
-                                                        axisLine={false} 
-                                                        tickLine={false}
-                                                        tickFormatter={(val) => `${val}€`}
-                                                        width={30}
-                                                    />
-                                                    <YAxis 
-                                                        yAxisId="right"
-                                                        orientation="right" 
-                                                        tick={{fontSize: 9, fill: '#64748b'}} 
-                                                        axisLine={false} 
-                                                        tickLine={false}
-                                                        width={20}
-                                                    />
-                                                    <RechartsTooltip 
-                                                        contentStyle={{fontSize: '12px', borderRadius: '4px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', border: 'none'}}
-                                                        formatter={(value:number, name:string) => [
-                                                            name === 'cost' ? `${value.toFixed(0)}€` : name === 'revenue' ? `${value.toFixed(0)}€` : value,
-                                                            name === 'cost' ? 'Inversión' : name === 'revenue' ? 'Valor/Ingresos' : 'Conversiones'
-                                                        ]}
-                                                    />
-                                                    
-                                                    {/* Barras: Coste */}
-                                                    <Bar yAxisId="left" dataKey="cost" name="Inversión" fill="#6366f1" radius={[2, 2, 0, 0]} barSize={12} />
-                                                    
-                                                    {/* Barras: Ingresos (Solo si es Ecommerce) */}
-                                                    {client.isSalesAccount && (
-                                                        <Bar yAxisId="left" dataKey="revenue" name="Valor/Ingresos" fill="#10b981" radius={[2, 2, 0, 0]} barSize={12} opacity={0.6} />
-                                                    )}
-
-                                                    {/* Línea: Conversiones */}
-                                                    <Line 
-                                                        yAxisId="right" 
-                                                        type="monotone" 
-                                                        dataKey="conversions" 
-                                                        name="Conversiones" 
-                                                        stroke="#f59e0b" 
-                                                        strokeWidth={2} 
-                                                        dot={false} 
-                                                    />
-                                                </ComposedChart>
-                                            </ResponsiveContainer>
-                                        </div>
-                                    </div>
-                                    {/* --- FIN GRÁFICA --- */}
-
                                 </div>
                             </div>
 
-                            {/* DETALLE DE CAMPAÑAS FULL PPC */}
+                            {/* DETALLE DE CAMPAÑAS */}
                             <div className="space-y-4">
                                 <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                                     <Activity className="w-4 h-4 text-slate-400" />
                                     Rendimiento Campañas
                                 </h3>
-                                <div className="rounded-md border border-slate-200 overflow-hidden max-h-[500px] overflow-y-auto bg-white">
+                                <div className="rounded-md border border-slate-200 overflow-hidden max-h-[300px] overflow-y-auto bg-white">
                                     <table className="w-full text-xs text-left">
                                         <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200 sticky top-0 z-10">
                                             <tr>
@@ -825,7 +699,7 @@ export default function AdsPage() {
             </Accordion>
          </div>
 
-         {/* DIALOGO DE CONFIG */}
+         {/* DIALOGO DE CONFIG Y SYNC */}
          <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
             <DialogContent>
                 <DialogHeader>
@@ -846,7 +720,6 @@ export default function AdsPage() {
                             Escribe un nombre para agruparlo. <strong>Borra el nombre para sacarlo del grupo.</strong>
                         </p>
                     </div>
-                    
                     <div className="flex items-center justify-between border-t pt-4 border-slate-100">
                         <Label htmlFor="sales-mode" className="flex flex-col">
                             <span>Es Cuenta de Ventas (Ecommerce)</span>
@@ -858,7 +731,6 @@ export default function AdsPage() {
                             onCheckedChange={(checked) => setEditingClient(prev => prev ? {...prev, isSales: checked} : null)}
                         />
                     </div>
-
                     <div className="flex items-center space-x-2 pt-2">
                         <Switch 
                             id="hide-mode" 
@@ -875,13 +747,12 @@ export default function AdsPage() {
             </DialogContent>
          </Dialog>
 
-        {/* DIALOGO DE SYNC */}
         <Dialog open={isSyncing} onOpenChange={(open) => { if(syncStatus !== 'running') setIsSyncing(open); }}>
           <DialogContent className="sm:max-w-md bg-slate-950 text-slate-100 border-slate-800">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-white">
                 {syncStatus === 'running' && <RefreshCw className="w-5 h-5 animate-spin text-blue-500" />}
-                Sincronizando
+                Sincronizando (Mensual)
               </DialogTitle>
               <DialogDescription className="text-slate-400">
                  {syncStatus === 'running' ? `Progreso: ${Math.round(syncProgress)}%` : 'Finalizado.'}
@@ -889,10 +760,7 @@ export default function AdsPage() {
             </DialogHeader>
             <div className="w-full"><Progress value={syncProgress} className="h-2 bg-slate-800 [&>div]:bg-blue-500" /></div>
             <div className="bg-black/50 rounded-md p-4 font-mono text-xs text-green-400 h-64 flex flex-col shadow-inner border border-slate-800 mt-2">
-              <div 
-                className="flex-1 overflow-y-auto min-h-0 space-y-1" 
-                ref={scrollRef}
-              >
+              <div className="flex-1 overflow-y-auto min-h-0 space-y-1" ref={scrollRef}>
                   {syncLogs.map((log, i) => (
                     <div key={i} className="break-words border-l-2 border-transparent hover:border-slate-700 pl-1">{log}</div>
                   ))}
@@ -900,7 +768,6 @@ export default function AdsPage() {
             </div>
           </DialogContent>
         </Dialog>
-
       </div>
     </AppLayout>
   );
