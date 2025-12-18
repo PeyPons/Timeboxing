@@ -60,7 +60,6 @@ export default function SettingsPage() {
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="meta">Meta Ads (Facebook)</SelectItem>
-                                        <SelectItem value="google">Google Ads</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -80,7 +79,6 @@ export default function SettingsPage() {
                             <strong>Nota importante:</strong> 
                             <ul className="list-disc pl-4 mt-1 space-y-1">
                                 <li>Para <strong>Meta</strong>: El ID debe incluir el prefijo (ej: <code>act_147...</code>).</li>
-                                <li>Para <strong>Google</strong>: Usa el formato con guiones si es posible (<code>123-456-7890</code>).</li>
                             </ul>
                         </div>
                     </CardContent>
