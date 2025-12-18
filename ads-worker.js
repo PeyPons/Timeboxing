@@ -16,12 +16,11 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error("❌ Faltan claves en .env")
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- MODIFICADO: RANGO DE FECHAS AMPLIADO ---
+// --- UTILIDADES ---
 function getDateRange() {
   const now = new Date();
   
   // Calcular el 1er día del MES ANTERIOR
-  // (Si estamos en Enero, esto nos lleva a 1 de Diciembre del año pasado automáticamente)
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   
   const pYear = prevMonthDate.getFullYear();
@@ -36,6 +35,11 @@ function getDateRange() {
   const today = `${tYear}-${tMonth}-${tDay}`;
 
   return { firstDay, today };
+}
+
+// Genera un ID único para el historial para evitar duplicados en DB
+function generateChangeId(row) {
+    return `${row.change_event.change_date_time}_${row.change_event.resource_name}`.replace(/[^a-zA-Z0-9]/g, '_');
 }
 
 async function getAccessToken() {
@@ -71,9 +75,12 @@ async function getClientAccounts(accessToken) {
   return clients;
 }
 
+// --- 1. DATOS DE CAMPAÑAS (OPTIMIZADO) ---
 async function getAccountLevelSpend(customerId, accessToken, dateRange) {
-  const query = `
+  // Solo usamos queryDaily. Eliminada la query redundante.
+  const queryDaily = `
     SELECT 
+      segments.date,
       campaign.id, 
       campaign.name, 
       campaign.status, 
@@ -86,76 +93,113 @@ async function getAccountLevelSpend(customerId, accessToken, dateRange) {
     FROM campaign 
     WHERE 
       segments.date BETWEEN '${dateRange.firstDay}' AND '${dateRange.today}'
-      AND metrics.cost_micros > 0`; 
-  
+      AND metrics.cost_micros > 0`;
+
   const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${accessToken}`, 'developer-token': DEVELOPER_TOKEN, 'Content-Type': 'application/json', 'login-customer-id': MCC_ID },
-    body: JSON.stringify({ query }),
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'developer-token': DEVELOPER_TOKEN, 'Content-Type': 'application/json', 'login-customer-id': MCC_ID },
+      body: JSON.stringify({ query: queryDaily }),
   });
 
+  if (!response.ok) {
+      console.error(`🔴 Error Google API Campañas ${customerId}:`, await response.text());
+      return [];
+  }
+
+  const dataDaily = await response.json();
   let rows = [];
-  if (response.ok) {
-    const data = await response.json();
-    // OJO: Al pedir un rango, Google devuelve una fila por día si usamos segments.date,
-    // pero aquí NO estamos pidiendo segments.date en el SELECT, solo en el WHERE.
-    // ERROR COMÚN: Si no pides segments.date en el SELECT, Google te devuelve el TOTAL del rango.
-    // Pero tu worker necesita guardar DÍA a DÍA para que el dashboard funcione.
-    
-    // CORRECCIÓN IMPORTANTE: Vamos a pedir segments.date para desglosar por día.
-    const queryDaily = `
-      SELECT 
-        segments.date,
-        campaign.id, 
-        campaign.name, 
-        campaign.status, 
-        campaign_budget.amount_micros,
-        metrics.cost_micros,
-        metrics.conversions_value,
-        metrics.conversions,
-        metrics.clicks,
-        metrics.impressions
-      FROM campaign 
-      WHERE 
-        segments.date BETWEEN '${dateRange.firstDay}' AND '${dateRange.today}'
-        AND metrics.cost_micros > 0`;
 
-    const responseDaily = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${accessToken}`, 'developer-token': DEVELOPER_TOKEN, 'Content-Type': 'application/json', 'login-customer-id': MCC_ID },
-        body: JSON.stringify({ query: queryDaily }),
-    });
-
-    const dataDaily = await responseDaily.json();
-
-    if (dataDaily && Array.isArray(dataDaily)) {
-      dataDaily.forEach(batch => { 
-        if (batch.results) { 
-          batch.results.forEach(row => { 
-            const cost = parseInt(row.metrics.costMicros || '0') / 1000000;
-            const budget = row.campaignBudget ? (parseInt(row.campaignBudget.amountMicros || '0') / 1000000) : 0;
-            
-            rows.push({ 
-              client_id: customerId, 
-              campaign_id: `${row.campaign.id}`, 
-              campaign_name: row.campaign.name, 
-              status: row.campaign.status, 
-              date: row.segments.date, // Usamos la fecha real del dato
-              cost: cost,
-              conversions_value: row.metrics.conversionsValue ? parseFloat(row.metrics.conversionsValue) : 0,
-              conversions: row.metrics.conversions ? parseFloat(row.metrics.conversions) : 0,
-              daily_budget: budget,
-              clicks: row.metrics.clicks ? parseInt(row.metrics.clicks) : 0,
-              impressions: row.metrics.impressions ? parseInt(row.metrics.impressions) : 0
-            }); 
+  if (dataDaily && Array.isArray(dataDaily)) {
+    dataDaily.forEach(batch => { 
+      if (batch.results) { 
+        batch.results.forEach(row => { 
+          const cost = parseInt(row.metrics.costMicros || '0') / 1000000;
+          const budget = row.campaignBudget ? (parseInt(row.campaignBudget.amountMicros || '0') / 1000000) : 0;
+           
+          rows.push({ 
+            client_id: customerId, 
+            campaign_id: `${row.campaign.id}`, 
+            campaign_name: row.campaign.name, 
+            status: row.campaign.status, 
+            date: row.segments.date, 
+            cost: cost,
+            conversions_value: row.metrics.conversionsValue ? parseFloat(row.metrics.conversionsValue) : 0,
+            conversions: row.metrics.conversions ? parseFloat(row.metrics.conversions) : 0,
+            daily_budget: budget,
+            clicks: row.metrics.clicks ? parseInt(row.metrics.clicks) : 0,
+            impressions: row.metrics.impressions ? parseInt(row.metrics.impressions) : 0
           }); 
-        } 
-      });
-    }
-  } else {
-    console.error(`🔴 Error Google API en cliente ${customerId}:`, await response.text());
+        }); 
+      } 
+    });
   }
   return rows;
+}
+
+// --- 2. HISTORIAL DE CAMBIOS (NUEVO) ---
+async function getChangeHistory(customerId, accessToken, dateRange) {
+    // Pedimos los últimos cambios. Limitamos a 50 por cliente para no saturar.
+    const query = `
+      SELECT 
+        change_event.change_date_time,
+        change_event.user_email,
+        change_event.change_resource_type,
+        change_event.old_resource,
+        change_event.new_resource,
+        change_event.resource_name,
+        change_event.campaign
+      FROM 
+        change_event 
+      WHERE 
+        change_event.change_date_time >= '${dateRange.firstDay} 00:00:00'
+      ORDER BY 
+        change_event.change_date_time DESC
+      LIMIT 50`;
+
+    const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:searchStream`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'developer-token': DEVELOPER_TOKEN, 'Content-Type': 'application/json', 'login-customer-id': MCC_ID },
+        body: JSON.stringify({ query }),
+    });
+
+    if (!response.ok) {
+        // change_event a veces falla si la cuenta es muy nueva o no tiene historial, no bloqueamos el proceso.
+        console.warn(`⚠️ Aviso History API ${customerId}:`, await response.text());
+        return [];
+    }
+
+    const data = await response.json();
+    let changes = [];
+
+    if (data && Array.isArray(data)) {
+        data.forEach(batch => {
+            if (batch.results) {
+                batch.results.forEach(row => {
+                    // Simplificación de detalles para la IA
+                    let detailText = "Modificación de recurso";
+                    if(row.changeEvent.oldResource && row.changeEvent.newResource) {
+                        detailText = "Actualización de configuración";
+                    } else if (row.changeEvent.newResource) {
+                        detailText = "Creación";
+                    } else if (row.changeEvent.oldResource) {
+                        detailText = "Eliminación";
+                    }
+
+                    changes.push({
+                        id: generateChangeId(row),
+                        client_id: customerId,
+                        change_date: row.changeEvent.changeDateTime,
+                        user_email: row.changeEvent.userEmail || 'Sistema/Google',
+                        change_type: row.changeEvent.changeResourceType,
+                        campaign_name: row.changeEvent.campaign || 'N/A', // A veces viene el resource name de la campaña
+                        resource_name: row.changeEvent.resourceName,
+                        details: detailText
+                    });
+                });
+            }
+        });
+    }
+    return changes;
 }
 
 // --- WORKER LOGIC ---
@@ -170,32 +214,44 @@ async function processSyncJob(jobId) {
   try {
     await supabase.from('ad_sync_logs').update({ status: 'running' }).eq('id', jobId);
     const range = getDateRange();
-    await log(`🚀 Iniciando Sincronización Histórica.`);
+    await log(`🚀 Iniciando Sync v4 (Datos + Historial).`);
     await log(`📅 Periodo: ${range.firstDay} al ${range.today}`);
     
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
-    await log(`📋 Clientes encontrados: ${clients.length}`);
+    await log(`📋 Clientes: ${clients.length}`);
 
-    let totalRows = 0;
+    let totalCampRows = 0;
+    let totalChangeRows = 0;
+
     for (const [index, client] of clients.entries()) {
       await log(`[${index + 1}/${clients.length}] Procesando ${client.name}...`);
-      const campaignData = await getAccountLevelSpend(client.id, token, range);
       
+      // 1. Obtener Métricas de Campaña
+      const campaignData = await getAccountLevelSpend(client.id, token, range);
       if (campaignData.length > 0) {
-         // Batch insert para no saturar si hay muchos días
          const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
-         
          const { error } = await supabase.from('google_ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
          if (error) {
-            console.error(`❌ Error DB: ${error.message}`);
-            await log(`❌ Error guardando datos de ${client.name}`);
+            console.error(`❌ Error DB Campaigns: ${error.message}`);
          } else {
-            totalRows += campaignData.length;
+            totalCampRows += campaignData.length;
          }
       }
+
+      // 2. Obtener Historial de Cambios (NUEVO)
+      const historyData = await getChangeHistory(client.id, token, range);
+      if (historyData.length > 0) {
+          const { error } = await supabase.from('google_ads_changes').upsert(historyData, { onConflict: 'id' });
+          if (error) {
+             console.error(`❌ Error DB History: ${error.message}`);
+          } else {
+             totalChangeRows += historyData.length;
+          }
+      }
     }
-    await log(`🎉 FIN. Base de datos actualizada con ${totalRows} registros.`);
+
+    await log(`🎉 FIN. Métricas: ${totalCampRows} | Cambios: ${totalChangeRows}`);
     await supabase.from('ad_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
@@ -217,4 +273,4 @@ setInterval(async () => {
   }
 }, 3000);
 
-console.log(`📡 Worker Histórico v3.0 (Mes actual + Anterior) Listo.`);
+console.log(`📡 Worker v4.0 (Campañas + Historial) Listo.`);
