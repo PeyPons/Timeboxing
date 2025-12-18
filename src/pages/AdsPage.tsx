@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, TrendingUp, TrendingDown
+  Info, TrendingUp, TrendingDown, Unlink, Activity, Target
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
@@ -27,6 +27,8 @@ interface CampaignData {
   conversions_value?: number;
   conversions?: number; 
   daily_budget?: number; 
+  clicks?: number;
+  impressions?: number;
   original_client_name?: string; 
   original_client_id?: string;
 }
@@ -150,8 +152,7 @@ export default function AdsPage() {
             setSyncLogs(currentLogs);
             
             if (currentLogs.length > 0) {
-                const lastLog = currentLogs[currentLogs.length - 1];
-                const match = lastLog.match(/\[(\d+)\/(\d+)\]/);
+                const match = currentLogs[currentLogs.length - 1].match(/\[(\d+)\/(\d+)\]/);
                 if (match) {
                     const current = parseInt(match[1]);
                     const total = parseInt(match[2]);
@@ -302,6 +303,8 @@ export default function AdsPage() {
                 conversions_value: row.conversions_value,
                 conversions: row.conversions,
                 daily_budget: row.daily_budget,
+                clicks: row.clicks,
+                impressions: row.impressions,
                 original_client_name: row.client_name,
                 original_client_id: row.client_id
             });
@@ -537,7 +540,7 @@ export default function AdsPage() {
                         )}
 
                         <div className="grid md:grid-cols-2 gap-8">
-                            {/* FINANZAS - DISEÑO AJUSTADO */}
+                            {/* FINANZAS */}
                             <div className="space-y-6">
                                 <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                                     Control Financiero
@@ -580,19 +583,15 @@ export default function AdsPage() {
 
                                     {/* GRID NUEVO DISEÑO */}
                                     <div className="grid grid-cols-2 gap-4 pt-2">
-                                        
-                                        {/* TARJETA: LÍMITE DIARIO + RITMO + ACCIÓN */}
                                         <div className="bg-white p-3 rounded border border-slate-200 relative overflow-hidden">
                                             <div className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Límite Diario</div>
                                             <div className="text-lg font-bold text-indigo-600">
                                                 {formatCurrency(client.recommendedDaily)}
                                             </div>
-                                            {/* RITMO ACTUAL */}
                                             <div className="flex items-center gap-1 mt-2 mb-1">
                                                 <span className="text-[10px] text-slate-400">Ritmo:</span>
                                                 <span className="text-xs font-semibold text-slate-700">{formatCurrency(client.avgDailySpend)}</span>
                                             </div>
-                                            {/* ACCIÓN (REDUCIR/AUMENTAR) */}
                                             {client.budget > 0 && (
                                                 <div className="text-[10px] leading-tight border-t pt-2 border-slate-100">
                                                     {client.recommendedDaily < client.avgDailySpend ? (
@@ -608,13 +607,11 @@ export default function AdsPage() {
                                             )}
                                         </div>
 
-                                        {/* TARJETA: PROYECCIÓN + DIFERENCIA */}
                                         <div className="bg-white p-3 rounded border border-slate-200">
                                             <div className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Proyección Mes</div>
                                             <div className={`text-lg font-bold ${client.status === 'risk' ? 'text-amber-600' : 'text-slate-700'}`}>
                                                 {formatCurrency(client.forecast)}
                                             </div>
-                                            {/* DIFERENCIA CON PRESUPUESTO */}
                                             <div className="mt-2 text-[10px] border-t pt-2 border-slate-100 flex justify-between items-center">
                                                 <span className="text-slate-400">Desvío:</span>
                                                 <span className={`font-bold ${diffFromBudget > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
@@ -626,17 +623,19 @@ export default function AdsPage() {
                                 </div>
                             </div>
 
-                            {/* DETALLE DE CAMPAÑAS */}
+                            {/* DETALLE DE CAMPAÑAS FULL PPC */}
                             <div className="space-y-4">
-                                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Rendimiento Campañas</h3>
+                                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                                    <Activity className="w-4 h-4 text-slate-400" />
+                                    Rendimiento Campañas
+                                </h3>
                                 <div className="rounded-md border border-slate-200 overflow-hidden max-h-[400px] overflow-y-auto">
                                     <table className="w-full text-xs text-left">
                                         <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200 sticky top-0 z-10">
                                             <tr>
-                                                <th className="px-3 py-2 w-[30%]">Campaña</th>
-                                                <th className="px-2 py-2 text-center">Peso</th>
-                                                <th className="px-2 py-2 text-right">Presup.</th>
+                                                <th className="px-3 py-2 w-[35%] min-w-[200px]">Campaña</th>
                                                 <th className="px-2 py-2 text-right">Gasto</th>
+                                                <th className="px-2 py-2 text-right hidden sm:table-cell">Tráfico</th>
                                                 <th className="px-2 py-2 text-right">Conv.</th>
                                                 {client.isSalesAccount && <th className="px-2 py-2 text-center">ROAS</th>}
                                             </tr>
@@ -644,43 +643,52 @@ export default function AdsPage() {
                                         <tbody className="divide-y divide-slate-100">
                                             {client.campaigns.map((camp, idx) => {
                                                 const campRoas = camp.cost > 0 ? (camp.conversions_value || 0) / camp.cost : 0;
-                                                const weight = client.spent > 0 ? (camp.cost / client.spent) * 100 : 0;
+                                                const cpa = camp.conversions && camp.conversions > 0 ? camp.cost / camp.conversions : 0;
+                                                const cpc = camp.clicks && camp.clicks > 0 ? camp.cost / camp.clicks : 0;
+                                                const ctr = camp.impressions && camp.impressions > 0 ? (camp.clicks / camp.impressions) * 100 : 0;
                                                 
                                                 return (
                                                     <tr key={`${camp.campaign_id}-${idx}`} className="hover:bg-slate-50/50">
-                                                        <td className="px-3 py-2">
-                                                            <div className="font-medium text-slate-700 max-w-[140px] truncate" title={camp.campaign_name}>
+                                                        <td className="px-3 py-3 align-top">
+                                                            <div className="font-medium text-slate-700 line-clamp-2" title={camp.campaign_name}>
                                                                 {camp.campaign_name}
                                                             </div>
-                                                            {client.is_group && (
-                                                                <div className="text-[9px] text-slate-400 truncate">{formatProjectName(camp.original_client_name || '')}</div>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-2 py-2 align-middle">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden max-w-[40px]">
-                                                                    <div className="bg-slate-400 h-full" style={{ width: `${weight}%` }}></div>
-                                                                </div>
-                                                                <span className="text-[9px] text-slate-400 w-6 text-right">{weight.toFixed(0)}%</span>
+                                                            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[9px] text-slate-400">
+                                                                <span className="flex items-center gap-1">
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${camp.status === 'ENABLED' ? 'bg-emerald-400' : 'bg-slate-300'}`}></span>
+                                                                    {camp.status === 'ENABLED' ? 'ON' : 'OFF'}
+                                                                </span>
+                                                                <span>{camp.daily_budget ? `Presup: ${formatCurrency(camp.daily_budget).replace('€','')}` : 'P: -'}</span>
+                                                                {client.is_group && <span className="text-slate-300">|</span>}
+                                                                {client.is_group && <span className="truncate max-w-[100px]">{formatProjectName(camp.original_client_name || '')}</span>}
                                                             </div>
                                                         </td>
-                                                        <td className="px-2 py-2 text-right text-slate-500 font-mono text-[10px]">
-                                                            {camp.daily_budget ? formatCurrency(camp.daily_budget).replace('€', '') : '-'}
-                                                        </td>
-                                                        <td className="px-2 py-2 text-right font-medium text-slate-700">
+                                                        
+                                                        <td className="px-2 py-3 text-right font-medium text-slate-700 align-top">
                                                             {formatCurrency(camp.cost).replace('€', '')}
                                                         </td>
-                                                        <td className="px-2 py-2 text-right">
-                                                            <div className="flex flex-col items-end leading-none gap-0.5">
+
+                                                        <td className="px-2 py-3 text-right hidden sm:table-cell align-top">
+                                                            <div className="flex flex-col items-end leading-tight">
+                                                                <span className="text-slate-600" title="Coste por Clic">{formatCurrency(cpc).replace('€','')}</span>
+                                                                <span className="text-[10px] text-slate-400" title="CTR">{ctr.toFixed(1)}% CTR</span>
+                                                            </div>
+                                                        </td>
+
+                                                        <td className="px-2 py-3 text-right align-top">
+                                                            <div className="flex flex-col items-end leading-tight">
                                                                 <span className="font-bold">{camp.conversions || 0}</span>
-                                                                {client.isSalesAccount && (
-                                                                    <span className="text-[9px] text-slate-400">{formatCurrency(camp.conversions_value || 0).replace('€','')}</span>
+                                                                {camp.conversions > 0 && (
+                                                                    <span className="text-[10px] text-slate-500" title="Coste por Acción (CPA)">
+                                                                        {formatCurrency(cpa).replace('€','')} /lead
+                                                                    </span>
                                                                 )}
                                                             </div>
                                                         </td>
+
                                                         {client.isSalesAccount && (
-                                                            <td className="px-2 py-2 text-center">
-                                                                <Badge variant="outline" className={`text-[9px] px-1 py-0 h-4 ${getRoasColor(campRoas)}`}>
+                                                            <td className="px-2 py-3 text-center align-top">
+                                                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 ${getRoasColor(campRoas)}`}>
                                                                     {campRoas.toFixed(2)}
                                                                 </Badge>
                                                             </td>
