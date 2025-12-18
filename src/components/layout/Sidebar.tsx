@@ -1,3 +1,4 @@
+import { FileText, Sparkles } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { 
@@ -57,6 +58,22 @@ export function Sidebar() {
         
         <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
           Google Ads
+        </NavLink>
+
+        <NavLink 
+          to="/ads-reports" 
+          className={({ isActive }) =>
+            `flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-indigo-600 ${
+              isActive ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-slate-500 hover:bg-slate-50'
+            }`
+          }
+        >
+          {/* Icono con toque mágico para indicar que lleva IA */}
+          <div className="relative">
+            <FileText className="h-4 w-4" />
+            <Sparkles className="h-2 w-2 text-indigo-500 absolute -top-1 -right-1" />
+          </div>
+          Informes Google Ads
         </NavLink>
 
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
