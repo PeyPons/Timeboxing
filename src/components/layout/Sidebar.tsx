@@ -3,14 +3,15 @@ import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { 
   LayoutDashboard, 
-  FolderKanban, 
   Users, 
+  Briefcase, 
   BarChart3, 
   Settings, 
+  FolderOpen, 
+  FileText,
+  Megaphone, 
   Sparkles,
-  Briefcase,
-  FileDown,
-  Megaphone // <--- 1. AÑADIDO (Faltaba esto)
+  FileStack
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -68,12 +69,11 @@ export function Sidebar() {
             }`
           }
         >
-          {/* Icono con toque mágico para indicar que lleva IA */}
-          <div className="relative">
-            <FileText className="h-4 w-4" />
-            <Sparkles className="h-2 w-2 text-indigo-500 absolute -top-1 -right-1" />
+          <div className="relative flex items-center justify-center">
+            <FileStack className="h-4 w-4" />
+            <Sparkles className="h-2 w-2 text-amber-500 absolute -top-1.5 -right-1.5 animate-pulse" />
           </div>
-          Informes Google Ads
+          Informes IA
         </NavLink>
 
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
