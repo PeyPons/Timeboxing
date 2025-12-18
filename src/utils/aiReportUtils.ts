@@ -1,4 +1,4 @@
-import { type CampaignData } from '../types'; // Asegúrate de importar tus tipos
+import { type CampaignData } from '../types';
 
 export interface CampaignData {
   campaign_name: string;
