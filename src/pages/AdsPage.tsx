@@ -11,12 +11,19 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
   RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, TrendingUp, TrendingDown, Activity 
+  Info, Activity 
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+// --- ICONO GOOGLE ---
+const GoogleIcon = () => (
+    <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.6,22 21.5,18.33 21.5,12.91C21.5,11.76 21.35,11.1 21.35,11.1V11.1Z" />
+    </svg>
+);
 
 // --- TIPOS ---
 interface CampaignData {
@@ -85,12 +92,15 @@ export default function AdsPage() {
 
   const fetchData = async () => {
     try {
-      // Obtenemos todos los datos (el worker v5 trae 1 fila por mes)
+      // 1. Cargar Campañas
       const { data: adsData } = await supabase.from('google_ads_campaigns').select('*');
+      
+      // 2. Cargar Configuración
       const { data: settingsData } = await supabase.from('client_settings').select('*');
       
+      // 3. Cargar Última Sincronización (CORREGIDO: ads_sync_logs)
       const { data: logData } = await supabase
-        .from('ad_sync_logs')
+        .from('ads_sync_logs')
         .select('created_at')
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
@@ -125,7 +135,7 @@ export default function AdsPage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- WORKER SYNC ---
+  // --- WORKER SYNC (CORREGIDO: ads_sync_logs) ---
   const handleStartSync = async () => {
     setIsSyncing(true);
     setSyncStatus('running');
@@ -133,8 +143,9 @@ export default function AdsPage() {
     setSyncProgress(0);
 
     try {
+      // Insertar en la tabla correcta
       const { data, error } = await supabase
-        .from('ad_sync_logs')
+        .from('ads_sync_logs')
         .insert({ status: 'pending', logs: ['Esperando worker...'] })
         .select()
         .single();
@@ -143,18 +154,18 @@ export default function AdsPage() {
       const jobId = data.id;
 
       const channel = supabase
-        .channel(`job-${jobId}`)
+        .channel(`google-sync-${jobId}`)
         .on(
           'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'ad_sync_logs', filter: `id=eq.${jobId}` },
+          { event: 'UPDATE', schema: 'public', table: 'ads_sync_logs', filter: `id=eq.${jobId}` },
           (payload) => {
             const newRow = payload.new;
             const currentLogs = newRow.logs || [];
             setSyncLogs(currentLogs);
             
             if (currentLogs.length > 0) {
-                // Estimación de progreso simple
-                setSyncProgress(prev => Math.min(prev + 5, 95));
+                // Estimación de progreso visual
+                setSyncProgress(prev => Math.min(prev + 2, 95));
             }
 
             if (newRow.status === 'completed') {
@@ -162,7 +173,10 @@ export default function AdsPage() {
               setSyncProgress(100);
               toast.success('Sincronización completada');
               fetchData(); 
-              setTimeout(() => { supabase.removeChannel(channel); }, 2000);
+              setTimeout(() => { 
+                  supabase.removeChannel(channel); 
+                  setIsSyncing(false);
+              }, 2000);
             } else if (newRow.status === 'error') {
               setSyncStatus('error');
               toast.error('Error en el proceso');
@@ -187,17 +201,19 @@ export default function AdsPage() {
   // --- GUARDAR PRESUPUESTO ---
   const handleSaveBudget = async (clientId: string, amount: string) => {
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount)) return;
     
+    // Permitir guardar 0 para volver a modo automático
     setClientSettings(prev => ({
       ...prev,
-      [clientId]: { ...prev[clientId], budget: numAmount }
+      [clientId]: { ...prev[clientId], budget: isNaN(numAmount) ? 0 : numAmount }
     }));
 
     await supabase.from('client_settings').upsert({ 
       client_id: clientId, 
-      budget_limit: numAmount 
+      budget_limit: isNaN(numAmount) ? 0 : numAmount 
     }, { onConflict: 'client_id' });
+    
+    fetchData(); // Recargar para actualizar cálculos
   };
 
   const handleSaveClientSettings = async () => {
@@ -220,7 +236,6 @@ export default function AdsPage() {
     if (!rawData.length) return [];
     
     const now = new Date();
-    // Identificar la fecha del "primer día del mes actual" en formato string (YYYY-MM-01)
     const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -238,11 +253,11 @@ export default function AdsPage() {
       realIds: string[], 
       realIdsNames: {id: string, name: string}[],
       campaigns: CampaignData[],
-      isManualGroupBudget: boolean
+      isManualGroupBudget: boolean,
+      autoDailyBudgetSum: number // Nuevo acumulador para presupuesto auto
     }>();
 
     rawData.forEach(row => {
-      // FILTRO: Solo datos donde la fecha sea el día 1 del mes actual (formato segments.month)
       if (row.date === currentMonthPrefix) {
         
         const settings = clientSettings[row.client_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
@@ -255,16 +270,19 @@ export default function AdsPage() {
           ? settings.group_name 
           : row.client_name;
 
-        const groupSettings = clientSettings[groupKey];
-        const manualGroupBudget = (groupKey.startsWith('GROUP-') && groupSettings?.budget > 0) 
-            ? groupSettings.budget 
-            : 0;
+        // Presupuesto manual del grupo (si existe)
+        const groupSettings = clientSettings[groupKey]; 
+        // Si es grupo y tiene budget > 0 en settings, es manual
+        const isGroupManual = groupKey.startsWith('GROUP-') && (groupSettings?.budget > 0);
+        
+        // Presupuesto manual individual
+        const isIndividualManual = !groupKey.startsWith('GROUP-') && settings.budget > 0;
 
         if (!stats.has(groupKey)) {
           stats.set(groupKey, { 
             name: displayName, 
             spent: 0, 
-            budget: manualGroupBudget > 0 ? manualGroupBudget : 0,
+            budget: 0, // Se calculará después
             total_conversions_val: 0,
             is_group: groupKey.startsWith('GROUP-'),
             isHidden: settings.is_hidden, 
@@ -272,21 +290,29 @@ export default function AdsPage() {
             realIds: [],
             realIdsNames: [],
             campaigns: [],
-            isManualGroupBudget: manualGroupBudget > 0
+            isManualGroupBudget: isGroupManual,
+            autoDailyBudgetSum: 0
           });
         }
         
         const entry = stats.get(groupKey)!;
         
-        // Sumamos los totales (que ya vienen acumulados del mes)
+        // Acumular métricas
         entry.spent += row.cost;
         entry.total_conversions_val += (row.conversions_value || 0);
         
+        // Acumular presupuesto automático (solo campañas activas)
+        if (row.status === 'ENABLED' && row.daily_budget > 0) {
+            entry.autoDailyBudgetSum += row.daily_budget;
+        }
+
         if (!entry.realIds.includes(row.client_id)) {
            entry.realIds.push(row.client_id);
            entry.realIdsNames.push({id: row.client_id, name: row.client_name});
-           if (!entry.isManualGroupBudget) {
-               entry.budget += settings.budget;
+           
+           // Si es individual y tiene manual, lo sumamos (si es grupo manual se asigna luego)
+           if (!entry.is_group && isIndividualManual) {
+               entry.budget = settings.budget; 
            }
            if (!settings.is_hidden) entry.isHidden = false;
         }
@@ -310,21 +336,41 @@ export default function AdsPage() {
     });
 
     const report: ClientPacing[] = [];
+    
     stats.forEach((value, key) => {
-      const budget = value.budget;
+      // LOGICA DE PRESUPUESTO FINAL
+      let finalBudget = 0;
+
+      if (value.is_group) {
+          // Si es grupo y tiene manual en settings del grupo (imaginario)
+          const groupSettings = clientSettings[key.replace('GROUP-', '')] || clientSettings[key]; 
+          if (groupSettings?.budget > 0) {
+              finalBudget = groupSettings.budget;
+          } else {
+              // Si no, suma de los daily_budgets de sus campañas * 30.4
+              finalBudget = value.autoDailyBudgetSum * 30.4;
+          }
+      } else {
+          // Si es individual
+          if (value.budget > 0) {
+              finalBudget = value.budget; // Ya venía del settings
+          } else {
+              finalBudget = value.autoDailyBudgetSum * 30.4; // Automático
+          }
+      }
+
       const spent = value.spent;
-      // Cálculo estimado diario basado en el total acumulado
       const avgDailySpend = currentDay > 0 ? spent / currentDay : 0;
       const forecast = avgDailySpend * daysInMonth;
-      const progress = budget > 0 ? (spent / budget) * 100 : 0;
-      const remainingBudget = Math.max(0, budget - spent);
+      const progress = finalBudget > 0 ? (spent / finalBudget) * 100 : 0;
+      const remainingBudget = Math.max(0, finalBudget - spent);
       const recommendedDaily = remainingDays > 0 ? remainingBudget / remainingDays : 0;
       const globalRoas = spent > 0 ? value.total_conversions_val / spent : 0;
 
       let status: 'ok' | 'risk' | 'over' | 'under' = 'ok';
-      if (budget > 0) {
-        if (spent > budget) status = 'over';
-        else if (forecast > budget) status = 'risk';
+      if (finalBudget > 0) {
+        if (spent > finalBudget) status = 'over';
+        else if (forecast > finalBudget) status = 'risk';
         else if (progress < 50 && currentDay > 20) status = 'under';
       }
 
@@ -332,7 +378,7 @@ export default function AdsPage() {
           client_id: key, 
           client_name: value.name,
           is_group: value.is_group,
-          budget, 
+          budget: finalBudget, 
           spent, 
           progress, 
           forecast, 
@@ -375,15 +421,21 @@ export default function AdsPage() {
         {/* CABECERA */}
         <div className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Control Presupuestario (Mensual)</h1>
-                    <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
-                    <Clock className="w-4 h-4" />
-                    <span>Última sinc: {lastSyncTime ? lastSyncTime.toLocaleString() : 'Pendiente...'}</span>
+                <div className="flex items-center gap-3">
+                    {/* LOGO DE GOOGLE AÑADIDO */}
+                    <div className="p-3 bg-[#4285F4] rounded-xl shadow-lg shadow-blue-600/10">
+                        <GoogleIcon />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900">Google Ads Manager</h1>
+                        <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
+                            <Clock className="w-4 h-4" />
+                            <span>Última sinc: {lastSyncTime ? lastSyncTime.toLocaleString() : 'Pendiente...'}</span>
+                        </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Button onClick={handleStartSync} disabled={isSyncing} className="bg-slate-900 text-white">
+                    <Button onClick={handleStartSync} disabled={isSyncing} className="bg-[#4285F4] hover:bg-blue-600 text-white border-0">
                         <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
                         Sincronizar
                     </Button>
@@ -415,12 +467,12 @@ export default function AdsPage() {
 
         {/* KPIs GLOBALES */}
          <div className="grid gap-4 md:grid-cols-3">
-           <Card className="bg-slate-900 text-white border-0 shadow-lg">
-             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-400">Inversión Total (Mes)</CardTitle></CardHeader>
+           <Card className="bg-white border-slate-200 shadow-sm">
+             <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold text-slate-400 uppercase">Inversión (Mes)</CardTitle></CardHeader>
              <CardContent>
-               <div className="text-3xl font-bold">{formatCurrency(totalSpent)}</div>
-               <Progress value={totalBudget > 0 ? (totalSpent/totalBudget)*100 : 0} className="h-2 mt-3 bg-slate-700 [&>div]:bg-emerald-500" />
-               <p className="text-xs text-slate-400 mt-2 text-right">Presupuesto Global: {formatCurrency(totalBudget)}</p>
+               <div className="text-3xl font-bold text-slate-900">{formatCurrency(totalSpent)}</div>
+               <Progress value={totalBudget > 0 ? (totalSpent/totalBudget)*100 : 0} className="h-1.5 mt-3 bg-slate-100 [&>div]:bg-[#4285F4]" />
+               <p className="text-xs text-slate-400 mt-2 text-right">PPT Global Estimado: {formatCurrency(totalBudget)}</p>
              </CardContent>
            </Card>
          </div>
@@ -441,7 +493,7 @@ export default function AdsPage() {
                         <div className="flex items-center gap-3">
                             <div className={`w-2 h-10 rounded-full ${
                                 client.status === 'over' ? 'bg-red-500' : 
-                                client.status === 'risk' ? 'bg-amber-500' : 'bg-emerald-500'
+                                client.status === 'risk' ? 'bg-amber-500' : 'bg-[#4285F4]'
                             }`} />
                             
                             <div className="text-left">
@@ -549,18 +601,20 @@ export default function AdsPage() {
                                             <label className="text-sm font-medium text-slate-600">
                                                 Presupuesto {client.is_group ? 'Total' : 'Mensual'}
                                             </label>
-                                            {client.isManualGroupBudget && (
-                                                <TooltipProvider><Tooltip><TooltipTrigger><Info className="w-3 h-3 text-blue-400" /></TooltipTrigger><TooltipContent><p>Presupuesto manual.</p></TooltipContent></Tooltip></TooltipProvider>
+                                            {/* Indicador de si es manual o automático */}
+                                            {client.budget > 0 && !client.isManualGroupBudget && !clientSettings[client.client_id]?.budget && (
+                                                <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-600 border-blue-200">Auto (Google)</Badge>
                                             )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-slate-400">€</span>
                                             <Input 
                                                 type="number" 
-                                                defaultValue={client.budget > 0 ? client.budget : ''} 
+                                                // Si el budget viene de la config manual, lo mostramos. Si es auto, mostramos placeholder.
+                                                defaultValue={clientSettings[client.client_id]?.budget > 0 ? clientSettings[client.client_id]?.budget : ''}
                                                 onBlur={(e) => handleSaveBudget(client.client_id, e.target.value)}
-                                                className={`h-8 w-24 text-right bg-white ${client.isManualGroupBudget ? 'border-blue-300 ring-1 ring-blue-100' : ''}`}
-                                                placeholder={client.is_group ? "Auto" : "0"}
+                                                className={`h-8 w-24 text-right bg-white focus:ring-blue-500`}
+                                                placeholder={formatCurrency(client.budget).replace('€', '').trim()} 
                                             />
                                         </div>
                                     </div>
@@ -574,7 +628,7 @@ export default function AdsPage() {
                                         </div>
                                         <Progress 
                                             value={Math.min(client.progress, 100)} 
-                                            className={`h-2 ${client.status === 'over' ? '[&>div]:bg-red-500' : client.status === 'risk' ? '[&>div]:bg-amber-500' : '[&>div]:bg-emerald-500'}`} 
+                                            className={`h-2 ${client.status === 'over' ? '[&>div]:bg-red-500' : client.status === 'risk' ? '[&>div]:bg-amber-500' : '[&>div]:bg-[#4285F4]'}`} 
                                         />
                                     </div>
 
@@ -644,7 +698,7 @@ export default function AdsPage() {
                                                                     <span className={`w-1.5 h-1.5 rounded-full ${camp.status === 'ENABLED' ? 'bg-emerald-400' : 'bg-slate-300'}`}></span>
                                                                     {camp.status === 'ENABLED' ? 'ON' : 'OFF'}
                                                                 </span>
-                                                                <span>{camp.daily_budget ? `Presup: ${formatCurrency(camp.daily_budget)}` : 'P: -'}</span>
+                                                                <span>{camp.daily_budget ? `P.Dia: ${formatCurrency(camp.daily_budget)}` : 'P: -'}</span>
                                                                 {client.is_group && <span className="text-slate-300">|</span>}
                                                                 {client.is_group && <span className="truncate max-w-[100px]">{formatProjectName(camp.original_client_name || '')}</span>}
                                                             </div>
@@ -699,7 +753,7 @@ export default function AdsPage() {
             </Accordion>
          </div>
 
-         {/* DIALOGO DE CONFIG Y SYNC */}
+         {/* DIALOGO DE CONFIGURACIÓN */}
          <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
             <DialogContent>
                 <DialogHeader>
@@ -747,18 +801,19 @@ export default function AdsPage() {
             </DialogContent>
          </Dialog>
 
+        {/* MODAL DE SINCRONIZACIÓN */}
         <Dialog open={isSyncing} onOpenChange={(open) => { if(syncStatus !== 'running') setIsSyncing(open); }}>
           <DialogContent className="sm:max-w-md bg-slate-950 text-slate-100 border-slate-800">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-white">
                 {syncStatus === 'running' && <RefreshCw className="w-5 h-5 animate-spin text-blue-500" />}
-                Sincronizando (Mensual)
+                Sincronizando (Google Ads)
               </DialogTitle>
               <DialogDescription className="text-slate-400">
                  {syncStatus === 'running' ? `Progreso: ${Math.round(syncProgress)}%` : 'Finalizado.'}
               </DialogDescription>
             </DialogHeader>
-            <div className="w-full"><Progress value={syncProgress} className="h-2 bg-slate-800 [&>div]:bg-blue-500" /></div>
+            <div className="w-full"><Progress value={syncProgress} className="h-2 bg-slate-800 [&>div]:bg-[#4285F4]" /></div>
             <div className="bg-black/50 rounded-md p-4 font-mono text-xs text-green-400 h-64 flex flex-col shadow-inner border border-slate-800 mt-2">
               <div className="flex-1 overflow-y-auto min-h-0 space-y-1" ref={scrollRef}>
                   {syncLogs.map((log, i) => (
