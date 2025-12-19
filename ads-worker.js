@@ -9,13 +9,14 @@ const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const DEVELOPER_TOKEN = process.env.GOOGLE_DEVELOPER_TOKEN;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
-const MCC_ID = process.env.GOOGLE_LOGIN_CUSTOMER_ID; // Usamos el ID de login como MCC principal
+// Usamos el Login ID como MCC si no hay variable específica
+const MCC_ID = process.env.GOOGLE_MCC_ID || process.env.GOOGLE_LOGIN_CUSTOMER_ID; 
 
-// ✅ USANDO VERSIÓN V22
 const API_VERSION = 'v22';
 
-if (!SUPABASE_URL || !SUPABASE_KEY || !CLIENT_ID) { 
-    console.error("❌ Faltan claves en .env"); process.exit(1); 
+if (!SUPABASE_URL || !SUPABASE_KEY || !CLIENT_ID || !MCC_ID) { 
+    console.error("❌ Faltan claves en .env (Asegúrate de tener GOOGLE_LOGIN_CUSTOMER_ID o GOOGLE_MCC_ID)"); 
+    process.exit(1); 
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -24,7 +25,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 function getDateRange() {
   const now = new Date();
-  // Desde el día 1 del mes pasado hasta hoy (para cubrir correcciones de datos recientes)
+  // Cogemos desde el día 1 del mes pasado para asegurar que actualizamos datos rezagados
   const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   
   const year = prevMonth.getFullYear();
@@ -38,23 +39,27 @@ function getDateRange() {
 }
 
 async function getAccessToken() {
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ 
-        client_id: CLIENT_ID, 
-        client_secret: CLIENT_SECRET, 
-        refresh_token: REFRESH_TOKEN, 
-        grant_type: 'refresh_token' 
-    }),
-  });
-  const data = await response.json();
-  if (!data.access_token) throw new Error("Error Token Google: " + JSON.stringify(data));
-  return data.access_token;
+  try {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ 
+            client_id: CLIENT_ID, 
+            client_secret: CLIENT_SECRET, 
+            refresh_token: REFRESH_TOKEN, 
+            grant_type: 'refresh_token' 
+        }),
+    });
+    const data = await response.json();
+    if (!data.access_token) throw new Error(JSON.stringify(data));
+    return data.access_token;
+  } catch (e) {
+      throw new Error(`Error obteniendo Token: ${e.message}`);
+  }
 }
 
-// Obtener lista de clientes dentro del MCC
 async function getClientAccounts(accessToken) {
+  // Consulta GAQL para buscar cuentas hijas del MCC
   const query = `
     SELECT 
         customer_client.client_customer, 
@@ -84,9 +89,9 @@ async function getClientAccounts(accessToken) {
     data.forEach(batch => { 
       if (batch.results) { 
         batch.results.forEach(row => { 
-          // El formato viene como "customers/1234567890", extraemos solo el número
-          const id = row.customerClient.clientCustomer.split('/')[1];
-          clients.push({ id, name: row.customerClient.descriptiveName }); 
+            // Formato customers/123 -> 123
+            const id = row.customerClient.clientCustomer.split('/')[1];
+            clients.push({ id, name: row.customerClient.descriptiveName }); 
         }); 
       } 
     });
@@ -94,13 +99,14 @@ async function getClientAccounts(accessToken) {
   return clients;
 }
 
-// Obtener métricas de campañas de una cuenta específica
 async function getAccountData(customerId, accessToken, dateRange) {
+  // Consulta de métricas
   const query = `
     SELECT 
       campaign.id, 
       campaign.name, 
       campaign.status, 
+      campaign_budget.amount_micros,
       metrics.cost_micros,
       metrics.conversions_value,
       metrics.conversions,
@@ -132,16 +138,15 @@ async function getAccountData(customerId, accessToken, dateRange) {
           batch.results.forEach(row => { 
             rows.push({ 
               client_id: customerId, 
-              // ID de campaña como string para evitar problemas de redondeo en JS
               campaign_id: String(row.campaign.id), 
               campaign_name: row.campaign.name, 
               status: row.campaign.status, 
-              // Normalizamos la fecha al primer día del mes (YYYY-MM-01) para agrupar mensualmente en DB
+              // Normalizamos fecha para la PK (YYYY-MM-01)
               date: row.segments.date.substring(0, 7) + '-01', 
               
-              // Conversión de Micros a moneda real (dividir por 1 millón)
+              // Conversiones
               cost: parseInt(row.metrics.costMicros || '0') / 1000000,
-              
+              daily_budget: row.campaignBudget ? (parseInt(row.campaignBudget.amountMicros || '0') / 1000000) : 0,
               conversions_value: parseFloat(row.metrics.conversionsValue || 0),
               conversions: parseFloat(row.metrics.conversions || 0),
               clicks: parseInt(row.metrics.clicks || 0),
@@ -152,80 +157,80 @@ async function getAccountData(customerId, accessToken, dateRange) {
       });
     }
   } else {
-      // Si la cuenta está cancelada o hay error de permisos, a veces devuelve error. Lo registramos pero no paramos.
-      console.warn(`⚠️ Aviso en cuenta ${customerId}: ${response.statusText}`);
+      // Errores de permisos en cuentas canceladas son comunes, solo avisamos
+      console.warn(`⚠️ Aviso cuenta ${customerId}: ${response.status} ${response.statusText}`);
   }
   return rows;
 }
 
-// --- LÓGICA DEL WORKER ---
+// --- LÓGICA WORKER ---
 async function processSyncJob(jobId) {
   const log = async (msg) => {
     console.log(`[Job ${jobId}] ${msg}`);
-    // Actualizamos logs en Supabase para que se vea en el frontend
+    // Usamos la tabla correcta: ads_sync_logs
     const { data } = await supabase.from('ads_sync_logs').select('logs').eq('id', jobId).single();
     const currentLogs = data?.logs || [];
-    // Mantenemos solo los últimos 50 mensajes para no llenar la DB
-    const newLogs = [...currentLogs, msg].slice(-50);
-    await supabase.from('ads_sync_logs').update({ logs: newLogs }).eq('id', jobId);
+    await supabase.from('ads_sync_logs').update({ logs: [...currentLogs, msg].slice(-50) }).eq('id', jobId);
   };
 
   try {
     await supabase.from('ads_sync_logs').update({ status: 'running' }).eq('id', jobId);
     
     const range = getDateRange();
-    await log(`🚀 Iniciando Sync Google Ads (v22). Datos desde: ${range.firstDay}`);
+    await log(`🚀 Iniciando Sync Google v22. Desde: ${range.firstDay}`);
     
-    // 1. Obtener Token y Clientes
     const token = await getAccessToken();
     const clients = await getClientAccounts(token);
-    await log(`📋 Cuentas encontradas: ${clients.length}`);
+    await log(`📋 ${clients.length} cuentas encontradas.`);
 
     let totalRows = 0;
     
-    // 2. Procesar Cliente a Cliente (Secuencial para buen feedback visual)
     for (const [index, client] of clients.entries()) {
-      await log(`[${index + 1}/${clients.length}] Sincronizando: ${client.name}...`);
+      await log(`[${index + 1}/${clients.length}] ${client.name}...`);
       
       try {
           const campaignData = await getAccountData(client.id, token, range);
           
           if (campaignData.length > 0) {
-             const rowsToInsert = campaignData.map(d => ({ ...d, client_name: client.name }));
+             const rowsToInsert = campaignData.map(d => ({ 
+                 ...d, 
+                 client_name: client.name 
+             }));
              
-             // Upsert en la tabla 'ads_campaigns'
-             // Requiere restricción UNIQUE en (campaign_id, date)
-             const { error } = await supabase.from('ads_campaigns').upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
+             // Usamos la tabla correcta: google_ads_campaigns
+             const { error } = await supabase
+                .from('google_ads_campaigns')
+                .upsert(rowsToInsert, { onConflict: 'campaign_id, date' });
              
              if (error) console.error(`❌ Error DB ${client.name}: ${error.message}`);
              else totalRows += campaignData.length;
           }
       } catch (err) {
-          console.error(`Error procesando cliente ${client.name}:`, err.message);
+          console.error(`Skip ${client.name}:`, err.message);
       }
     }
     
-    await log(`🎉 FIN. Total registros procesados: ${totalRows}`);
+    await log(`🎉 Finalizado. ${totalRows} filas actualizadas.`);
     await supabase.from('ads_sync_logs').update({ status: 'completed' }).eq('id', jobId);
 
   } catch (err) {
     console.error(err);
-    await log(`💥 ERROR FATAL: ${err.message}`);
+    await log(`💥 ERROR: ${err.message}`);
     await supabase.from('ads_sync_logs').update({ status: 'error' }).eq('id', jobId);
   }
 }
 
-// --- ESCUCHADOR REALTIME ---
-supabase.channel('ads-worker-rest-v22')
+// Escuchar la tabla correcta: ads_sync_logs
+supabase.channel('google-worker-listener')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ads_sync_logs' }, (payload) => {
         if(payload.new.status === 'pending') processSyncJob(payload.new.id);
     })
     .subscribe();
 
-// Polling de seguridad (por si falla el socket)
+// Polling de seguridad
 setInterval(async () => {
   const { data } = await supabase.from('ads_sync_logs').select('id').eq('status', 'pending').limit(1);
   if (data?.length) processSyncJob(data[0].id);
 }, 5000);
 
-console.log(`📡 Google Worker v22 (REST Optimized) Listo.`);
+console.log(`📡 Google Worker v22 (Tabla: google_ads_campaigns) Listo.`);
