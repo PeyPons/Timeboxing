@@ -88,7 +88,7 @@ export default function MetaAdsPage() {
       // 1. Cargar Campañas de META
       const { data: adsData } = await supabase.from('meta_ads_campaigns').select('*');
       
-      // 2. Cargar Configuración (Tabla compartida con Google)
+      // 2. Cargar Configuración
       const { data: settingsData } = await supabase.from('client_settings').select('*');
 
       // 3. Cargar Cuentas Registradas (Inventario base)
@@ -220,16 +220,16 @@ export default function MetaAdsPage() {
     toast.success('Configuración guardada');
   };
 
-  // --- LÓGICA PRINCIPAL (CON SEPARACIÓN VIRTUAL) ---
+  // --- LÓGICA DE AGREGACIÓN CON SEPARACIÓN VIRTUAL ---
   const reportData = useMemo(() => {
     
-    // 1. CONFIGURACIÓN DE SEPARACIÓN (Multi-empresa en una cuenta)
+    // 1. CONFIGURACIÓN DE REGLAS DE SEPARACIÓN
+    // Separa campañas de una misma cuenta en "clientes virtuales" según palabras clave
     const SPLIT_RULES: Record<string, { keyword: string, suffix: string, name: string }[]> = {
-        'act_781447408943723': [ // ID de Publicidad Loro Parque
-            { keyword: 'Loro', suffix: 'LORO', name: 'Loro Parque' },
-            { keyword: 'Siam', suffix: 'SIAM', name: 'Siam Park' },
-            { keyword: 'Poema', suffix: 'POEMA', name: 'Poema del Mar' },
-            // Añade aquí más reglas si es necesario
+        'act_781447408943723': [ // ID real de "Publicidad Loro Parque"
+            { keyword: 'loro', suffix: 'LORO', name: 'Loro Parque' },
+            { keyword: 'siam', suffix: 'SIAM', name: 'Siam Park' },
+            { keyword: 'poema', suffix: 'POEMA', name: 'Poema del Mar' }
         ]
     };
 
@@ -253,7 +253,7 @@ export default function MetaAdsPage() {
       isManualGroupBudget: boolean
     }>();
 
-    // 1. INICIALIZAR CON CUENTAS REGISTRADAS (Base)
+    // A. INICIALIZAR CON CUENTAS REGISTRADAS
     registeredAccounts.forEach(acc => {
         const settings = clientSettings[acc.account_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
         const groupKey = settings.group_name && settings.group_name.trim() !== '' 
@@ -294,37 +294,42 @@ export default function MetaAdsPage() {
         }
     });
 
-    // 2. RELLENAR CON DATOS Y APLICAR SEPARACIÓN
+    // B. PROCESAR DATOS REALES Y APLICAR SEPARACIÓN VIRTUAL
     rawData.forEach(row => {
       if (row.date === currentMonthPrefix) {
         
-        // --- SEPARACIÓN VIRTUAL ---
-        let effectiveClientId = row.client_id;
-        let effectiveClientName = row.client_name;
+        // --- 1. DETECTAR Y SEPARAR ---
+        let finalId = row.client_id;
+        let finalName = row.client_name;
 
-        // Comprobar reglas de división para esta cuenta
+        // ¿Esta cuenta tiene reglas de separación?
         if (SPLIT_RULES[row.client_id]) {
+            // Buscamos si el nombre de la campaña contiene alguna palabra clave (insensible a mayúsculas)
             const rule = SPLIT_RULES[row.client_id].find(r => 
                 row.campaign_name.toLowerCase().includes(r.keyword.toLowerCase())
             );
             
             if (rule) {
-                // Creamos ID Virtual: act_123_LORO
-                effectiveClientId = `${row.client_id}_${rule.suffix}`;
-                effectiveClientName = rule.name;
-            } 
-            // Si no coincide, se queda con el ID original ("Otros")
+                // EUREKA: Creamos un ID Virtual
+                finalId = `${row.client_id}_${rule.suffix}`;
+                finalName = rule.name;
+            } else {
+                // Opcional: Marcar el resto como "Otros" para diferenciar
+                finalName = `${row.client_name} (Otros)`;
+            }
         }
-        // ---------------------------
+        // -----------------------------
 
-        const settings = clientSettings[effectiveClientId] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
+        // Usamos finalId para buscar configuraciones
+        const settings = clientSettings[finalId] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
         
         const groupKey = settings.group_name && settings.group_name.trim() !== '' 
           ? `GROUP-${settings.group_name}` 
-          : effectiveClientId;
+          : finalId;
         
+        // Crear entrada si no existe (para cuentas virtuales nuevas)
         if (!stats.has(groupKey)) {
-             const displayName = settings.group_name || effectiveClientName;
+             const displayName = settings.group_name || finalName;
              stats.set(groupKey, { 
                 name: displayName, 
                 spent: 0, 
@@ -342,13 +347,14 @@ export default function MetaAdsPage() {
         
         const entry = stats.get(groupKey)!;
         
+        // Sumar métricas a la cuenta virtual
         entry.spent += Number(row.cost || 0);
         entry.total_conversions_val += Number(row.conversions_value || 0);
         
-        if (!entry.realIds.includes(effectiveClientId)) {
-           entry.realIds.push(effectiveClientId);
-           entry.realIdsNames.push({id: effectiveClientId, name: effectiveClientName});
-           // Si es una cuenta virtual, aquí es donde tomará SU propio presupuesto
+        if (!entry.realIds.includes(finalId)) {
+           entry.realIds.push(finalId);
+           entry.realIdsNames.push({id: finalId, name: finalName});
+           // Cargar presupuesto específico de la cuenta virtual si existe
            if (!entry.is_group && settings.budget > 0) entry.budget = settings.budget; 
         }
 
@@ -362,8 +368,8 @@ export default function MetaAdsPage() {
                 conversions: Number(row.conversions),
                 clicks: Number(row.clicks),
                 impressions: Number(row.impressions),
-                original_client_name: effectiveClientName,
-                original_client_id: effectiveClientId
+                original_client_name: finalName,
+                original_client_id: finalId
             });
         }
       }
