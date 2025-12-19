@@ -36,9 +36,10 @@ interface MetaCampaignData {
 
 interface SegmentationRule {
   id: string;
-  accountId: string;
+  account_id: string;
   keyword: string;
-  virtualName: string;
+  virtual_name: string;
+  platform: string;
 }
 
 interface ClientPacing {
@@ -80,11 +81,8 @@ export default function MetaAdsPage() {
   const [loading, setLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
-  // --- REGLAS DE SEGMENTACIÓN ---
-  const [segmentationRules, setSegmentationRules] = useState<SegmentationRule[]>(() => {
-      const saved = localStorage.getItem('meta_segmentation_rules');
-      return saved ? JSON.parse(saved) : [];
-  });
+  // --- REGLAS DE SEGMENTACIÓN (Ahora desde DB) ---
+  const [segmentationRules, setSegmentationRules] = useState<SegmentationRule[]>([]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showHidden, setShowHidden] = useState(false);
@@ -105,11 +103,13 @@ export default function MetaAdsPage() {
 
   const fetchData = async () => {
     try {
-      const [adsRes, settingsRes, accountsRes, logsRes] = await Promise.all([
+      // Cargamos todo, incluyendo las reglas desde la tabla 'segmentation_rules'
+      const [adsRes, settingsRes, accountsRes, logsRes, rulesRes] = await Promise.all([
           supabase.from('meta_ads_campaigns').select('*'),
           supabase.from('client_settings').select('*'),
           supabase.from('ad_accounts_config').select('*').eq('platform', 'meta').eq('is_active', true),
-          supabase.from('meta_sync_logs').select('created_at').eq('status', 'completed').order('created_at', { ascending: false }).limit(1).single()
+          supabase.from('meta_sync_logs').select('created_at').eq('status', 'completed').order('created_at', { ascending: false }).limit(1).single(),
+          supabase.from('segmentation_rules').select('*').eq('platform', 'meta')
       ]);
 
       const settingsMap: Record<string, any> = {};
@@ -125,6 +125,7 @@ export default function MetaAdsPage() {
       setRawData(adsRes.data || []);
       setClientSettings(settingsMap);
       setRegisteredAccounts(accountsRes.data || []);
+      setSegmentationRules(rulesRes.data || []);
 
       if (logsRes.data) {
         setLastSyncTime(new Date(logsRes.data.created_at));
@@ -178,56 +179,56 @@ export default function MetaAdsPage() {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [syncLogs]);
 
-  const handleAddRule = () => {
+  // --- GESTIÓN DE REGLAS (Ahora en DB) ---
+  const handleAddRule = async () => {
       if (!newRuleAccount || !newRuleKeyword || !newRuleName) {
           toast.error("Rellena todos los campos");
           return;
       }
-      const newRule: SegmentationRule = {
-          id: crypto.randomUUID(),
-          accountId: newRuleAccount,
+      
+      const newRule = {
+          platform: 'meta',
+          account_id: newRuleAccount,
           keyword: newRuleKeyword,
-          virtualName: newRuleName
+          virtual_name: newRuleName
       };
-      const updated = [...segmentationRules, newRule];
-      setSegmentationRules(updated);
-      localStorage.setItem('meta_segmentation_rules', JSON.stringify(updated));
-      setNewRuleKeyword('');
-      setNewRuleName('');
-      toast.success("Regla añadida");
+
+      const { data, error } = await supabase.from('segmentation_rules').insert(newRule).select();
+
+      if (error) {
+          toast.error("Error guardando regla: " + error.message);
+      } else {
+          setSegmentationRules(prev => [...prev, ...(data || [])]);
+          setNewRuleKeyword('');
+          setNewRuleName('');
+          toast.success("Regla guardada en la nube");
+      }
   };
 
-  const handleDeleteRule = (id: string) => {
-      const updated = segmentationRules.filter(r => r.id !== id);
-      setSegmentationRules(updated);
-      localStorage.setItem('meta_segmentation_rules', JSON.stringify(updated));
+  const handleDeleteRule = async (id: string) => {
+      const { error } = await supabase.from('segmentation_rules').delete().eq('id', id);
+      if (error) {
+          toast.error("Error eliminando: " + error.message);
+      } else {
+          setSegmentationRules(prev => prev.filter(r => r.id !== id));
+          toast.info("Regla eliminada");
+      }
   };
 
   const handleSaveBudget = async (clientId: string, amount: string) => {
     const numAmount = parseFloat(amount);
-    
-    // Optimismo UI
     setClientSettings(prev => ({
       ...prev,
       [clientId]: { ...prev[clientId], budget: isNaN(numAmount) ? 0 : numAmount }
     }));
 
-    try {
-        const { error } = await supabase.from('client_settings').upsert({ 
-            client_id: clientId, 
-            budget_limit: isNaN(numAmount) ? 0 : numAmount 
-        }, { onConflict: 'client_id' });
+    const { error } = await supabase.from('client_settings').upsert({ 
+        client_id: clientId, 
+        budget_limit: isNaN(numAmount) ? 0 : numAmount 
+    }, { onConflict: 'client_id' });
 
-        if (error) {
-            console.error("Error saving budget:", error);
-            toast.error(`Error guardando: ${error.message}`);
-        } else {
-            toast.success("Presupuesto actualizado");
-            fetchData();
-        }
-    } catch (e: any) {
-        toast.error(`Error de conexión: ${e.message}`);
-    }
+    if (error) toast.error("Error al guardar presupuesto");
+    else fetchData();
   };
 
   const handleSaveClientSettings = async () => {
@@ -243,6 +244,7 @@ export default function MetaAdsPage() {
     toast.success('Configuración guardada');
   };
 
+  // --- LÓGICA DE AGREGACIÓN ---
   const reportData = useMemo(() => {
     const now = new Date();
     const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
@@ -256,6 +258,7 @@ export default function MetaAdsPage() {
       campaigns: MetaCampaignData[], isManualGroupBudget: boolean, autoDailyBudgetSum: number
     }>();
 
+    // Inicializar cuentas
     registeredAccounts.forEach(acc => {
         const settings = clientSettings[acc.account_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
         const groupKey = settings.group_name?.trim() ? `GROUP-${settings.group_name}` : acc.account_id;
@@ -276,12 +279,13 @@ export default function MetaAdsPage() {
         let finalId = row.client_id;
         let finalName = row.client_name;
 
-        const rulesForAccount = segmentationRules.filter(r => normalizeId(r.accountId) === normalizeId(row.client_id));
+        // Reglas desde DB
+        const rulesForAccount = segmentationRules.filter(r => normalizeId(r.account_id) === normalizeId(row.client_id));
         if (rulesForAccount.length > 0) {
             const match = rulesForAccount.find(r => row.campaign_name.toLowerCase().includes(r.keyword.toLowerCase()));
             if (match) {
                 finalId = `${row.client_id}_${match.keyword.toUpperCase()}`; 
-                finalName = match.virtualName;
+                finalName = match.virtual_name;
             }
         }
 
@@ -383,7 +387,7 @@ export default function MetaAdsPage() {
   const totalSpent = reportData.reduce((acc, r) => acc + r.spent, 0);
   const totalRevenue = reportData.reduce((acc, r) => acc + r.total_conversions_val, 0);
 
-  // Obtener cuentas únicas
+  // Obtener cuentas únicas para el selector del modal
   const uniqueAccountsForSelector = useMemo(() => {
       const unique = new Map();
       rawData.forEach(r => unique.set(r.client_id, r.client_name));
@@ -501,18 +505,7 @@ export default function MetaAdsPage() {
                                             <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-600 border-blue-200">Auto (Meta)</Badge>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-slate-400">€</span>
-                                        {/* AQUI ESTÁ EL CAMBIO CLAVE: KEY ÚNICA */}
-                                        <Input 
-                                            key={`${client.client_id}-${client.budget}`}
-                                            type="number" 
-                                            defaultValue={clientSettings[client.client_id]?.budget > 0 ? clientSettings[client.client_id]?.budget : ''} 
-                                            onBlur={(e) => handleSaveBudget(client.client_id, e.target.value)} 
-                                            className="h-8 w-24 text-right bg-white border-blue-200 focus:border-blue-500" 
-                                            placeholder={formatCurrency(client.budget).replace('€', '').trim()} 
-                                        />
-                                    </div>
+                                    <div className="flex items-center gap-2"><span className="text-slate-400">€</span><Input key={`${client.client_id}-${client.budget}`} type="number" defaultValue={clientSettings[client.client_id]?.budget > 0 ? clientSettings[client.client_id]?.budget : ''} onBlur={(e) => handleSaveBudget(client.client_id, e.target.value)} className="h-8 w-24 text-right bg-white border-blue-200 focus:border-blue-500" placeholder={formatCurrency(client.budget).replace('€', '').trim()} /></div>
                                 </div>
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs text-slate-500"><span>Consumo ({client.progress.toFixed(1)}%)</span><span className={client.remainingBudget < 0 ? 'text-red-500 font-bold' : ''}>Disp: {formatCurrency(client.remainingBudget)}</span></div>
@@ -570,7 +563,7 @@ export default function MetaAdsPage() {
                         <div className="col-span-3 space-y-1"><Label className="text-xs font-medium">Crear cuenta llamada...</Label><Input placeholder="Ej: Loro Parque" className="bg-white" value={newRuleName} onChange={e => setNewRuleName(e.target.value)} /></div>
                         <div className="col-span-2"><Button onClick={handleAddRule} className="w-full bg-slate-900 hover:bg-slate-800"><Plus className="w-4 h-4"/></Button></div>
                     </div>
-                    <div className="space-y-2"><h4 className="text-xs font-bold text-slate-500 uppercase">Reglas Activas</h4>{segmentationRules.length === 0 && <p className="text-sm text-slate-400 italic">No hay reglas definidas.</p>}{segmentationRules.map(rule => (<div key={rule.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-md text-sm shadow-sm"><div className="flex items-center gap-3"><Badge variant="outline" className="font-mono text-xs">{normalizeId(rule.accountId)}</Badge><span className="text-slate-500">Si contiene <strong>"{rule.keyword}"</strong></span><span className="text-slate-300">→</span><span className="font-bold text-blue-600">{rule.virtualName}</span></div><Button variant="ghost" size="sm" onClick={() => handleDeleteRule(rule.id)} className="text-red-500 hover:bg-red-50 h-8 w-8 p-0"><Trash2 className="w-4 h-4"/></Button></div>))}</div>
+                    <div className="space-y-2"><h4 className="text-xs font-bold text-slate-500 uppercase">Reglas Activas</h4>{segmentationRules.length === 0 && <p className="text-sm text-slate-400 italic">No hay reglas definidas.</p>}{segmentationRules.map(rule => (<div key={rule.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-md text-sm shadow-sm"><div className="flex items-center gap-3"><Badge variant="outline" className="font-mono text-xs">{normalizeId(rule.account_id)}</Badge><span className="text-slate-500">Si contiene <strong>"{rule.keyword}"</strong></span><span className="text-slate-300">→</span><span className="font-bold text-blue-600">{rule.virtual_name}</span></div><Button variant="ghost" size="sm" onClick={() => handleDeleteRule(rule.id)} className="text-red-500 hover:bg-red-50 h-8 w-8 p-0"><Trash2 className="w-4 h-4"/></Button></div>))}</div>
                 </div>
             </DialogContent>
          </Dialog>
