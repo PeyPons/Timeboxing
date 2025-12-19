@@ -29,6 +29,7 @@ interface MetaCampaignData {
   conversions?: number; 
   clicks?: number;
   impressions?: number;
+  daily_budget?: number;
   original_client_name?: string; 
   original_client_id?: string;
 }
@@ -204,12 +205,29 @@ export default function MetaAdsPage() {
 
   const handleSaveBudget = async (clientId: string, amount: string) => {
     const numAmount = parseFloat(amount);
+    
+    // Optimismo UI
     setClientSettings(prev => ({
       ...prev,
       [clientId]: { ...prev[clientId], budget: isNaN(numAmount) ? 0 : numAmount }
     }));
-    await supabase.from('client_settings').upsert({ client_id: clientId, budget_limit: isNaN(numAmount) ? 0 : numAmount }, { onConflict: 'client_id' });
-    fetchData(); 
+
+    try {
+        const { error } = await supabase.from('client_settings').upsert({ 
+            client_id: clientId, 
+            budget_limit: isNaN(numAmount) ? 0 : numAmount 
+        }, { onConflict: 'client_id' });
+
+        if (error) {
+            console.error("Error saving budget:", error);
+            toast.error(`Error guardando: ${error.message}`);
+        } else {
+            toast.success("Presupuesto actualizado");
+            fetchData();
+        }
+    } catch (e: any) {
+        toast.error(`Error de conexión: ${e.message}`);
+    }
   };
 
   const handleSaveClientSettings = async () => {
@@ -235,7 +253,7 @@ export default function MetaAdsPage() {
       name: string, spent: number, budget: number, total_conversions_val: number,
       is_group: boolean, isHidden: boolean, isSalesAccount: boolean,
       realIds: string[], realIdsNames: {id: string, name: string}[],
-      campaigns: MetaCampaignData[], isManualGroupBudget: boolean
+      campaigns: MetaCampaignData[], isManualGroupBudget: boolean, autoDailyBudgetSum: number
     }>();
 
     registeredAccounts.forEach(acc => {
@@ -248,7 +266,7 @@ export default function MetaAdsPage() {
                 spent: 0, budget: settings.budget || 0, total_conversions_val: 0,
                 is_group: false, isHidden: settings.is_hidden, isSalesAccount: settings.is_sales_account !== false,
                 realIds: [acc.account_id], realIdsNames: [{id: acc.account_id, name: acc.account_name}], 
-                campaigns: [], isManualGroupBudget: false
+                campaigns: [], isManualGroupBudget: false, autoDailyBudgetSum: 0
             });
         }
     });
@@ -269,14 +287,16 @@ export default function MetaAdsPage() {
 
         const settings = clientSettings[finalId] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
         const groupKey = settings.group_name?.trim() ? `GROUP-${settings.group_name}` : finalId;
-        
+        const displayName = settings.group_name?.trim() ? settings.group_name : finalName;
+
+        const isGroupManual = groupKey.startsWith('GROUP-') && (clientSettings[groupKey]?.budget > 0);
+        const isIndividualManual = !groupKey.startsWith('GROUP-') && settings.budget > 0;
+
         if (!stats.has(groupKey)) {
              stats.set(groupKey, { 
-                name: settings.group_name || finalName, 
-                spent: 0, budget: 0, total_conversions_val: 0,
-                is_group: groupKey.startsWith('GROUP-'),
-                isHidden: settings.is_hidden, isSalesAccount: settings.is_sales_account !== false,
-                realIds: [], realIdsNames: [], campaigns: [], isManualGroupBudget: false
+                name: displayName, spent: 0, budget: 0, total_conversions_val: 0,
+                is_group: groupKey.startsWith('GROUP-'), isHidden: settings.is_hidden, isSalesAccount: settings.is_sales_account !== false,
+                realIds: [], realIdsNames: [], campaigns: [], isManualGroupBudget: isGroupManual, autoDailyBudgetSum: 0
              });
         }
         
@@ -284,10 +304,15 @@ export default function MetaAdsPage() {
         entry.spent += Number(row.cost || 0);
         entry.total_conversions_val += Number(row.conversions_value || 0);
         
+        const dailyBudget = Number(row.daily_budget || 0);
+        if (row.status === 'ENABLED' && dailyBudget > 0) {
+            entry.autoDailyBudgetSum += dailyBudget;
+        }
+        
         if (!entry.realIds.includes(finalId)) {
            entry.realIds.push(finalId);
            entry.realIdsNames.push({id: finalId, name: finalName});
-           if (!entry.is_group && settings.budget > 0) entry.budget = settings.budget; 
+           if (!entry.is_group && isIndividualManual) entry.budget = settings.budget; 
         }
 
         if (Number(row.cost) > 0 || Number(row.impressions) > 0) { 
@@ -308,10 +333,14 @@ export default function MetaAdsPage() {
     const report: ClientPacing[] = [];
     
     stats.forEach((value, key) => {
-      let finalBudget = value.budget;
+      let finalBudget = 0;
       if (value.is_group) {
           const groupSettings = clientSettings[key.replace('GROUP-', '')] || clientSettings[key]; 
           if (groupSettings?.budget > 0) finalBudget = groupSettings.budget;
+          else finalBudget = value.autoDailyBudgetSum * 30.4;
+      } else {
+          if (value.budget > 0) finalBudget = value.budget; 
+          else finalBudget = value.autoDailyBudgetSum * 30.4; 
       }
 
       const spent = value.spent;
@@ -354,6 +383,13 @@ export default function MetaAdsPage() {
   const totalSpent = reportData.reduce((acc, r) => acc + r.spent, 0);
   const totalRevenue = reportData.reduce((acc, r) => acc + r.total_conversions_val, 0);
 
+  // Obtener cuentas únicas
+  const uniqueAccountsForSelector = useMemo(() => {
+      const unique = new Map();
+      rawData.forEach(r => unique.set(r.client_id, r.client_name));
+      return Array.from(unique.entries()).map(([id, name]) => ({ id, name }));
+  }, [rawData]);
+
   return (
     <AppLayout>
       <div className="max-w-7xl mx-auto p-6 space-y-6 pb-20">
@@ -382,7 +418,7 @@ export default function MetaAdsPage() {
              <CardContent>
                <div className="text-3xl font-bold text-slate-900">{formatCurrency(totalSpent)}</div>
                <Progress value={totalBudget > 0 ? (totalSpent/totalBudget)*100 : 0} className="h-1.5 mt-3 bg-slate-100 [&>div]:bg-[#1877F2]" />
-               <p className="text-xs text-slate-400 mt-2 text-right">PPT Global: {formatCurrency(totalBudget)}</p>
+               <p className="text-xs text-slate-400 mt-2 text-right">PPT Global Estimado: {formatCurrency(totalBudget)}</p>
              </CardContent>
            </Card>
            <Card className="shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-xs font-semibold text-slate-400 uppercase">Valor Conversión (Mes)</CardTitle></CardHeader>
@@ -415,7 +451,6 @@ export default function MetaAdsPage() {
                             </div>
                         </div>
 
-                        {/* BARRA DE PROGRESO EN EL RESUMEN */}
                         {client.budget > 0 && (
                             <div className="hidden md:flex flex-col flex-1 mx-4 max-w-xs">
                                 <div className="flex justify-between text-[10px] text-slate-500 mb-1">
@@ -427,20 +462,16 @@ export default function MetaAdsPage() {
                         )}
 
                         <div className="flex items-center gap-6 justify-end flex-1">
-                            {/* VALOR DE CONVERSIÓN */}
                             {client.isSalesAccount && (
                                 <div className="text-right hidden sm:block">
                                     <div className="text-[10px] uppercase text-slate-400 font-semibold">Valor</div>
                                     <div className="text-lg font-bold text-emerald-600">{formatCurrency(client.total_conversions_val)}</div>
                                 </div>
                             )}
-
-                            {/* INVERSIÓN */}
                             <div className="text-right">
                                 <div className="text-[10px] uppercase text-slate-400 font-semibold">Inversión</div>
                                 <div className="text-2xl font-mono font-bold text-slate-900">{formatCurrency(client.spent)}</div>
                             </div>
-
                             <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); if (!client.is_group) setEditingClient({id: client.client_id, name: client.client_name, group: clientSettings[client.client_id]?.group_name || '', hidden: clientSettings[client.client_id]?.is_hidden || false, isSales: clientSettings[client.client_id]?.is_sales_account !== false}); else toast.info("Abre el grupo para editar."); }}>
                                 <Settings className="w-4 h-4 text-slate-400" />
                             </Button>
@@ -464,12 +495,28 @@ export default function MetaAdsPage() {
                         <div className="grid md:grid-cols-2 gap-8">
                             <div className="bg-slate-50 p-4 rounded-md border border-slate-100 h-full flex flex-col space-y-4">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-sm font-medium text-slate-600">Presupuesto Objetivo</label>
-                                    <div className="flex items-center gap-2"><span className="text-slate-400">€</span><Input type="number" defaultValue={client.budget > 0 ? client.budget : ''} onBlur={(e) => handleSaveBudget(client.client_id, e.target.value)} className="h-8 w-24 text-right bg-white border-blue-200 focus:border-blue-500" placeholder="0" /></div>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-sm font-medium text-slate-600">Presupuesto {client.is_group ? 'Total' : 'Mensual'}</label>
+                                        {!client.isManualGroupBudget && !clientSettings[client.client_id]?.budget && (
+                                            <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-600 border-blue-200">Auto (Meta)</Badge>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-400">€</span>
+                                        {/* AQUI ESTÁ EL CAMBIO CLAVE: KEY ÚNICA */}
+                                        <Input 
+                                            key={`${client.client_id}-${client.budget}`}
+                                            type="number" 
+                                            defaultValue={clientSettings[client.client_id]?.budget > 0 ? clientSettings[client.client_id]?.budget : ''} 
+                                            onBlur={(e) => handleSaveBudget(client.client_id, e.target.value)} 
+                                            className="h-8 w-24 text-right bg-white border-blue-200 focus:border-blue-500" 
+                                            placeholder={formatCurrency(client.budget).replace('€', '').trim()} 
+                                        />
+                                    </div>
                                 </div>
                                 <div className="space-y-2">
-                                    <div className="flex justify-between text-xs text-slate-500"><span>Consumo</span><span className={client.remainingBudget < 0 ? 'text-red-500 font-bold' : ''}>Disp: {formatCurrency(client.remainingBudget)}</span></div>
-                                    <Progress value={Math.min(client.progress, 100)} className={`h-2 ${client.status === 'over' ? '[&>div]:bg-red-500' : '[&>div]:bg-[#1877F2]'}`} />
+                                    <div className="flex justify-between text-xs text-slate-500"><span>Consumo ({client.progress.toFixed(1)}%)</span><span className={client.remainingBudget < 0 ? 'text-red-500 font-bold' : ''}>Disp: {formatCurrency(client.remainingBudget)}</span></div>
+                                    <Progress value={Math.min(client.progress, 100)} className={`h-2 ${client.status === 'over' ? '[&>div]:bg-red-500' : client.status === 'risk' ? '[&>div]:bg-amber-500' : '[&>div]:bg-[#1877F2]'}`} />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 pt-2">
                                     <div className="bg-white p-3 rounded border border-slate-200"><div className="text-[10px] text-slate-500 uppercase mb-1">Límite Diario</div><div className="text-lg font-bold text-indigo-600">{formatCurrency(client.recommendedDaily)}</div></div>
@@ -483,7 +530,7 @@ export default function MetaAdsPage() {
                                     <tbody className="divide-y divide-slate-100">{client.campaigns.map((camp, idx) => {
                                         const roas = camp.cost > 0 ? (camp.conversions_value||0)/camp.cost : 0;
                                         return (
-                                            <tr key={idx} className="hover:bg-slate-50"><td className="px-3 py-2"><div className="font-medium truncate max-w-[150px] text-slate-700" title={camp.campaign_name}>{camp.campaign_name}</div></td>
+                                            <tr key={idx} className="hover:bg-slate-50"><td className="px-3 py-2"><div className="font-medium truncate max-w-[150px] text-slate-700" title={camp.campaign_name}>{camp.campaign_name}</div><div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[9px] text-slate-400"><span className="flex items-center gap-1"><span className={`w-1.5 h-1.5 rounded-full ${camp.status === 'ENABLED' ? 'bg-emerald-400' : 'bg-slate-300'}`}></span>{camp.status === 'ENABLED' ? 'ON' : 'OFF'}</span>{client.is_group && <span className="truncate max-w-[100px]">| {formatProjectName(camp.original_client_name || '')}</span>}</div></td>
                                             <td className="px-2 py-2 text-right font-medium text-slate-900">{formatCurrency(camp.cost)}</td>
                                             <td className="px-2 py-2 text-right text-emerald-600">{formatCurrency(camp.conversions_value||0)}</td>
                                             {client.isSalesAccount && <td className="px-2 py-2 text-center"><Badge variant="outline" className={`px-1 py-0 ${getRoasColor(roas)}`}>{roas.toFixed(2)}</Badge></td>}</tr>
@@ -502,9 +549,9 @@ export default function MetaAdsPage() {
          <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
             <DialogContent><DialogHeader><DialogTitle>Configurar Cliente</DialogTitle></DialogHeader>
                 <div className="space-y-4 py-4">
-                    <div className="space-y-2"><Label>Nombre Grupo (Holding)</Label><Input placeholder="Ej: Grupo Hotelero" value={editingClient?.group || ''} onChange={(e) => setEditingClient(prev => prev ? {...prev, group: e.target.value} : null)} /></div>
+                    <div className="space-y-2"><Label>Nombre Grupo (Holding)</Label><Input value={editingClient?.group || ''} onChange={(e) => setEditingClient(prev => prev ? {...prev, group: e.target.value} : null)} /></div>
                     <div className="flex justify-between items-center pt-2 border-t border-slate-100"><Label>Cuenta de Ventas (ROAS)</Label><Switch checked={editingClient?.isSales !== false} onCheckedChange={(c) => setEditingClient(prev => prev ? {...prev, isSales: c} : null)} /></div>
-                    <div className="flex justify-between items-center"><Label>Ocultar del listado</Label><Switch checked={editingClient?.hidden || false} onCheckedChange={(c) => setEditingClient(prev => prev ? {...prev, hidden: c} : null)} /></div>
+                    <div className="flex justify-between items-center"><Label>Ocultar</Label><Switch checked={editingClient?.hidden || false} onCheckedChange={(c) => setEditingClient(prev => prev ? {...prev, hidden: c} : null)} /></div>
                 </div>
                 <DialogFooter><Button onClick={handleSaveClientSettings}>Guardar</Button></DialogFooter>
             </DialogContent>
@@ -512,12 +559,13 @@ export default function MetaAdsPage() {
 
          <Dialog open={isSplitModalOpen} onOpenChange={setIsSplitModalOpen}>
             <DialogContent className="max-w-2xl">
-                <DialogHeader><DialogTitle className="flex items-center gap-2"><Scissors className="w-5 h-5"/> Dividir Cuentas (Segmentación)</DialogTitle>
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2"><Scissors className="w-5 h-5"/> Dividir Cuentas (Segmentación)</DialogTitle>
                     <DialogDescription>Crea cuentas virtuales separando campañas que contengan una palabra clave.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-6 py-4">
                     <div className="grid grid-cols-12 gap-3 items-end bg-slate-50 p-4 rounded-lg border border-slate-200">
-                        <div className="col-span-4 space-y-1"><Label className="text-xs font-medium">Cuenta Origen</Label><Select value={newRuleAccount} onValueChange={setNewRuleAccount}><SelectTrigger className="bg-white"><SelectValue placeholder="Selecciona..." /></SelectTrigger><SelectContent>{registeredAccounts.map(acc => (<SelectItem key={acc.account_id} value={acc.account_id}>{acc.account_name || acc.account_id}</SelectItem>))}</SelectContent></Select></div>
+                        <div className="col-span-4 space-y-1"><Label className="text-xs font-medium">Cuenta Origen</Label><Select value={newRuleAccount} onValueChange={setNewRuleAccount}><SelectTrigger className="bg-white"><SelectValue placeholder="Selecciona..." /></SelectTrigger><SelectContent>{uniqueAccountsForSelector.map(acc => (<SelectItem key={acc.id} value={acc.id}>{acc.name || acc.id}</SelectItem>))}</SelectContent></Select></div>
                         <div className="col-span-3 space-y-1"><Label className="text-xs font-medium">Si contiene...</Label><Input placeholder="Ej: Loro" className="bg-white" value={newRuleKeyword} onChange={e => setNewRuleKeyword(e.target.value)} /></div>
                         <div className="col-span-3 space-y-1"><Label className="text-xs font-medium">Crear cuenta llamada...</Label><Input placeholder="Ej: Loro Parque" className="bg-white" value={newRuleName} onChange={e => setNewRuleName(e.target.value)} /></div>
                         <div className="col-span-2"><Button onClick={handleAddRule} className="w-full bg-slate-900 hover:bg-slate-800"><Plus className="w-4 h-4"/></Button></div>
