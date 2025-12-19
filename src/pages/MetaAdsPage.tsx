@@ -65,6 +65,8 @@ const getRoasColor = (roas: number) => {
 export default function MetaAdsPage() {
   const [rawData, setRawData] = useState<any[]>([]);
   const [clientSettings, setClientSettings] = useState<Record<string, any>>({});
+  // NUEVO: Guardamos las cuentas registradas para asegurar que salgan aunque tengan 0 gasto
+  const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
@@ -84,13 +86,21 @@ export default function MetaAdsPage() {
 
   const fetchData = async () => {
     try {
-      // 1. Cargar Campañas de META
+      // 1. Cargar Campañas de META (Datos reales)
       const { data: adsData } = await supabase.from('meta_ads_campaigns').select('*');
       
-      // 2. Cargar Configuración (Compartida en la misma tabla client_settings)
+      // 2. Cargar Configuración (Preferencias de usuario)
       const { data: settingsData } = await supabase.from('client_settings').select('*');
+
+      // 3. NUEVO: Cargar Cuentas Registradas (Inventario base)
+      // Esto asegura que si diste de alta "HD Hotels", aparezca aunque no tenga datos este mes.
+      const { data: accountsData } = await supabase
+        .from('ad_accounts_config')
+        .select('*')
+        .eq('platform', 'meta')
+        .eq('is_active', true);
       
-      // 3. Cargar Logs de META
+      // 4. Cargar Logs
       const { data: logData } = await supabase
         .from('meta_sync_logs')
         .select('created_at')
@@ -111,6 +121,7 @@ export default function MetaAdsPage() {
 
       setRawData(adsData || []);
       setClientSettings(settingsMap);
+      setRegisteredAccounts(accountsData || []);
 
       if (logData) {
         setLastSyncTime(new Date(logData.created_at));
@@ -127,7 +138,7 @@ export default function MetaAdsPage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- WORKER SYNC (META) ---
+  // --- WORKER SYNC ---
   const handleStartSync = async () => {
     setIsSyncing(true);
     setSyncStatus('running');
@@ -188,45 +199,35 @@ export default function MetaAdsPage() {
     }
   }, [syncLogs, isSyncing]);
 
-  // --- GUARDAR PRESUPUESTO ---
   const handleSaveBudget = async (clientId: string, amount: string) => {
     const numAmount = parseFloat(amount);
-    
     setClientSettings(prev => ({
       ...prev,
       [clientId]: { ...prev[clientId], budget: isNaN(numAmount) ? 0 : numAmount }
     }));
-
-    await supabase.from('client_settings').upsert({ 
-      client_id: clientId, 
-      budget_limit: isNaN(numAmount) ? 0 : numAmount 
-    }, { onConflict: 'client_id' });
-    
+    await supabase.from('client_settings').upsert({ client_id: clientId, budget_limit: isNaN(numAmount) ? 0 : numAmount }, { onConflict: 'client_id' });
     fetchData(); 
   };
 
   const handleSaveClientSettings = async () => {
     if (!editingClient) return;
-    
     await supabase.from('client_settings').upsert({
       client_id: editingClient.id,
       group_name: editingClient.group,
       is_hidden: editingClient.hidden,
       is_sales_account: editingClient.isSales
     }, { onConflict: 'client_id' });
-
     setEditingClient(null);
     fetchData(); 
     toast.success('Configuración guardada');
   };
 
-  // --- LÓGICA DE AGREGACIÓN ---
+  // --- LÓGICA PRINCIPAL CORREGIDA ---
   const reportData = useMemo(() => {
-    if (!rawData.length) return [];
+    // Aunque no haya rawData, queremos procesar las cuentas registradas
     
     const now = new Date();
     const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-    
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const currentDay = now.getDate();
     const remainingDays = daysInMonth - currentDay;
@@ -245,38 +246,72 @@ export default function MetaAdsPage() {
       isManualGroupBudget: boolean
     }>();
 
-    rawData.forEach(row => {
-      // Usamos los datos del mes actual
-      if (row.date === currentMonthPrefix) {
-        
-        const settings = clientSettings[row.client_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
-        
+    // 1. INICIALIZAR CON CUENTAS REGISTRADAS (Para que salgan las de 0€)
+    registeredAccounts.forEach(acc => {
+        const settings = clientSettings[acc.account_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
         const groupKey = settings.group_name && settings.group_name.trim() !== '' 
           ? `GROUP-${settings.group_name}` 
-          : row.client_id;
+          : acc.account_id;
         
         const displayName = settings.group_name && settings.group_name.trim() !== '' 
           ? settings.group_name 
-          : row.client_name;
+          : (acc.account_name || acc.account_id); // Usar nombre guardado en config si existe
 
-        const groupSettings = clientSettings[groupKey]; 
+        const groupSettings = clientSettings[groupKey];
         const isGroupManual = groupKey.startsWith('GROUP-') && (groupSettings?.budget > 0);
         const isIndividualManual = !groupKey.startsWith('GROUP-') && settings.budget > 0;
 
         if (!stats.has(groupKey)) {
-          stats.set(groupKey, { 
-            name: displayName, 
-            spent: 0, 
-            budget: 0,
-            total_conversions_val: 0,
-            is_group: groupKey.startsWith('GROUP-'),
-            isHidden: settings.is_hidden, 
-            isSalesAccount: settings.is_sales_account !== false,
-            realIds: [],
-            realIdsNames: [],
-            campaigns: [],
-            isManualGroupBudget: isGroupManual
-          });
+            stats.set(groupKey, {
+                name: displayName,
+                spent: 0,
+                budget: 0,
+                total_conversions_val: 0,
+                is_group: groupKey.startsWith('GROUP-'),
+                isHidden: settings.is_hidden,
+                isSalesAccount: settings.is_sales_account !== false,
+                realIds: [],
+                realIdsNames: [],
+                campaigns: [],
+                isManualGroupBudget: isGroupManual
+            });
+        }
+
+        const entry = stats.get(groupKey)!;
+        if (!entry.realIds.includes(acc.account_id)) {
+            entry.realIds.push(acc.account_id);
+            entry.realIdsNames.push({id: acc.account_id, name: acc.account_name || acc.account_id});
+            
+            if (!entry.is_group && isIndividualManual) {
+               entry.budget = settings.budget; 
+            }
+        }
+    });
+
+    // 2. RELLENAR CON DATOS REALES DE CAMPAÑAS (Sobrescribe si hay datos)
+    rawData.forEach(row => {
+      if (row.date === currentMonthPrefix) {
+        const settings = clientSettings[row.client_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
+        const groupKey = settings.group_name && settings.group_name.trim() !== '' 
+          ? `GROUP-${settings.group_name}` 
+          : row.client_id;
+        
+        // Si la cuenta no estaba registrada en config pero viene en datos, la creamos al vuelo
+        if (!stats.has(groupKey)) {
+             const displayName = settings.group_name || row.client_name;
+             stats.set(groupKey, { 
+                name: displayName, 
+                spent: 0, 
+                budget: 0,
+                total_conversions_val: 0,
+                is_group: groupKey.startsWith('GROUP-'),
+                isHidden: settings.is_hidden, 
+                isSalesAccount: settings.is_sales_account !== false,
+                realIds: [],
+                realIdsNames: [],
+                campaigns: [],
+                isManualGroupBudget: false
+             });
         }
         
         const entry = stats.get(groupKey)!;
@@ -284,17 +319,14 @@ export default function MetaAdsPage() {
         entry.spent += Number(row.cost || 0);
         entry.total_conversions_val += Number(row.conversions_value || 0);
         
+        // Asegurar que está en la lista de IDs (por si vino solo por rawData)
         if (!entry.realIds.includes(row.client_id)) {
            entry.realIds.push(row.client_id);
            entry.realIdsNames.push({id: row.client_id, name: row.client_name});
-           
-           if (!entry.is_group && isIndividualManual) {
-               entry.budget = settings.budget; 
-           }
-           if (!settings.is_hidden) entry.isHidden = false;
+           if (!entry.is_group && settings.budget > 0) entry.budget = settings.budget; 
         }
 
-        if (Number(row.cost) > 0) { 
+        if (Number(row.cost) > 0 || Number(row.impressions) > 0) { 
             entry.campaigns.push({
                 campaign_id: row.campaign_id,
                 campaign_name: row.campaign_name,
@@ -323,9 +355,6 @@ export default function MetaAdsPage() {
           }
       }
 
-      // En Meta, si no hay presupuesto manual, no podemos inventarlo fácilmente (API compleja).
-      // Dejamos 0 para indicar que no hay límite definido en la app.
-      
       const spent = value.spent;
       const avgDailySpend = currentDay > 0 ? spent / currentDay : 0;
       const forecast = avgDailySpend * daysInMonth;
@@ -376,7 +405,7 @@ export default function MetaAdsPage() {
     }
 
     return filtered.sort((a, b) => b.spent - a.spent);
-  }, [rawData, clientSettings, searchTerm, showHidden]);
+  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden]);
 
   const totalBudget = reportData.reduce((acc, r) => acc + r.budget, 0);
   const totalSpent = reportData.reduce((acc, r) => acc + r.spent, 0);
