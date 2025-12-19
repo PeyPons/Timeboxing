@@ -9,9 +9,10 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, Activity, TrendingUp
+  Info, Activity, TrendingUp, Scissors, Plus, Trash2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
@@ -24,6 +25,7 @@ const GoogleIcon = () => (
     </svg>
 );
 
+// --- TIPOS ---
 interface CampaignData {
   campaign_id: string;
   campaign_name: string;
@@ -36,6 +38,13 @@ interface CampaignData {
   impressions?: number;
   original_client_name?: string; 
   original_client_id?: string;
+}
+
+interface SegmentationRule {
+  id: string;
+  accountId: string;
+  keyword: string;
+  virtualName: string;
 }
 
 interface ClientPacing {
@@ -61,6 +70,7 @@ interface ClientPacing {
 }
 
 const formatProjectName = (name: string) => name.replace(/^(Cliente|Client)\s*[-:]?\s*/i, '');
+const normalizeId = (id: string) => id ? id.trim() : '';
 
 const getRoasColor = (roas: number) => {
     if (roas >= 4) return "text-emerald-600 bg-emerald-50 border-emerald-200";
@@ -75,15 +85,28 @@ export default function AdsPage() {
   const [loading, setLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
+  // --- REGLAS DE SEGMENTACIÓN (Tijeras) ---
+  const [segmentationRules, setSegmentationRules] = useState<SegmentationRule[]>(() => {
+      const saved = localStorage.getItem('google_segmentation_rules');
+      return saved ? JSON.parse(saved) : [];
+  });
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showHidden, setShowHidden] = useState(false);
 
+  // --- MODALES ---
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
   const [syncProgress, setSyncProgress] = useState(0); 
   
   const [editingClient, setEditingClient] = useState<{id: string, name: string, group: string, hidden: boolean, isSales: boolean} | null>(null);
+  const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
+
+  // Estado formulario nueva regla
+  const [newRuleAccount, setNewRuleAccount] = useState('');
+  const [newRuleKeyword, setNewRuleKeyword] = useState('');
+  const [newRuleName, setNewRuleName] = useState('');
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +181,32 @@ export default function AdsPage() {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [syncLogs, isSyncing]);
 
+  // --- GESTIÓN DE REGLAS ---
+  const handleAddRule = () => {
+      if (!newRuleAccount || !newRuleKeyword || !newRuleName) {
+          toast.error("Rellena todos los campos");
+          return;
+      }
+      const newRule: SegmentationRule = {
+          id: crypto.randomUUID(),
+          accountId: newRuleAccount,
+          keyword: newRuleKeyword,
+          virtualName: newRuleName
+      };
+      const updated = [...segmentationRules, newRule];
+      setSegmentationRules(updated);
+      localStorage.setItem('google_segmentation_rules', JSON.stringify(updated));
+      setNewRuleKeyword('');
+      setNewRuleName('');
+      toast.success("Regla añadida");
+  };
+
+  const handleDeleteRule = (id: string) => {
+      const updated = segmentationRules.filter(r => r.id !== id);
+      setSegmentationRules(updated);
+      localStorage.setItem('google_segmentation_rules', JSON.stringify(updated));
+  };
+
   const handleSaveBudget = async (clientId: string, amount: string) => {
     const numAmount = parseFloat(amount);
     setClientSettings(prev => ({
@@ -181,6 +230,7 @@ export default function AdsPage() {
     toast.success('Configuración guardada');
   };
 
+  // --- LÓGICA PRINCIPAL (Ahora con Segmentación) ---
   const reportData = useMemo(() => {
     if (!rawData.length) return [];
     
@@ -196,12 +246,46 @@ export default function AdsPage() {
       campaigns: CampaignData[], isManualGroupBudget: boolean, autoDailyBudgetSum: number
     }>();
 
+    // Obtener lista única de cuentas base desde los datos de Google
+    const uniqueAccounts = Array.from(new Set(rawData.map(r => JSON.stringify({id: r.client_id, name: r.client_name}))))
+        .map(s => JSON.parse(s));
+
+    // Inicializar cuentas base
+    uniqueAccounts.forEach(acc => {
+        const settings = clientSettings[acc.id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
+        const groupKey = settings.group_name?.trim() ? `GROUP-${settings.group_name}` : acc.id;
+        
+        if (!settings.group_name?.trim() && !stats.has(groupKey)) {
+            stats.set(groupKey, {
+                name: acc.name || acc.id,
+                spent: 0, budget: settings.budget || 0, total_conversions_val: 0,
+                is_group: false, isHidden: settings.is_hidden, isSalesAccount: settings.is_sales_account !== false,
+                realIds: [acc.id], realIdsNames: [{id: acc.id, name: acc.name}], 
+                campaigns: [], isManualGroupBudget: false, autoDailyBudgetSum: 0
+            });
+        }
+    });
+
     rawData.forEach(row => {
       if (row.date === currentMonthPrefix) {
         
-        const settings = clientSettings[row.client_id] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
-        const groupKey = settings.group_name?.trim() ? `GROUP-${settings.group_name}` : row.client_id;
-        const displayName = settings.group_name?.trim() ? settings.group_name : row.client_name;
+        let finalId = row.client_id;
+        let finalName = row.client_name;
+
+        // --- APLICAR REGLAS DE SEGMENTACIÓN (TIJERAS) ---
+        const rulesForAccount = segmentationRules.filter(r => normalizeId(r.accountId) === normalizeId(row.client_id));
+        if (rulesForAccount.length > 0) {
+            const match = rulesForAccount.find(r => row.campaign_name.toLowerCase().includes(r.keyword.toLowerCase()));
+            if (match) {
+                finalId = `${row.client_id}_${match.keyword.toUpperCase()}`; 
+                finalName = match.virtualName;
+            }
+        }
+        // ---------------------------------------------
+
+        const settings = clientSettings[finalId] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
+        const groupKey = settings.group_name?.trim() ? `GROUP-${settings.group_name}` : finalId;
+        const displayName = settings.group_name?.trim() ? settings.group_name : finalName;
 
         const isGroupManual = groupKey.startsWith('GROUP-') && (clientSettings[groupKey]?.budget > 0);
         const isIndividualManual = !groupKey.startsWith('GROUP-') && settings.budget > 0;
@@ -221,9 +305,9 @@ export default function AdsPage() {
         
         if (row.status === 'ENABLED' && row.daily_budget > 0) entry.autoDailyBudgetSum += row.daily_budget;
 
-        if (!entry.realIds.includes(row.client_id)) {
-           entry.realIds.push(row.client_id);
-           entry.realIdsNames.push({id: row.client_id, name: row.client_name});
+        if (!entry.realIds.includes(finalId)) {
+           entry.realIds.push(finalId);
+           entry.realIdsNames.push({id: finalId, name: finalName});
            if (!entry.is_group && isIndividualManual) entry.budget = settings.budget; 
            if (!settings.is_hidden) entry.isHidden = false;
         }
@@ -231,8 +315,8 @@ export default function AdsPage() {
         if (row.cost > 0) { 
             entry.campaigns.push({
                 ...row,
-                original_client_name: row.client_name,
-                original_client_id: row.client_id
+                original_client_name: finalName,
+                original_client_id: finalId
             });
         }
       }
@@ -285,11 +369,18 @@ export default function AdsPage() {
     }
 
     return filtered.sort((a, b) => b.spent - a.spent);
-  }, [rawData, clientSettings, searchTerm, showHidden]);
+  }, [rawData, clientSettings, searchTerm, showHidden, segmentationRules]);
 
   const totalBudget = reportData.reduce((acc, r) => acc + r.budget, 0);
   const totalSpent = reportData.reduce((acc, r) => acc + r.spent, 0);
   const totalRevenue = reportData.reduce((acc, r) => acc + r.total_conversions_val, 0);
+
+  // Obtener cuentas únicas para el selector del modal
+  const uniqueAccountsForSelector = useMemo(() => {
+      const unique = new Map();
+      rawData.forEach(r => unique.set(r.client_id, r.client_name));
+      return Array.from(unique.entries()).map(([id, name]) => ({ id, name }));
+  }, [rawData]);
 
   return (
     <AppLayout>
@@ -303,7 +394,11 @@ export default function AdsPage() {
                         <div className="flex items-center gap-2 mt-1 text-sm text-slate-500"><Clock className="w-4 h-4" /><span>{lastSyncTime ? lastSyncTime.toLocaleString() : 'Pendiente...'}</span></div>
                     </div>
                 </div>
-                <div className="flex items-center gap-2"><Button onClick={handleStartSync} disabled={isSyncing} className="bg-[#4285F4] hover:bg-blue-600 text-white"><RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} /> Sincronizar</Button></div>
+                <div className="flex gap-2 w-full md:w-auto">
+                    {/* BOTÓN TIJERAS AÑADIDO A GOOGLE ADS */}
+                    <Button variant="outline" onClick={() => setIsSplitModalOpen(true)} className="border-slate-200 text-slate-700 w-full md:w-auto"><Scissors className="w-4 h-4 mr-2" /> Dividir Cuentas</Button>
+                    <Button onClick={handleStartSync} disabled={isSyncing} className="bg-[#4285F4] hover:bg-blue-600 text-white w-full md:w-auto"><RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} /> Sincronizar</Button>
+                </div>
             </div>
             <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
                 <div className="relative w-full md:w-96"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 bg-slate-50 border-slate-200" /></div>
@@ -349,7 +444,7 @@ export default function AdsPage() {
                             </div>
                         </div>
 
-                        {/* BARRA DE PROGRESO EN EL RESUMEN */}
+                        {/* BARRA DE PROGRESO RESUMEN */}
                         {client.budget > 0 && (
                             <div className="hidden md:flex flex-col flex-1 mx-4 max-w-xs">
                                 <div className="flex justify-between text-[10px] text-slate-500 mb-1">
@@ -361,7 +456,7 @@ export default function AdsPage() {
                         )}
 
                         <div className="flex items-center gap-6 justify-end flex-1">
-                            {/* VALOR DE CONVERSIÓN */}
+                            {/* VALOR */}
                             {client.isSalesAccount && (
                                 <div className="text-right hidden sm:block">
                                     <div className="text-[10px] uppercase text-slate-400 font-semibold">Valor</div>
@@ -418,7 +513,7 @@ export default function AdsPage() {
 
                             <div className="rounded-md border border-slate-200 overflow-hidden max-h-[300px] overflow-y-auto bg-white">
                                 <table className="w-full text-xs text-left">
-                                    <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10 border-b border-slate-200"><tr><th className="px-3 py-2 w-[35%] min-w-[150px]">Campaña</th><th className="px-2 py-2 text-right">Gasto</th><th className="px-2 py-2 text-right">Valor</th>{client.isSalesAccount && <th className="px-2 py-2 text-center">ROAS</th>}</tr></thead>
+                                    <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10 border-b border-slate-200"><tr><th className="px-3 py-2">Campaña</th><th className="px-2 py-2 text-right">Gasto</th><th className="px-2 py-2 text-right">Valor</th>{client.isSalesAccount && <th className="px-2 py-2 text-center">ROAS</th>}</tr></thead>
                                     <tbody className="divide-y divide-slate-100">{client.campaigns.map((camp, idx) => {
                                         const roas = camp.cost > 0 ? (camp.conversions_value||0)/camp.cost : 0;
                                         return (
@@ -446,6 +541,25 @@ export default function AdsPage() {
                     <div className="flex justify-between items-center"><Label>Ocultar</Label><Switch checked={editingClient?.hidden || false} onCheckedChange={(c) => setEditingClient(prev => prev ? {...prev, hidden: c} : null)} /></div>
                 </div>
                 <DialogFooter><Button onClick={handleSaveClientSettings}>Guardar</Button></DialogFooter>
+            </DialogContent>
+         </Dialog>
+
+         {/* MODAL DIVIDIR CUENTAS (TIJERAS) */}
+         <Dialog open={isSplitModalOpen} onOpenChange={setIsSplitModalOpen}>
+            <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2"><Scissors className="w-5 h-5"/> Dividir Cuentas (Segmentación)</DialogTitle>
+                    <DialogDescription>Crea cuentas virtuales separando campañas que contengan una palabra clave.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-6 py-4">
+                    <div className="grid grid-cols-12 gap-3 items-end bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div className="col-span-4 space-y-1"><Label className="text-xs font-medium">Cuenta Origen</Label><Select value={newRuleAccount} onValueChange={setNewRuleAccount}><SelectTrigger className="bg-white"><SelectValue placeholder="Selecciona..." /></SelectTrigger><SelectContent>{uniqueAccountsForSelector.map(acc => (<SelectItem key={acc.id} value={acc.id}>{acc.name || acc.id}</SelectItem>))}</SelectContent></Select></div>
+                        <div className="col-span-3 space-y-1"><Label className="text-xs font-medium">Si contiene...</Label><Input placeholder="Ej: Loro" className="bg-white" value={newRuleKeyword} onChange={e => setNewRuleKeyword(e.target.value)} /></div>
+                        <div className="col-span-3 space-y-1"><Label className="text-xs font-medium">Crear cuenta llamada...</Label><Input placeholder="Ej: Loro Parque" className="bg-white" value={newRuleName} onChange={e => setNewRuleName(e.target.value)} /></div>
+                        <div className="col-span-2"><Button onClick={handleAddRule} className="w-full bg-slate-900 hover:bg-slate-800"><Plus className="w-4 h-4"/></Button></div>
+                    </div>
+                    <div className="space-y-2"><h4 className="text-xs font-bold text-slate-500 uppercase">Reglas Activas</h4>{segmentationRules.length === 0 && <p className="text-sm text-slate-400 italic">No hay reglas definidas.</p>}{segmentationRules.map(rule => (<div key={rule.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-md text-sm shadow-sm"><div className="flex items-center gap-3"><Badge variant="outline" className="font-mono text-xs">{normalizeId(rule.accountId)}</Badge><span className="text-slate-500">Si contiene <strong>"{rule.keyword}"</strong></span><span className="text-slate-300">→</span><span className="font-bold text-blue-600">{rule.virtualName}</span></div><Button variant="ghost" size="sm" onClick={() => handleDeleteRule(rule.id)} className="text-red-500 hover:bg-red-50 h-8 w-8 p-0"><Trash2 className="w-4 h-4"/></Button></div>))}</div>
+                </div>
             </DialogContent>
          </Dialog>
 
