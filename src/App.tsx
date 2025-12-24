@@ -38,16 +38,14 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               
-              {/* RUTA PÚBLICA: Login */}
-              {/* Es CRUCIAL que esta ruta esté aquí, fuera del ProtectedRoute */}
+              {/* --- RUTA CRÍTICA PARA EL LOGIN --- */}
+              {/* Debe estar fuera del ProtectedRoute para poder entrar sin sesión */}
               <Route path="/login" element={<Login />} />
 
-              {/* RUTAS PROTEGIDAS */}
+              {/* Rutas Protegidas (Solo accesibles si estás logueado) */}
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
-                  {/* Home redirige al dashboard del empleado */}
                   <Route path="/" element={ <EmployeeDashboard />} />
-                  
                   <Route path="/dashboard-ai" element={<DashboardAI />} />
                   <Route path="/planner" element={<Index />} />
                   <Route path="/team" element={<TeamPage />} />
@@ -63,7 +61,7 @@ const App = () => (
                 </Route>
               </Route>
 
-              {/* 404 para cualquier otra cosa */}
+              {/* 404 para cualquier otra ruta desconocida */}
               <Route path="*" element={<NotFound />} />
               
             </Routes>
