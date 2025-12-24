@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AppLayout } from '@/components/layout/AppLayout';
+// ELIMINADO: import { AppLayout } from '@/components/layout/AppLayout'; <--- CAUSA DEL ERROR
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -37,62 +37,66 @@ export default function SettingsPage() {
     };
 
     return (
-        <AppLayout>
-            <div className="max-w-4xl mx-auto p-6 space-y-6">
-                <h1 className="text-2xl font-bold text-slate-900">Configuración</h1>
-                
-                {/* TARJETA PARA AÑADIR CUENTAS */}
-                <Card className="border-slate-200 shadow-sm">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <PlusCircle className="w-5 h-5 text-blue-600"/> 
-                            Gestión de Cuentas Publicitarias
-                        </CardTitle>
-                        <CardDescription>
-                            Añade aquí los IDs de las cuentas de tus clientes para que el sistema las sincronice.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex flex-col md:flex-row gap-4 items-end">
-                            <div className="space-y-2 w-full md:w-1/4">
-                                <Label>Plataforma</Label>
-                                <Select value={platform} onValueChange={setPlatform}>
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="meta">Meta Ads (Facebook)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2 w-full md:w-2/4">
-                                <Label>ID de la Cuenta</Label>
-                                <Input 
-                                    placeholder={platform === 'meta' ? 'Ej: act_123456789' : 'Ej: 123-456-7890'} 
-                                    value={accountId} 
-                                    onChange={(e) => setAccountId(e.target.value)} 
-                                />
-                            </div>
-                            <Button onClick={handleAddAccount} disabled={loading} className="w-full md:w-1/4 bg-slate-900 hover:bg-slate-800">
-                                {loading ? 'Guardando...' : 'Añadir Cuenta'}
-                            </Button>
+        // ELIMINADO EL WRAPPER <AppLayout>
+        <div className="max-w-4xl mx-auto p-6 space-y-6">
+            <h1 className="text-2xl font-bold text-slate-900">Configuración</h1>
+            
+            {/* TARJETA PARA AÑADIR CUENTAS */}
+            <Card className="border-slate-200 shadow-sm">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <PlusCircle className="w-5 h-5 text-blue-600"/> 
+                        Gestión de Cuentas Publicitarias
+                    </CardTitle>
+                    <CardDescription>
+                        Añade aquí los IDs de las cuentas de tus clientes para que el sistema las sincronice.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex flex-col md:flex-row gap-4 items-end">
+                        <div className="space-y-2 w-full md:w-1/4">
+                            <Label>Plataforma</Label>
+                            <Select value={platform} onValueChange={setPlatform}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="meta">Meta Ads (Facebook)</SelectItem>
+                                    <SelectItem value="google">Google Ads</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
-                        <div className="bg-slate-50 p-3 rounded text-xs text-slate-500 border border-slate-100">
-                            <strong>Nota importante:</strong> 
-                            <ul className="list-disc pl-4 mt-1 space-y-1">
-                                <li>Para <strong>Meta</strong>: El ID debe incluir el prefijo (ej: <code>act_147...</code>).</li>
-                            </ul>
+                        <div className="space-y-2 w-full md:w-2/4">
+                            <Label>ID de la Cuenta</Label>
+                            <Input 
+                                placeholder={platform === 'meta' ? 'Ej: act_123456789' : 'Ej: 123-456-7890'} 
+                                value={accountId} 
+                                onChange={(e) => setAccountId(e.target.value)} 
+                            />
                         </div>
-                    </CardContent>
-                </Card>
+                        <Button onClick={handleAddAccount} disabled={loading} className="w-full md:w-1/4 bg-slate-900 hover:bg-slate-800">
+                            {loading ? 'Guardando...' : 'Añadir Cuenta'}
+                        </Button>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded text-xs text-slate-500 border border-slate-100">
+                        <strong>Nota importante:</strong> 
+                        <ul className="list-disc pl-4 mt-1 space-y-1">
+                            <li>Para <strong>Meta</strong>: El ID debe incluir el prefijo (ej: <code>act_147...</code>).</li>
+                            <li>Para <strong>Google</strong>: Usa el formato con guiones (ej: <code>123-456-7890</code>).</li>
+                        </ul>
+                    </div>
+                </CardContent>
+            </Card>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-emerald-600"/> Estado</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-sm text-slate-600">Sistema operativo y conectado a base de datos.</div>
-                    </CardContent>
-                </Card>
-            </div>
-        </AppLayout>
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-emerald-600"/> Estado del Sistema</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="text-sm text-slate-600">
+                        <span className="inline-block w-2 h-2 bg-emerald-500 rounded-full mr-2"></span>
+                        Sistema operativo y conectado a base de datos.
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
     );
 }
