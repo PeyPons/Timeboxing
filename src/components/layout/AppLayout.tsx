@@ -1,18 +1,14 @@
-import { ReactNode } from 'react';
+import { Outlet } from 'react-router-dom'; // <--- IMPORTANTE
 import { Sidebar } from './Sidebar';
 
-interface AppLayoutProps {
-  children: ReactNode;
-}
-
-export function AppLayout({ children }: AppLayoutProps) {
+export function AppLayout() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-50"> {/* Fondo gris suave general */}
       <Sidebar />
-      <main className="lg:pl-64 pt-14 lg:pt-0">
-        <div className="min-h-screen">
-          {children}
-        </div>
+      {/* El margen izquierdo (ml-64) empuja el contenido para no quedar debajo del Sidebar */}
+      <main className="ml-64 min-h-screen">
+        {/* Outlet es donde React Router inyecta la página que toca (Dashboard, Planner, etc.) */}
+        <Outlet /> 
       </main>
     </div>
   );
