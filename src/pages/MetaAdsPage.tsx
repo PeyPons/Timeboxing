@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { AppLayout } from '@/components/layout/AppLayout';
+// ELIMINADO: import { AppLayout } from '@/components/layout/AppLayout'; (Ya lo pone App.tsx)
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,13 +11,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
-  RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, Activity, Facebook, Scissors, Trash2, Plus, TrendingUp
+  RefreshCw, Clock, Search, Settings, Layers, 
+  TrendingUp, Scissors, Trash2, Plus, Facebook
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // --- TIPOS ---
 interface MetaCampaignData {
@@ -246,6 +245,8 @@ export default function MetaAdsPage() {
 
   // --- LÓGICA DE AGREGACIÓN ---
   const reportData = useMemo(() => {
+    if (!rawData.length) return [];
+    
     const now = new Date();
     const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -395,8 +396,7 @@ export default function MetaAdsPage() {
   }, [rawData]);
 
   return (
-    <AppLayout>
-      <div className="max-w-7xl mx-auto p-6 space-y-6 pb-20">
+    <div className="max-w-7xl mx-auto p-6 space-y-6 pb-20">
         <div className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-3">
@@ -436,7 +436,6 @@ export default function MetaAdsPage() {
          <div className="space-y-4">
             <Accordion type="single" collapsible className="w-full space-y-2">
               {reportData.map((client) => {
-                  const diffFromBudget = client.forecast - client.budget;
                   return (
                 <AccordionItem key={client.client_id} value={client.client_id} className={`bg-white border rounded-lg shadow-sm px-2 ${client.isHidden ? 'opacity-60 border-dashed border-slate-300' : 'border-slate-200'}`}>
                   <AccordionTrigger className="hover:no-underline py-4 px-2 group">
@@ -563,7 +562,6 @@ export default function MetaAdsPage() {
                         <div className="col-span-3 space-y-1"><Label className="text-xs font-medium">Crear cuenta llamada...</Label><Input placeholder="Ej: Loro Parque" className="bg-white" value={newRuleName} onChange={e => setNewRuleName(e.target.value)} /></div>
                         <div className="col-span-2"><Button onClick={handleAddRule} className="w-full bg-slate-900 hover:bg-slate-800"><Plus className="w-4 h-4"/></Button></div>
                     </div>
-                    <div className="space-y-2"><h4 className="text-xs font-bold text-slate-500 uppercase">Reglas Activas</h4>{segmentationRules.length === 0 && <p className="text-sm text-slate-400 italic">No hay reglas definidas.</p>}{segmentationRules.map(rule => (<div key={rule.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-md text-sm shadow-sm"><div className="flex items-center gap-3"><Badge variant="outline" className="font-mono text-xs">{normalizeId(rule.account_id)}</Badge><span className="text-slate-500">Si contiene <strong>"{rule.keyword}"</strong></span><span className="text-slate-300">→</span><span className="font-bold text-blue-600">{rule.virtual_name}</span></div><Button variant="ghost" size="sm" onClick={() => handleDeleteRule(rule.id)} className="text-red-500 hover:bg-red-50 h-8 w-8 p-0"><Trash2 className="w-4 h-4"/></Button></div>))}</div>
                 </div>
             </DialogContent>
          </Dialog>
@@ -575,7 +573,6 @@ export default function MetaAdsPage() {
             <div className="bg-black/50 rounded-md p-4 font-mono text-xs text-blue-400 h-64 flex flex-col shadow-inner border border-slate-800 mt-2"><div className="flex-1 overflow-y-auto min-h-0 space-y-1" ref={scrollRef}>{syncLogs.map((log, i) => (<div key={i} className="break-words border-l-2 border-transparent hover:border-slate-700 pl-1">{log}</div>))}</div></div>
           </DialogContent>
         </Dialog>
-      </div>
-    </AppLayout>
+    </div>
   );
 }
