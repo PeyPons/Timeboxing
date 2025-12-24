@@ -11,10 +11,13 @@ export interface WorkSchedule {
 export interface Employee {
   id: string;
   name: string;
+  email?: string; // Campo añadido para el Login
   role: string;
   avatarUrl?: string;
   defaultWeeklyCapacity: number;
   workSchedule: WorkSchedule;
+  department?: string;
+  hourlyRate?: number;
   isActive: boolean;
 }
 
@@ -42,7 +45,6 @@ export interface Project {
   minimumHours?: number;
   healthStatus?: 'healthy' | 'needs_attention' | 'at_risk';
   monthlyFee?: number;
-  // npsLink eliminado
   lastMeetingDate?: string;
   okrs?: OKR[];
   deliverables_log?: Record<string, string[]>;
