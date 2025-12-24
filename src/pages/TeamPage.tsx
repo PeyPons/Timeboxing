@@ -1,97 +1,127 @@
 import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { EmployeeCard } from '@/components/team/EmployeeCard';
-import { EmployeeDialog } from '@/components/team/EmployeeDialog';
+import { TeamEventManager } from '@/components/team/TeamEventManager';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Users } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Employee } from '@/types';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
+import { Plus, Search, CalendarOff, Mail } from 'lucide-react';
 
 export default function TeamPage() {
-  const { employees } = useApp();
+  const { employees, addEmployee } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null); 
-  const [activeTab, setActiveTab] = useState('active');
+  
+  // Estado para añadir empleado rápido
+  const [isAddingEmp, setIsAddingEmp] = useState(false);
+  const [newEmpName, setNewEmpName] = useState('');
+  const [newEmpEmail, setNewEmpEmail] = useState(''); // Nuevo estado para Email
+  const [newEmpRole, setNewEmpRole] = useState('');
 
-  const filteredEmployees = employees.filter(emp => {
-    const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          emp.role.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    if (activeTab === 'active') return matchesSearch && emp.isActive;
-    if (activeTab === 'inactive') return matchesSearch && !emp.isActive;
-    return matchesSearch;
-  });
+  const filteredEmployees = employees.filter(e => 
+    e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    e.role.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const handleCreate = () => {
-    setEditingEmployee(null);
-    setIsDialogOpen(true);
-  };
-
-  const handleEdit = (employee: Employee) => {
-    setEditingEmployee(employee);
-    setIsDialogOpen(true);
+  const handleAddEmployee = async () => {
+    if (!newEmpName) return;
+    await addEmployee({
+        name: newEmpName,
+        email: newEmpEmail, // Pasamos el email
+        role: newEmpRole || 'Sin rol',
+        defaultWeeklyCapacity: 40,
+        workSchedule: { monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 },
+        isActive: true,
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newEmpName}`
+    });
+    // Limpieza
+    setNewEmpName('');
+    setNewEmpEmail('');
+    setNewEmpRole('');
+    setIsAddingEmp(false);
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-8 max-w-7xl">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
+      
+      {/* Cabecera Limpia */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-3">
-            <Users className="h-8 w-8 text-indigo-600" />
-            Equipo
-          </h1>
-          <p className="text-muted-foreground mt-1">Gestiona los miembros, roles y vinculaciones de cuenta.</p>
-        </div>
-        <Button onClick={handleCreate} className="bg-indigo-600 hover:bg-indigo-700 shadow-sm">
-          <Plus className="h-4 w-4 mr-2" />
-          Nuevo Miembro
-        </Button>
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white dark:bg-slate-950 p-4 rounded-lg border shadow-sm">
-        <div className="relative w-full md:w-72">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder="Buscar por nombre o rol..."
-            className="pl-9"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Equipo</h1>
+            <p className="text-muted-foreground">Gestiona a tus empleados, sus horarios y proyecciones.</p>
         </div>
         
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
-          <TabsList>
-            <TabsTrigger value="active">Activos ({employees.filter(e => e.isActive).length})</TabsTrigger>
-            <TabsTrigger value="inactive">Inactivos ({employees.filter(e => !e.isActive).length})</TabsTrigger>
-            <TabsTrigger value="all">Todos</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {/* BOTONES: Eventos y Nuevo Empleado */}
+        <div className="flex gap-2">
+            <Dialog>
+                <DialogTrigger asChild>
+                    <Button variant="outline" className="gap-2 bg-white dark:bg-slate-900 border-dashed">
+                        <CalendarOff className="h-4 w-4 text-orange-500" />
+                        Gestionar Festivos
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                    <TeamEventManager />
+                </DialogContent>
+            </Dialog>
+
+            <Button onClick={() => setIsAddingEmp(!isAddingEmp)} className="bg-indigo-600 hover:bg-indigo-700 gap-2">
+                <Plus className="h-4 w-4" /> Nuevo Empleado
+            </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      {/* Formulario rápido de empleado (Restaurado + Email) */}
+      {isAddingEmp && (
+        <div className="bg-slate-50 dark:bg-slate-900 border rounded-lg p-4 flex flex-col md:flex-row gap-4 items-end animate-in fade-in slide-in-from-top-2">
+            <div className="grid gap-1 flex-1 w-full">
+                <span className="text-xs font-medium">Nombre</span>
+                <Input value={newEmpName} onChange={e => setNewEmpName(e.target.value)} placeholder="Nombre completo" />
+            </div>
+            
+            {/* CAMPO EMAIL AÑADIDO */}
+            <div className="grid gap-1 flex-1 w-full">
+                <span className="text-xs font-medium">Email (Login)</span>
+                <div className="relative">
+                    <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                        value={newEmpEmail} 
+                        onChange={e => setNewEmpEmail(e.target.value)} 
+                        placeholder="usuario@timeboxing.com" 
+                        className="pl-9"
+                    />
+                </div>
+            </div>
+
+            <div className="grid gap-1 flex-1 w-full">
+                <span className="text-xs font-medium">Rol</span>
+                <Input value={newEmpRole} onChange={e => setNewEmpRole(e.target.value)} placeholder="Ej: Diseñador Senior" />
+            </div>
+            <Button onClick={handleAddEmployee} className="w-full md:w-auto">Guardar</Button>
+        </div>
+      )}
+
+      {/* Buscador */}
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por nombre o rol..."
+          className="pl-9 max-w-sm bg-white dark:bg-slate-950"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
+      {/* Grid de Empleados */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredEmployees.map((employee) => (
-          <EmployeeCard 
-            key={employee.id} 
-            employee={employee} 
-            onEdit={handleEdit} 
-          />
+          <EmployeeCard key={employee.id} employee={employee} />
         ))}
-        
         {filteredEmployees.length === 0 && (
-          <div className="col-span-full py-12 text-center text-slate-400 bg-slate-50/50 rounded-xl border border-dashed">
-            <Users className="h-12 w-12 mx-auto mb-3 opacity-20" />
-            <p>No se encontraron empleados con los filtros actuales.</p>
-          </div>
+            <div className="col-span-full text-center py-12 text-muted-foreground">
+                No se encontraron empleados que coincidan con tu búsqueda.
+            </div>
         )}
       </div>
-
-      <EmployeeDialog 
-        open={isDialogOpen} 
-        onOpenChange={setIsDialogOpen} 
-        employeeToEdit={editingEmployee} 
-      />
     </div>
   );
 }
