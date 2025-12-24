@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { AppLayout } from '@/components/layout/AppLayout';
+// ELIMINADO: import { AppLayout } from '@/components/layout/AppLayout'; (Ya lo pone App.tsx)
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,13 +11,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
-  RefreshCw, Clock, AlertTriangle, Search, Settings, EyeOff, Layers, Filter, 
-  Info, Activity, TrendingUp, Scissors, Plus, Trash2
+  RefreshCw, Clock, Search, Settings, Layers, 
+  TrendingUp, Scissors, Plus, Trash2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const GoogleIcon = () => (
     <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
@@ -403,8 +402,7 @@ export default function AdsPage() {
   }, [rawData]);
 
   return (
-    <AppLayout>
-      <div className="max-w-7xl mx-auto p-6 space-y-6 pb-20">
+    <div className="max-w-7xl mx-auto p-6 space-y-6 pb-20">
         <div className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-3">
@@ -596,6 +594,5 @@ export default function AdsPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </AppLayout>
   );
 }
