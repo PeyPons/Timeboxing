@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { 
   LayoutDashboard, 
   Users, 
@@ -20,7 +19,7 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function Sidebar({ className }: SidebarProps) {
   const location = useLocation();
-  const { currentUser } = useApp(); 
+  const { currentUser } = useApp();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -79,63 +78,78 @@ export function Sidebar({ className }: SidebarProps) {
   ];
 
   return (
-    <div className={cn("pb-12 h-screen border-r bg-slate-50/50 pt-6 flex flex-col", className)}>
-      <div className="space-y-4 py-4 flex-1">
-        <div className="px-6 py-2">
-          <h2 className="mb-2 px-2 text-lg font-semibold tracking-tight text-slate-900 flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold">
-              TB
-            </div>
-            Timeboxing
-          </h2>
-        </div>
-        <div className="px-3 py-2">
-          <div className="space-y-1">
-            {menuItems.map((item) => (
-              <Button
-                key={item.href}
-                variant={location.pathname === item.href ? "secondary" : "ghost"}
-                className={cn(
-                  "w-full justify-start gap-3 mb-1 font-normal",
-                  location.pathname === item.href && "bg-white shadow-sm border border-slate-200 font-medium"
-                )}
-                asChild
-              >
-                <Link to={item.href}>
-                  <item.icon className={cn("h-4 w-4", item.color)} />
-                  {item.label}
-                </Link>
-              </Button>
-            ))}
+    <div className={cn("flex flex-col h-screen border-r bg-white pt-6", className)}>
+      {/* Header / Logo */}
+      <div className="px-6 pb-6">
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900 flex items-center gap-2">
+          <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
+            TB
           </div>
-        </div>
+          Timeboxing
+        </h2>
+      </div>
+
+      {/* Navegación (Diseño Clásico sin Botones) */}
+      <div className="flex-1 overflow-y-auto py-2">
+        <nav className="grid gap-1 px-3">
+          {menuItems.map((item) => {
+            const isActive = location.pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  isActive 
+                    ? "bg-slate-100 text-slate-900" 
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <item.icon className={cn("h-4 w-4 transition-colors", isActive ? item.color : "text-slate-400 group-hover:text-slate-500")} />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
       
-      {/* Footer: Perfil de Usuario + Logout */}
-      <div className="p-4 border-t bg-white/50">
-        {currentUser && (
-          <div className="flex items-center gap-3 mb-4 px-2">
-            <Avatar className="h-9 w-9 border">
+      {/* Footer: Perfil de Usuario Real */}
+      <div className="mt-auto border-t bg-slate-50 p-4">
+        {currentUser ? (
+          <div className="flex items-center gap-3 mb-3">
+            <Avatar className="h-9 w-9 border border-white shadow-sm">
               <AvatarImage src={currentUser.avatarUrl} alt={currentUser.name} />
-              <AvatarFallback className="bg-indigo-100 text-indigo-700">
+              <AvatarFallback className="bg-indigo-600 text-white font-medium">
                 {currentUser.first_name?.[0]}{currentUser.last_name?.[0]}
               </AvatarFallback>
             </Avatar>
             <div className="flex flex-col overflow-hidden">
-               <span className="text-sm font-medium text-slate-900 truncate">{currentUser.name}</span>
-               <span className="text-xs text-slate-500 truncate">{currentUser.role}</span>
+               <span className="text-sm font-semibold text-slate-900 truncate">
+                 {currentUser.first_name} {currentUser.last_name}
+               </span>
+               <span className="text-xs text-slate-500 truncate" title={currentUser.email}>
+                 {currentUser.email}
+               </span>
             </div>
+          </div>
+        ) : (
+          /* Fallback por si acaso tarda en cargar */
+          <div className="flex items-center gap-3 mb-3 opacity-50">
+             <div className="h-9 w-9 rounded-full bg-slate-200" />
+             <div className="space-y-1">
+                <div className="h-3 w-20 bg-slate-200 rounded" />
+                <div className="h-2 w-24 bg-slate-200 rounded" />
+             </div>
           </div>
         )}
 
-        <Button 
-          variant="outline" 
-          className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100"
+        <button 
           onClick={handleLogout}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
         >
-          <LogOut className="mr-2 h-4 w-4" />
+          <LogOut className="h-3.5 w-3.5" />
           Cerrar Sesión
-        </Button>
+        </button>
       </div>
     </div>
   );
