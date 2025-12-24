@@ -1,92 +1,83 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { AlertCircle, Loader2 } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 export default function Login() {
-  const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  // Redireccionar si ya existe sesión al cargar el componente
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        navigate("/");
+      }
+    });
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
+    
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-      
-      // Login exitoso
-      navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión');
-    } finally {
+    if (error) {
+      toast.error("Error de acceso: " + error.message);
       setLoading(false);
+    } else {
+      toast.success("¡Bienvenido a Timeboxing!");
+      // La navegación ocurrirá automáticamente o puedes forzarla
+      navigate("/");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+      <Card className="w-full max-w-sm bg-white shadow-xl">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Timeboxing</CardTitle>
-          <CardDescription className="text-center">
-            Ingresa tus credenciales para acceder al sistema
+          <div className="flex justify-center mb-4">
+            <div className="h-10 w-10 rounded-lg bg-indigo-600 flex items-center justify-center">
+               <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            </div>
+          </div>
+          <CardTitle className="text-2xl text-center font-bold text-slate-900">Iniciar Sesión</CardTitle>
+          <CardDescription className="text-center text-slate-500">
+            Introduce tus credenciales de agencia
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            
             <div className="space-y-2">
-              <Label htmlFor="email">Correo Electrónico</Label>
               <Input
-                id="email"
                 type="email"
-                placeholder="nombre@ejemplo.com"
+                placeholder="usuario@agencia.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                className="bg-slate-50 border-slate-200 focus:border-indigo-500"
               />
             </div>
-            
             <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
               <Input
-                id="password"
                 type="password"
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                className="bg-slate-50 border-slate-200 focus:border-indigo-500"
               />
             </div>
-
-            <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700" disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Conectando...
-                </>
-              ) : (
-                'Iniciar Sesión'
-              )}
+            <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium" disabled={loading}>
+              {loading ? "Verificando..." : "Acceder al Panel"}
             </Button>
           </form>
         </CardContent>
