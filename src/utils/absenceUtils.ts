@@ -1,7 +1,3 @@
-{
-type: uploaded file
-fileName: peypons/timeboxing/Timeboxing-96370ef90368263911fe0d0a05dd6acd091d01ea/src/utils/absenceUtils.ts
-fullContent:
 import { Absence, WorkSchedule } from '@/types';
 import { eachDayOfInterval, getDay, parseISO, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 
@@ -68,4 +64,3 @@ export const getAbsenceHoursInRange = (
 
   return totalHours;
 };
-}
