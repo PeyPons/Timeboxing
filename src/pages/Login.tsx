@@ -12,12 +12,10 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Redireccionar si ya existe sesión al cargar el componente
+  // Si ya estamos logueados, fuera de aquí
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        navigate("/");
-      }
+      if (session) navigate("/");
     });
   }, [navigate]);
 
@@ -34,8 +32,7 @@ export default function Login() {
       toast.error("Error de acceso: " + error.message);
       setLoading(false);
     } else {
-      toast.success("¡Bienvenido a Timeboxing!");
-      // La navegación ocurrirá automáticamente o puedes forzarla
+      toast.success("¡Bienvenido!");
       navigate("/");
     }
   };
@@ -51,7 +48,7 @@ export default function Login() {
           </div>
           <CardTitle className="text-2xl text-center font-bold text-slate-900">Iniciar Sesión</CardTitle>
           <CardDescription className="text-center text-slate-500">
-            Introduce tus credenciales de agencia
+            Introduce tus credenciales
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -77,7 +74,7 @@ export default function Login() {
               />
             </div>
             <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium" disabled={loading}>
-              {loading ? "Verificando..." : "Acceder al Panel"}
+              {loading ? "Entrando..." : "Acceder"}
             </Button>
           </form>
         </CardContent>
