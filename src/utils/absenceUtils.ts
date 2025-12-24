@@ -1,61 +1,71 @@
+{
+type: uploaded file
+fileName: peypons/timeboxing/Timeboxing-96370ef90368263911fe0d0a05dd6acd091d01ea/src/utils/absenceUtils.ts
+fullContent:
 import { Absence, WorkSchedule } from '@/types';
+import { eachDayOfInterval, getDay, parseISO, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 
-export function getAbsenceHoursInRange(
-  startDate: Date,
-  endDate: Date,
+const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+export const getAbsenceHoursInRange = (
+  start: Date,
+  end: Date,
   absences: Absence[],
-  workSchedule: WorkSchedule
-): number {
-  const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-  let totalAbsenceHours = 0;
+  schedule: WorkSchedule
+): number => {
+  let totalHours = 0;
+  
+  // Normalizamos el rango de consulta al inicio y fin del día local para comparaciones precisas
+  const rangeStart = startOfDay(start);
+  const rangeEnd = endOfDay(end);
 
   absences.forEach(absence => {
-    const absenceStart = new Date(absence.startDate);
-    const absenceEnd = new Date(absence.endDate);
-    
-    // Find overlap between absence and the date range
-    const overlapStart = absenceStart > startDate ? absenceStart : startDate;
-    const overlapEnd = absenceEnd < endDate ? absenceEnd : endDate;
-    
-    if (overlapStart > overlapEnd) return; // No overlap
-    
-    const current = new Date(overlapStart);
-    current.setHours(0, 0, 0, 0);
-    const end = new Date(overlapEnd);
-    end.setHours(23, 59, 59, 999);
-    
-    while (current <= end) {
-      const dayOfWeek = current.getDay();
-      const dayKey = dayKeys[dayOfWeek];
-      const hoursForDay = workSchedule[dayKey];
-      
-      if (hoursForDay > 0) {
-        totalAbsenceHours += hoursForDay;
-      }
-      
-      current.setDate(current.getDate() + 1);
+    try {
+        // Usamos parseISO para manejar correctamente strings 'YYYY-MM-DD' y normalizamos al inicio del día
+        const absStart = startOfDay(parseISO(absence.startDate));
+        const absEnd = startOfDay(parseISO(absence.endDate));
+
+        // Validación básica para evitar errores con fechas inválidas
+        if (isNaN(absStart.getTime()) || isNaN(absEnd.getTime()) || absStart > absEnd) {
+            return;
+        }
+
+        const days = eachDayOfInterval({ start: absStart, end: absEnd });
+
+        days.forEach(day => {
+            // Verificamos si el día cae dentro del rango consultado (inclusive)
+            if (isWithinInterval(day, { start: rangeStart, end: rangeEnd })) {
+                const dayIndex = getDay(day);
+                const dayName = DAY_KEYS[dayIndex];
+                // Obtenemos las horas programadas para ese día de la semana
+                const scheduledHours = schedule ? (schedule[dayName] || 0) : 0;
+
+                // Solo calculamos reducción si es un día laborable para el empleado
+                if (scheduledHours > 0) {
+                    let reduction = 0;
+                    
+                    // Convertimos explícitamente a número para evitar problemas de tipos
+                    const absenceHours = Number(absence.hours);
+                    
+                    // LÓGICA CORREGIDA:
+                    // Si existe un valor de horas válido y mayor a 0, aplicamos esa cantidad (topeada por el horario diario).
+                    // Si absence.hours es undefined, null, o 0, asumimos que es ausencia de DÍA COMPLETO.
+                    if (!isNaN(absenceHours) && absenceHours > 0) {
+                        reduction = Math.min(absenceHours, scheduledHours);
+                    } else {
+                        reduction = scheduledHours;
+                    }
+                    
+                    totalHours += reduction;
+                }
+            }
+        });
+    } catch (e) {
+        // Prevenir rotura de la UI si hay datos corruptos
+        console.warn("Error procesando ausencia:", absence, e);
     }
   });
 
-  return totalAbsenceHours;
-}
-
-export function getAbsenceTypeLabel(type: Absence['type']): string {
-  const labels: Record<Absence['type'], string> = {
-    vacation: 'Vacaciones',
-    sick: 'Enfermedad',
-    personal: 'Personal',
-    other: 'Otro',
-  };
-  return labels[type];
-}
-
-export function getAbsenceTypeColor(type: Absence['type']): string {
-  const colors: Record<Absence['type'], string> = {
-    vacation: 'bg-blue-500',
-    sick: 'bg-red-500',
-    personal: 'bg-amber-500',
-    other: 'bg-gray-500',
-  };
-  return colors[type];
+  return totalHours;
+};
 }
