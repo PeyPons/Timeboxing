@@ -8,7 +8,7 @@ import { format, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CheckCircle, TrendingUp, TrendingDown, Calendar, PieChart, Briefcase, AlertTriangle, Users, Target } from 'lucide-react';
 import { getWeeksForMonth } from '@/utils/dateUtils';
-import { cn } from '@/lib/utils';
+import { cn, formatProjectName } from '@/lib/utils';
 
 interface MyWeekViewProps {
   employeeId: string;
@@ -202,9 +202,9 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                           
                           {/* CABECERA PROYECTO */}
                           <div className="p-4 pb-3 border-b border-slate-100 bg-white">
-                              <div className="flex justify-between items-start mb-1">
-                                  <h3 className="text-lg font-bold text-slate-900 leading-tight truncate pr-2" title={group.projectName}>
-                                      {group.projectName}
+                              <div className="flex justify-between items-start mb-1 gap-2">
+                                  <h3 className="text-lg font-bold text-slate-900 leading-tight truncate" title={group.projectName}>
+                                      {formatProjectName(group.projectName)}
                                   </h3>
                                   <Tooltip>
                                     <TooltipTrigger>
@@ -241,37 +241,42 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                                   </Tooltip>
                               </div>
                               
-                              <div className="flex items-center justify-between mt-2">
+                              {/* Fila inferior con altura fija */}
+                              <div className="flex items-center justify-between mt-2 h-5">
                                   <div className="flex items-center gap-2 text-xs text-slate-500">
                                       <span className="w-2 h-2 rounded-full bg-slate-300"></span>
                                       <span className="truncate max-w-[100px]">{group.clientName}</span>
                                   </div>
                                   
-                                  {/* Team members indicator */}
-                                  {group.teamMembers.length > 0 && (
-                                    <Tooltip>
-                                      <TooltipTrigger>
-                                        <div className="flex items-center gap-1 text-[10px] text-slate-500 cursor-help">
-                                          <Users className="w-3 h-3" />
-                                          <span>+{group.teamMembers.length}</span>
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="top">
-                                        <p className="text-xs font-medium mb-1">Otros en este proyecto:</p>
-                                        {group.teamMembers.map(m => (
-                                          <p key={m.name} className="text-xs text-slate-500">
-                                            {m.name}: {m.hours.toFixed(1)}h
-                                          </p>
-                                        ))}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-                                  
-                                  {group.blockingCount > 0 && (
-                                      <span className="text-[10px] text-red-600 flex items-center gap-1 font-bold animate-pulse">
-                                          <AlertTriangle className="w-3 h-3"/> Bloqueando {group.blockingCount}
-                                      </span>
-                                  )}
+                                  <div className="flex items-center gap-3">
+                                    {/* Team members indicator - siempre ocupa espacio */}
+                                    {group.teamMembers.length > 0 ? (
+                                      <Tooltip>
+                                        <TooltipTrigger>
+                                          <div className="flex items-center gap-1 text-[10px] text-slate-500 cursor-help">
+                                            <Users className="w-3 h-3" />
+                                            <span>+{group.teamMembers.length}</span>
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">
+                                          <p className="text-xs font-medium mb-1">Otros en este proyecto:</p>
+                                          {group.teamMembers.map(m => (
+                                            <p key={m.name} className="text-xs text-slate-500">
+                                              {m.name}: {m.hours.toFixed(1)}h
+                                            </p>
+                                          ))}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    ) : (
+                                      <div className="w-8" /> 
+                                    )}
+                                    
+                                    {group.blockingCount > 0 && (
+                                        <span className="text-[10px] text-red-600 flex items-center gap-1 font-bold animate-pulse">
+                                            <AlertTriangle className="w-3 h-3"/> Bloqueando {group.blockingCount}
+                                        </span>
+                                    )}
+                                  </div>
                               </div>
                           </div>
                           
