@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { format, startOfWeek, addDays, isSameWeek, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Clock, CheckCircle2, Briefcase, AlertCircle, PlusCircle, Save } from 'lucide-react';
+import { Clock, CheckCircle2, Briefcase, AlertCircle, PlusCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -31,11 +31,9 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
   const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
   const weekLabel = `Semana del ${format(startOfCurrentWeek, 'd MMM', { locale: es })} al ${format(addDays(startOfCurrentWeek, 4), 'd MMM', { locale: es })}`;
   
-  // Datos del empleado para capacidad
   const me = employees.find(e => e.id === employeeId);
   const weeklyCapacity = me?.defaultWeeklyCapacity || 40;
 
-  // Filtramos las allocations de ESTA semana
   const myAllocations = allocations.filter(a => 
     a.employeeId === employeeId && 
     (a.status === 'planned' || a.status === 'active' || a.status === 'completed') &&
@@ -44,20 +42,16 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
 
   const [editingValues, setEditingValues] = useState<Record<string, string>>({});
 
-  // --- ESTADOS TAREA EXTRA ---
   const [isAddingExtra, setIsAddingExtra] = useState(false);
   const [extraTaskName, setExtraTaskName] = useState('');
-  const [extraEstimated, setExtraEstimated] = useState('1'); // Estimado manual
-  const [extraReal, setExtraReal] = useState('0'); // Real manual
+  const [extraEstimated, setExtraEstimated] = useState('1'); 
+  const [extraReal, setExtraReal] = useState('0');
 
-  // --- BUSCAR PROYECTO INTERNO AUTOMÁTICAMENTE ---
   const internalProject = useMemo(() => {
-      // Busca un proyecto que se llame "Interno", "Gestión", "General", etc.
       return projects.find(p => 
           p.name.toLowerCase().includes('interno') || 
-          p.name.toLowerCase().includes('gestión') ||
-          p.name.toLowerCase().includes('general')
-      ) || projects[0]; // Fallback al primero si no hay ninguno específico
+          p.name.toLowerCase().includes('gestión')
+      ) || projects[0]; 
   }, [projects]);
 
   const handleUpdateHours = async (allocation: any, newValue: string) => {
@@ -90,17 +84,20 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
           return;
       }
       if (!internalProject) {
-          toast.error("No hay proyectos disponibles para asignar.");
+          toast.error("No hay proyectos disponibles.");
           return;
       }
 
       try {
+          // CORRECCIÓN CLAVE: Formato de fecha exacto para la DB (YYYY-MM-DD)
+          const formattedDate = format(startOfCurrentWeek, 'yyyy-MM-dd');
+
           await addAllocation({
               projectId: internalProject.id,
               employeeId: employeeId,
-              weekStartDate: startOfCurrentWeek.toISOString(),
-              hoursAssigned: Number(extraEstimated), // Usuario define estimado
-              hoursActual: Number(extraReal),       // Usuario define real inicial
+              weekStartDate: formattedDate,
+              hoursAssigned: Number(extraEstimated), 
+              hoursActual: Number(extraReal),       
               hoursComputed: 0,
               taskName: extraTaskName,
               status: 'active',
@@ -117,16 +114,14 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       }
   };
 
-  // Cálculos totales para el Header
   const totalAssigned = myAllocations.reduce((acc, curr) => acc + Number(curr.hoursAssigned), 0);
   const totalDone = myAllocations.reduce((acc, curr) => acc + Number(curr.hoursActual || 0), 0);
-  // Progreso real vs asignado
   const totalProgress = totalAssigned > 0 ? Math.min(100, (totalDone / totalAssigned) * 100) : 0;
 
   return (
     <div className="space-y-8">
       
-      {/* 1. MÓDULO DE RESUMEN (HEADER RESTAURADO) */}
+      {/* 1. HEADER RESUMEN */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b pb-6">
         <div>
             <h2 className="text-2xl font-bold text-slate-900">Mis Tareas</h2>
@@ -135,7 +130,6 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
             </p>
         </div>
         
-        {/* Tarjeta de Resumen de Carga */}
         <div className="flex items-center gap-6 bg-white p-4 rounded-xl border shadow-sm w-full md:w-auto">
             <div className="text-center">
                 <div className="text-xs text-slate-400 uppercase font-semibold">Capacidad</div>
@@ -157,7 +151,6 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                 <Progress value={totalProgress} className="h-2" />
             </div>
 
-            {/* BOTÓN TAREA EXTRA */}
             <div className="border-l pl-4 ml-2">
                 <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
                     <DialogTrigger asChild>
@@ -169,37 +162,22 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                         <DialogHeader>
                             <DialogTitle>Fichar Tarea Interna</DialogTitle>
                             <DialogDescription>
-                                Se asignará automáticamente al proyecto <strong>{internalProject?.name}</strong>.
+                                Se asignará a <strong>{internalProject?.name}</strong> en la semana actual.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-4 py-4">
                             <div className="space-y-2">
                                 <Label>Nombre de la Tarea</Label>
-                                <Input 
-                                    placeholder="Ej: Reunión imprevista, Gestión emails..." 
-                                    value={extraTaskName} 
-                                    onChange={e => setExtraTaskName(e.target.value)} 
-                                    autoFocus
-                                />
+                                <Input value={extraTaskName} onChange={e => setExtraTaskName(e.target.value)} autoFocus />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label>Horas Estimadas</Label>
-                                    <Input 
-                                        type="number" 
-                                        step="0.5" 
-                                        value={extraEstimated} 
-                                        onChange={e => setExtraEstimated(e.target.value)} 
-                                    />
+                                    <Input type="number" step="0.5" value={extraEstimated} onChange={e => setExtraEstimated(e.target.value)} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label>Horas Reales (Ya hechas)</Label>
-                                    <Input 
-                                        type="number" 
-                                        step="0.5" 
-                                        value={extraReal} 
-                                        onChange={e => setExtraReal(e.target.value)} 
-                                    />
+                                    <Label>Horas Reales</Label>
+                                    <Input type="number" step="0.5" value={extraReal} onChange={e => setExtraReal(e.target.value)} />
                                 </div>
                             </div>
                         </div>
@@ -213,13 +191,11 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
         </div>
       </div>
 
-      {/* 2. GRID DE TARJETAS (VISTA RESTAURADA) */}
+      {/* 2. TARJETAS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {myAllocations.length === 0 ? (
             <div className="col-span-full py-16 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                <Briefcase className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-                <h3 className="text-lg font-medium text-slate-600">Semana libre</h3>
-                <p className="text-slate-400 max-w-sm mx-auto mt-1">No tienes tareas asignadas en el planificador para esta semana.</p>
+                <div className="text-slate-400">No hay tareas para esta semana.</div>
             </div>
         ) : (
             myAllocations.map(task => {
@@ -230,41 +206,29 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                     : (task.hoursActual || 0) > 0 ? 100 : 0;
                 
                 const isOverBudget = (task.hoursActual || 0) > task.hoursAssigned;
-                const isExtra = task.description?.includes('manualmente'); // Detectar si es extra por descripción o lógica
+                const isExtra = task.description?.includes('manualmente');
 
                 return (
-                    <Card key={task.id} className={`flex flex-col hover:border-indigo-300 transition-all shadow-sm hover:shadow-md group ${isExtra ? 'border-amber-200 bg-amber-50/20' : ''}`}>
+                    <Card key={task.id} className={`flex flex-col hover:border-indigo-300 transition-all shadow-sm ${isExtra ? 'border-amber-200 bg-amber-50/20' : ''}`}>
                         <CardHeader className="pb-3">
                             <div className="flex justify-between items-start">
                                 <Badge variant="outline" className="mb-2 bg-slate-50 text-slate-500 border-slate-200">
                                     {client?.name || 'Interno'}
                                 </Badge>
-                                {isOverBudget && (
-                                    <span className="text-[10px] text-red-500 flex items-center font-medium bg-red-50 px-2 py-0.5 rounded-full">
-                                        <AlertCircle className="w-3 h-3 mr-1"/> Excedido
-                                    </span>
-                                )}
-                                {isExtra && !isOverBudget && (
-                                    <Badge variant="secondary" className="text-[9px] bg-amber-100 text-amber-700 hover:bg-amber-100">Extra</Badge>
-                                )}
+                                {isExtra && <Badge variant="secondary" className="text-[9px] bg-amber-100 text-amber-800">Extra</Badge>}
                             </div>
-                            <CardTitle className="text-lg leading-tight text-slate-800 line-clamp-1" title={project?.name}>
+                            <CardTitle className="text-lg leading-tight text-slate-800 truncate" title={project?.name}>
                                 {project?.name}
                             </CardTitle>
                         </CardHeader>
-                        
                         <CardContent className="flex-1 flex flex-col gap-4">
-                            {/* Descripción de la tarea */}
-                            <div className="flex-1 bg-slate-50 p-3 rounded-lg text-sm text-slate-600 italic border border-slate-100 min-h-[60px]">
+                            <div className="flex-1 bg-slate-50 p-3 rounded-lg text-sm text-slate-600 border border-slate-100 min-h-[60px]">
                                 {task.taskName || "Asignación general."}
                             </div>
-
-                            {/* Control de Progreso */}
                             <div className="space-y-3 pt-2 border-t border-slate-100">
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="font-medium text-slate-700">Horas Reales</span>
                                     <div className="flex items-baseline gap-1">
-                                        {/* Input editable para horas reales */}
                                         <div className="relative w-20">
                                             <Input 
                                                 type="number" 
@@ -275,20 +239,10 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                                             />
                                             <span className="absolute right-2 top-2 text-xs text-slate-400">h</span>
                                         </div>
-                                        <span className="text-slate-400 text-xs ml-1">/ {task.hoursAssigned}h Planif.</span>
+                                        <span className="text-slate-400 text-xs ml-1">/ {task.hoursAssigned}h</span>
                                     </div>
                                 </div>
-                                
-                                <Progress 
-                                    value={percent} 
-                                    className={`h-2.5 ${isOverBudget ? '[&>div]:bg-red-500' : percent >= 100 ? '[&>div]:bg-emerald-500' : '[&>div]:bg-indigo-600'}`} 
-                                />
-                                
-                                {percent >= 100 && !isOverBudget && (
-                                    <div className="flex items-center justify-center gap-1 text-xs text-emerald-600 font-medium bg-emerald-50 py-1 rounded">
-                                        <CheckCircle2 className="w-3 h-3"/> Completado
-                                    </div>
-                                )}
+                                <Progress value={percent} className={`h-2.5 ${isOverBudget ? '[&>div]:bg-red-500' : '[&>div]:bg-indigo-600'}`} />
                             </div>
                         </CardContent>
                     </Card>
