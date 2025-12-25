@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { 
   X, ChevronLeft, ChevronRight, ListPlus, Clock, Calendar, 
   TrendingUp, Users, LayoutDashboard, Target, Sparkles, 
-  CheckCircle2, AlertOctagon, MousePointerClick
+  CheckCircle2, AlertOctagon, MousePointerClick, Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -18,6 +18,7 @@ interface TourStep {
   icon: React.ReactNode;
   position: 'top' | 'bottom' | 'left' | 'right' | 'center';
   highlight?: boolean;
+  customContent?: boolean;
 }
 
 const tourSteps: TourStep[] = [
@@ -71,7 +72,7 @@ const tourSteps: TourStep[] = [
     title: 'Tu Calendario',
     description: 'Vista mensual de tu carga de trabajo. Los colores indican tu ocupación: verde (OK), amarillo (casi lleno), rojo (sobrecargado). Haz clic en cualquier semana para ver los detalles.',
     icon: <LayoutDashboard className="w-6 h-6 text-blue-500" />,
-    position: 'top',
+    position: 'bottom',
     highlight: true
   },
   {
@@ -89,7 +90,7 @@ const tourSteps: TourStep[] = [
     title: 'Estado de Dependencias',
     description: 'Ve quién espera por ti y por quién estás esperando. Las dependencias en verde ya están listas para que empieces.',
     icon: <Users className="w-6 h-6 text-indigo-500" />,
-    position: 'left',
+    position: 'top',
     highlight: true
   },
   {
@@ -104,10 +105,11 @@ const tourSteps: TourStep[] = [
   {
     id: 'finish',
     target: 'body',
-    title: '¡Listo para empezar! 🚀',
-    description: 'Ya conoces lo básico. Recuerda: marca las tareas como completadas y añade las horas reales para que los reportes sean precisos. ¡A por ello!',
+    title: '¡A por ello! 💪',
+    description: '',
     icon: <CheckCircle2 className="w-6 h-6 text-emerald-500" />,
-    position: 'center'
+    position: 'center',
+    customContent: true
   }
 ];
 
@@ -310,9 +312,45 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
 
         {/* Contenido */}
         <div className="p-5">
-          <p className="text-sm text-slate-600 leading-relaxed">
-            {step.description}
-          </p>
+          {step.customContent ? (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Ya conoces lo básico. Ahora, un consejo clave:
+              </p>
+              
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">
+                <p className="text-sm font-medium text-indigo-900 mb-3">
+                  📊 Registra tus horas <strong>reales</strong> y <strong>computadas</strong> con precisión:
+                </p>
+                <ul className="space-y-2 text-xs text-slate-600">
+                  <li className="flex items-start gap-2">
+                    <TrendingUp className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                    <span><strong>Mejora tus estimaciones</strong> con el tiempo</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Users className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                    <span><strong>Demuestra tu aportación</strong> a cada proyecto</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Target className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
+                    <span><strong>Identifica dónde optimizar</strong> tu tiempo</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Zap className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                    <span><strong>Crece como profesional</strong> midiendo tu eficiencia</span>
+                  </li>
+                </ul>
+              </div>
+              
+              <p className="text-xs text-center text-slate-500 italic">
+                La diferencia entre "Real" y "Computada" es tu ganancia de eficiencia. ¡Hazla crecer!
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600 leading-relaxed">
+              {step.description}
+            </p>
+          )}
 
           {/* Indicador de interacción */}
           {step.highlight && (
