@@ -23,7 +23,7 @@ import {
 import { 
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator 
 } from "@/components/ui/dropdown-menu";
-import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, Clock, Plus, X, Check, ListPlus, AlertTriangle, CheckCircle2, HelpCircle, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, Clock, Plus, X, Check, ListPlus, AlertTriangle, CheckCircle2, HelpCircle, RotateCcw, FileDown } from 'lucide-react';
 import { startOfMonth, endOfMonth, max, min, format, startOfWeek, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Employee, Project } from '@/types';
@@ -302,6 +302,65 @@ export default function EmployeeDashboard() {
     }
   };
 
+  // Función para exportar tareas a CSV para el CRM
+  const handleExportCRM = () => {
+    if (!myEmployeeProfile || !myEmployeeProfile.crmUserId) {
+      toast.error("Configura tu ID de usuario del CRM en tu perfil");
+      return;
+    }
+
+    // Obtener todas las tareas pendientes del mes actual
+    const myPendingTasks = allocations.filter(a => 
+      a.employeeId === myEmployeeProfile.id && 
+      a.status !== 'completed' &&
+      isSameMonth(parseISO(a.weekStartDate), currentMonth)
+    );
+
+    if (myPendingTasks.length === 0) {
+      toast.error("No hay tareas pendientes para exportar este mes");
+      return;
+    }
+
+    // Generar las filas del CSV
+    const csvRows: string[] = [];
+    
+    // Cabecera (sin la línea de cabecera porque el CRM no la necesita según el ejemplo)
+    // El formato es: Nombre Tarea,Número de usuario,project,Número de proyecto,Tiempo estimado con punto
+    
+    myPendingTasks.forEach(task => {
+      const project = projects.find(p => p.id === task.projectId);
+      if (project && project.externalId) {
+        const taskName = (task.taskName || 'Tarea').replace(/,/g, ' ').replace(/;/g, ' '); // Limpiar comas y punto y coma
+        const userId = myEmployeeProfile.crmUserId;
+        const projectId = project.externalId;
+        const hours = task.hoursAssigned;
+        
+        csvRows.push(`${taskName},${userId},project,${projectId},${hours}`);
+      }
+    });
+
+    if (csvRows.length === 0) {
+      toast.error("Ninguna tarea tiene un proyecto con ID externo configurado");
+      return;
+    }
+
+    // Crear el CSV con cabecera
+    const csvContent = "Nombre Tarea,Número de usuario,project,Número de proyecto,Tiempo estimado con punto\n" + csvRows.join("\n");
+    
+    // Descargar el archivo
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `tareas_crm_${format(currentMonth, 'yyyy-MM')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success(`${csvRows.length} tareas exportadas para el CRM`);
+  };
+
   // Calcular impacto de las tareas nuevas
   const tasksImpact = useMemo(() => {
     if (!myEmployeeProfile) return { projects: [], weeks: [] };
@@ -414,6 +473,17 @@ export default function EmployeeDashboard() {
               data-tour="add-tasks"
             >
               <ListPlus className="h-4 w-4" /> Añadir Tareas
+            </Button>
+
+            {/* BOTÓN EXPORTAR CRM */}
+            <Button 
+              onClick={handleExportCRM}
+              variant="outline"
+              className="gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
+              disabled={!myEmployeeProfile?.crmUserId}
+              title={!myEmployeeProfile?.crmUserId ? "Configura tu ID de CRM en el perfil" : "Exportar tareas al CRM"}
+            >
+              <FileDown className="h-4 w-4" /> Tareas CRM
             </Button>
 
             {/* BOTÓN GESTIÓN INTERNA */}
