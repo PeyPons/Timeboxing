@@ -1,0 +1,411 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { 
+  X, ChevronLeft, ChevronRight, ListPlus, Clock, Calendar, 
+  TrendingUp, Users, LayoutDashboard, Target, Sparkles, 
+  CheckCircle2, AlertOctagon, MousePointerClick
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const TOUR_STORAGE_KEY = 'timeboxing_welcome_tour_completed';
+
+interface TourStep {
+  id: string;
+  target: string; // CSS selector o ID
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  position: 'top' | 'bottom' | 'left' | 'right' | 'center';
+  highlight?: boolean;
+}
+
+const tourSteps: TourStep[] = [
+  {
+    id: 'welcome',
+    target: 'body',
+    title: '¡Bienvenido a Timeboxing! 🎉',
+    description: 'Este es tu panel de control personal. Te guiaremos por las funciones principales para que empieces con buen pie.',
+    icon: <Sparkles className="w-6 h-6 text-indigo-500" />,
+    position: 'center'
+  },
+  {
+    id: 'add-tasks',
+    target: '[data-tour="add-tasks"]',
+    title: 'Añadir Tareas',
+    description: 'Aquí puedes planificar tu trabajo. Añade múltiples tareas a la vez, selecciona el proyecto, las horas y la semana. Verás alertas si te pasas del presupuesto.',
+    icon: <ListPlus className="w-6 h-6 text-indigo-500" />,
+    position: 'bottom',
+    highlight: true
+  },
+  {
+    id: 'internal-tasks',
+    target: '[data-tour="internal-tasks"]',
+    title: 'Gestión Interna',
+    description: 'Reuniones, formaciones, deadlines... Todo el tiempo que no está asociado a un cliente va aquí. Se registra automáticamente como completado.',
+    icon: <Clock className="w-6 h-6 text-slate-500" />,
+    position: 'bottom',
+    highlight: true
+  },
+  {
+    id: 'goals',
+    target: '[data-tour="goals"]',
+    title: 'Tus Objetivos',
+    description: 'Aquí puedes ver y gestionar tus objetivos profesionales (OKRs). Mantén el foco en lo que importa.',
+    icon: <TrendingUp className="w-6 h-6 text-emerald-500" />,
+    position: 'bottom',
+    highlight: true
+  },
+  {
+    id: 'absences',
+    target: '[data-tour="absences"]',
+    title: 'Ausencias',
+    description: 'Solicita vacaciones, bajas o cualquier tipo de ausencia. Tu capacidad se ajustará automáticamente.',
+    icon: <Calendar className="w-6 h-6 text-amber-500" />,
+    position: 'bottom',
+    highlight: true
+  },
+  {
+    id: 'calendar',
+    target: '[data-tour="calendar"]',
+    title: 'Tu Calendario',
+    description: 'Vista mensual de tu carga de trabajo. Los colores indican tu ocupación: verde (OK), amarillo (casi lleno), rojo (sobrecargado). Haz clic en cualquier semana para ver los detalles.',
+    icon: <LayoutDashboard className="w-6 h-6 text-blue-500" />,
+    position: 'top',
+    highlight: true
+  },
+  {
+    id: 'priority-widget',
+    target: '[data-tour="priority-widget"]',
+    title: 'Recomendaciones Inteligentes',
+    description: 'Te avisamos de lo más importante: si estás bloqueando a alguien, tareas casi terminadas, o por dónde empezar. ¡Presta atención a los avisos rojos!',
+    icon: <AlertOctagon className="w-6 h-6 text-red-500" />,
+    position: 'right',
+    highlight: true
+  },
+  {
+    id: 'dependencies-widget',
+    target: '[data-tour="dependencies-widget"]',
+    title: 'Estado de Dependencias',
+    description: 'Ve quién espera por ti y por quién estás esperando. Las dependencias en verde ya están listas para que empieces.',
+    icon: <Users className="w-6 h-6 text-indigo-500" />,
+    position: 'left',
+    highlight: true
+  },
+  {
+    id: 'projects-summary',
+    target: '[data-tour="projects-summary"]',
+    title: 'Resumen de Proyectos',
+    description: 'Todos tus proyectos del mes con las horas asignadas, completadas y el estado del presupuesto.',
+    icon: <Target className="w-6 h-6 text-purple-500" />,
+    position: 'top',
+    highlight: true
+  },
+  {
+    id: 'finish',
+    target: 'body',
+    title: '¡Listo para empezar! 🚀',
+    description: 'Ya conoces lo básico. Recuerda: marca las tareas como completadas y añade las horas reales para que los reportes sean precisos. ¡A por ello!',
+    icon: <CheckCircle2 className="w-6 h-6 text-emerald-500" />,
+    position: 'center'
+  }
+];
+
+interface WelcomeTourProps {
+  onComplete?: () => void;
+  forceShow?: boolean;
+}
+
+export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
+
+  // Verificar si debe mostrarse
+  useEffect(() => {
+    if (forceShow) {
+      setIsVisible(true);
+      setCurrentStep(0);
+      return;
+    }
+
+    const completed = localStorage.getItem(TOUR_STORAGE_KEY);
+    if (!completed) {
+      // Pequeño delay para que el DOM esté listo
+      const timer = setTimeout(() => setIsVisible(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [forceShow]);
+
+  // Actualizar highlight cuando cambia el paso
+  useEffect(() => {
+    if (!isVisible) return;
+
+    const step = tourSteps[currentStep];
+    if (step.position === 'center' || !step.highlight) {
+      setHighlightRect(null);
+      return;
+    }
+
+    const element = document.querySelector(step.target);
+    if (element) {
+      const rect = element.getBoundingClientRect();
+      setHighlightRect(rect);
+      
+      // Scroll suave al elemento
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      setHighlightRect(null);
+    }
+  }, [currentStep, isVisible]);
+
+  const handleNext = useCallback(() => {
+    if (currentStep < tourSteps.length - 1) {
+      setCurrentStep(prev => prev + 1);
+    } else {
+      handleComplete();
+    }
+  }, [currentStep]);
+
+  const handlePrev = useCallback(() => {
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1);
+    }
+  }, [currentStep]);
+
+  const handleComplete = useCallback(() => {
+    localStorage.setItem(TOUR_STORAGE_KEY, 'true');
+    setIsVisible(false);
+    onComplete?.();
+  }, [onComplete]);
+
+  const handleSkip = useCallback(() => {
+    handleComplete();
+  }, [handleComplete]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (!isVisible) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'Enter') handleNext();
+      if (e.key === 'ArrowLeft') handlePrev();
+      if (e.key === 'Escape') handleSkip();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isVisible, handleNext, handlePrev, handleSkip]);
+
+  if (!isVisible) return null;
+
+  const step = tourSteps[currentStep];
+  const isFirstStep = currentStep === 0;
+  const isLastStep = currentStep === tourSteps.length - 1;
+  const isCentered = step.position === 'center';
+
+  // Calcular posición del tooltip
+  const getTooltipStyle = (): React.CSSProperties => {
+    if (isCentered || !highlightRect) {
+      return {
+        position: 'fixed',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)'
+      };
+    }
+
+    const padding = 16;
+    const tooltipWidth = 380;
+    const tooltipHeight = 250;
+
+    let top = 0;
+    let left = 0;
+
+    switch (step.position) {
+      case 'bottom':
+        top = highlightRect.bottom + padding;
+        left = highlightRect.left + highlightRect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'top':
+        top = highlightRect.top - tooltipHeight - padding;
+        left = highlightRect.left + highlightRect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'left':
+        top = highlightRect.top + highlightRect.height / 2 - tooltipHeight / 2;
+        left = highlightRect.left - tooltipWidth - padding;
+        break;
+      case 'right':
+        top = highlightRect.top + highlightRect.height / 2 - tooltipHeight / 2;
+        left = highlightRect.right + padding;
+        break;
+    }
+
+    // Mantener dentro de la pantalla
+    left = Math.max(padding, Math.min(left, window.innerWidth - tooltipWidth - padding));
+    top = Math.max(padding, Math.min(top, window.innerHeight - tooltipHeight - padding));
+
+    return {
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`
+    };
+  };
+
+  return (
+    <>
+      {/* Overlay oscuro */}
+      <div 
+        className="fixed inset-0 bg-black/60 z-[9998] transition-opacity duration-300"
+        onClick={handleSkip}
+      />
+
+      {/* Highlight del elemento actual */}
+      {highlightRect && (
+        <div
+          className="fixed z-[9999] pointer-events-none transition-all duration-300 ease-out"
+          style={{
+            top: highlightRect.top - 8,
+            left: highlightRect.left - 8,
+            width: highlightRect.width + 16,
+            height: highlightRect.height + 16,
+            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
+            borderRadius: '12px',
+            border: '2px solid #6366f1',
+            background: 'transparent'
+          }}
+        >
+          {/* Pulso animado */}
+          <div className="absolute inset-0 rounded-xl border-2 border-indigo-400 animate-ping opacity-50" />
+        </div>
+      )}
+
+      {/* Tooltip/Card del paso actual */}
+      <Card 
+        className="fixed z-[10000] w-[380px] shadow-2xl border-0 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
+        style={getTooltipStyle()}
+      >
+        {/* Header con gradiente */}
+        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                {step.icon}
+              </div>
+              <div>
+                <h3 className="font-bold text-lg">{step.title}</h3>
+                <p className="text-xs text-white/70">Paso {currentStep + 1} de {tourSteps.length}</p>
+              </div>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="text-white/70 hover:text-white hover:bg-white/20 h-8 w-8"
+              onClick={handleSkip}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Contenido */}
+        <div className="p-5">
+          <p className="text-sm text-slate-600 leading-relaxed">
+            {step.description}
+          </p>
+
+          {/* Indicador de interacción */}
+          {step.highlight && (
+            <div className="flex items-center gap-2 mt-3 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg">
+              <MousePointerClick className="w-4 h-4" />
+              <span>Elemento resaltado arriba</span>
+            </div>
+          )}
+        </div>
+
+        {/* Footer con navegación */}
+        <div className="px-5 pb-5">
+          {/* Progress dots */}
+          <div className="flex justify-center gap-1.5 mb-4">
+            {tourSteps.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => setCurrentStep(index)}
+                className={cn(
+                  "w-2 h-2 rounded-full transition-all duration-200",
+                  index === currentStep 
+                    ? "bg-indigo-500 w-6" 
+                    : index < currentStep
+                      ? "bg-indigo-300"
+                      : "bg-slate-200"
+                )}
+              />
+            ))}
+          </div>
+
+          {/* Botones */}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSkip}
+              className="text-slate-400 hover:text-slate-600"
+            >
+              Saltar tour
+            </Button>
+
+            <div className="flex gap-2">
+              {!isFirstStep && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePrev}
+                  className="gap-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Anterior
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={handleNext}
+                className="gap-1 bg-indigo-600 hover:bg-indigo-700"
+              >
+                {isLastStep ? (
+                  <>
+                    ¡Empezar!
+                    <CheckCircle2 className="w-4 h-4" />
+                  </>
+                ) : (
+                  <>
+                    Siguiente
+                    <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+    </>
+  );
+}
+
+// Hook para controlar el tour desde fuera
+export function useWelcomeTour() {
+  const [showTour, setShowTour] = useState(false);
+
+  const startTour = () => setShowTour(true);
+  const endTour = () => setShowTour(false);
+  
+  const resetTour = () => {
+    localStorage.removeItem(TOUR_STORAGE_KEY);
+    setShowTour(true);
+  };
+
+  const isTourCompleted = () => {
+    return localStorage.getItem(TOUR_STORAGE_KEY) === 'true';
+  };
+
+  return { showTour, startTour, endTour, resetTour, isTourCompleted };
+}
