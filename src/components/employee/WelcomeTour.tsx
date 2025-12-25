@@ -121,8 +121,9 @@ interface WelcomeTourProps {
 export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
-  const [isScrolling, setIsScrolling] = useState(false);
+  const [highlightStyle, setHighlightStyle] = useState<React.CSSProperties | null>(null);
+  const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
+  const [isReady, setIsReady] = useState(false);
 
   // Verificar si debe mostrarse
   useEffect(() => {
@@ -134,76 +135,141 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
 
     const completed = localStorage.getItem(TOUR_STORAGE_KEY);
     if (!completed) {
-      // Pequeño delay para que el DOM esté listo
       const timer = setTimeout(() => setIsVisible(true), 500);
       return () => clearTimeout(timer);
     }
   }, [forceShow]);
 
-  // Bloquear scroll del usuario durante el tour
-  useEffect(() => {
-    if (isVisible) {
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = '';
-      };
-    }
-  }, [isVisible]);
-
-  // Actualizar highlight cuando cambia el paso
-  useEffect(() => {
-    if (!isVisible) return;
-
+  // Función para calcular posiciones
+  const calculatePositions = useCallback(() => {
     const step = tourSteps[currentStep];
+    
     if (step.position === 'center' || !step.highlight) {
-      setHighlightRect(null);
+      setHighlightStyle(null);
+      setTooltipStyle({
+        position: 'fixed',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        zIndex: 10000
+      });
+      setIsReady(true);
       return;
     }
 
-    const updateHighlight = () => {
-      const element = document.querySelector(step.target);
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        setHighlightRect(rect);
-      } else {
-        setHighlightRect(null);
-      }
-    };
-
     const element = document.querySelector(step.target);
-    if (element) {
-      setIsScrolling(true);
-      
-      // Calcular posición para centrar el elemento en pantalla
-      const rect = element.getBoundingClientRect();
-      const elementTop = rect.top + window.scrollY;
-      const elementHeight = rect.height;
-      const windowHeight = window.innerHeight;
-      const scrollTarget = elementTop - (windowHeight / 2) + (elementHeight / 2);
-      
-      // Scroll suave
-      window.scrollTo({
-        top: Math.max(0, scrollTarget - 100), // 100px de margen arriba
-        behavior: 'smooth'
+    if (!element) {
+      setHighlightStyle(null);
+      setTooltipStyle({
+        position: 'fixed',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        zIndex: 10000
       });
-
-      // Esperar a que termine el scroll y actualizar posición
-      setTimeout(() => {
-        updateHighlight();
-        setIsScrolling(false);
-      }, 400);
-    } else {
-      setHighlightRect(null);
+      setIsReady(true);
+      return;
     }
 
-    // Actualizar en resize
-    const handleResize = () => updateHighlight();
-    window.addEventListener('resize', handleResize);
+    // Obtener posición actual del elemento
+    const rect = element.getBoundingClientRect();
     
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [currentStep, isVisible]);
+    // Highlight
+    const padding = 8;
+    setHighlightStyle({
+      position: 'fixed',
+      top: rect.top - padding,
+      left: rect.left - padding,
+      width: rect.width + padding * 2,
+      height: rect.height + padding * 2,
+      zIndex: 9999
+    });
+
+    // Tooltip
+    const tooltipWidth = 380;
+    const tooltipHeight = 300;
+    const gap = 16;
+    
+    let top = 0;
+    let left = 0;
+
+    switch (step.position) {
+      case 'bottom':
+        top = rect.bottom + gap;
+        left = rect.left + rect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'top':
+        top = rect.top - tooltipHeight - gap;
+        left = rect.left + rect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'left':
+        top = rect.top + rect.height / 2 - tooltipHeight / 2;
+        left = rect.left - tooltipWidth - gap;
+        break;
+      case 'right':
+        top = rect.top + rect.height / 2 - tooltipHeight / 2;
+        left = rect.right + gap;
+        break;
+    }
+
+    // Mantener en pantalla
+    left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
+    top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 16));
+
+    setTooltipStyle({
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`,
+      zIndex: 10000
+    });
+    
+    setIsReady(true);
+  }, [currentStep]);
+
+  // Actualizar posiciones cuando cambia el paso
+  useEffect(() => {
+    if (!isVisible) return;
+
+    setIsReady(false);
+    const step = tourSteps[currentStep];
+
+    if (step.position === 'center' || !step.highlight) {
+      calculatePositions();
+      return;
+    }
+
+    const element = document.querySelector(step.target);
+    if (!element) {
+      calculatePositions();
+      return;
+    }
+
+    // Primero hacer scroll al elemento
+    const rect = element.getBoundingClientRect();
+    const absoluteTop = rect.top + window.scrollY;
+    const targetScroll = absoluteTop - 150; // 150px desde arriba
+    
+    window.scrollTo({
+      top: Math.max(0, targetScroll),
+      behavior: 'smooth'
+    });
+
+    // Esperar a que termine el scroll y luego calcular posiciones
+    const timer = setTimeout(() => {
+      calculatePositions();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [currentStep, isVisible, calculatePositions]);
+
+  // Recalcular en resize
+  useEffect(() => {
+    if (!isVisible) return;
+    
+    const handleResize = () => calculatePositions();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isVisible, calculatePositions]);
 
   const handleNext = useCallback(() => {
     if (currentStep < tourSteps.length - 1) {
@@ -250,89 +316,33 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
   const isLastStep = currentStep === tourSteps.length - 1;
   const isCentered = step.position === 'center';
 
-  // Calcular posición del tooltip
-  const getTooltipStyle = (): React.CSSProperties => {
-    if (isCentered || !highlightRect) {
-      return {
-        position: 'fixed',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)'
-      };
-    }
-
-    const padding = 20;
-    const tooltipWidth = 380;
-    const tooltipHeight = 280;
-
-    let top = 0;
-    let left = 0;
-
-    switch (step.position) {
-      case 'bottom':
-        top = highlightRect.bottom + padding;
-        left = highlightRect.left + highlightRect.width / 2 - tooltipWidth / 2;
-        break;
-      case 'top':
-        top = highlightRect.top - tooltipHeight - padding;
-        left = highlightRect.left + highlightRect.width / 2 - tooltipWidth / 2;
-        break;
-      case 'left':
-        top = highlightRect.top + highlightRect.height / 2 - tooltipHeight / 2;
-        left = highlightRect.left - tooltipWidth - padding;
-        break;
-      case 'right':
-        top = highlightRect.top + highlightRect.height / 2 - tooltipHeight / 2;
-        left = highlightRect.right + padding;
-        break;
-    }
-
-    // Mantener dentro de la pantalla
-    const safeLeft = Math.max(padding, Math.min(left, window.innerWidth - tooltipWidth - padding));
-    const safeTop = Math.max(padding, Math.min(top, window.innerHeight - tooltipHeight - padding));
-
-    return {
-      position: 'fixed',
-      top: `${safeTop}px`,
-      left: `${safeLeft}px`
-    };
-  };
-
   return (
     <>
-      {/* Overlay oscuro - NO hace scroll */}
-      <div 
-        className="fixed inset-0 bg-black/70 z-[9998]"
-        style={{ pointerEvents: 'auto' }}
-      />
+      {/* Overlay oscuro */}
+      <div className="fixed inset-0 bg-black/70 z-[9998]" />
 
-      {/* Highlight del elemento actual usando clip-path */}
-      {highlightRect && !isScrolling && (
-        <>
-          {/* Recorte que muestra solo el elemento */}
-          <div
-            className="fixed z-[9999] pointer-events-none transition-all duration-300 ease-out rounded-xl"
-            style={{
-              top: highlightRect.top - 8,
-              left: highlightRect.left - 8,
-              width: highlightRect.width + 16,
-              height: highlightRect.height + 16,
-              border: '3px solid #6366f1',
-              boxShadow: '0 0 0 4px rgba(99, 102, 241, 0.3), inset 0 0 0 1px rgba(255,255,255,0.5)',
-              background: 'rgba(255, 255, 255, 0.05)'
-            }}
-          >
-            {/* Pulso animado */}
-            <div className="absolute inset-0 rounded-xl border-2 border-indigo-400 animate-ping opacity-30" />
-          </div>
-        </>
+      {/* Highlight del elemento actual */}
+      {highlightStyle && isReady && (
+        <div
+          className="pointer-events-none rounded-xl transition-all duration-300 ease-out"
+          style={{
+            ...highlightStyle,
+            border: '3px solid #6366f1',
+            boxShadow: '0 0 0 4px rgba(99, 102, 241, 0.3), 0 0 20px rgba(99, 102, 241, 0.4)',
+            background: 'rgba(255, 255, 255, 0.1)'
+          }}
+        >
+          {/* Pulso animado */}
+          <div className="absolute inset-0 rounded-xl border-2 border-indigo-400 animate-ping opacity-30" />
+        </div>
       )}
 
       {/* Tooltip/Card del paso actual */}
-      <Card 
-        className="fixed z-[10000] w-[380px] shadow-2xl border-0 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
-        style={getTooltipStyle()}
-      >
+      {isReady && (
+        <Card 
+          className="w-[380px] shadow-2xl border-0 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
+          style={tooltipStyle}
+        >
         {/* Header con gradiente */}
         <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white">
           <div className="flex items-center justify-between">
@@ -471,6 +481,7 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
           </div>
         </div>
       </Card>
+      )}
     </>
   );
 }
