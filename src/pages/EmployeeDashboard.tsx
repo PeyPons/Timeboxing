@@ -375,7 +375,16 @@ export default function EmployeeDashboard() {
   }, [newTasks, projects, weeks, currentMonth, myEmployeeProfile, getEmployeeLoadForWeek]);
 
   const hasAnyExcess = tasksImpact.projects.some(p => p.exceeds) || tasksImpact.weeks.some(w => w.exceeds);
+  const getProjectExceedStatus = (projectId: string): boolean => {
+    const impact = tasksImpact.projects.find(p => p.id === projectId);
+    return impact?.exceeds || false;
+  };
 
+  // Función para verificar si una semana específica tiene exceso  
+  const getWeekExceedStatus = (weekDate: string): boolean => {
+    const impact = tasksImpact.weeks.find(w => w.weekDate === weekDate);
+    return impact?.exceeds || false;
+  };
   const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   const handleToday = () => setCurrentMonth(new Date());
@@ -603,80 +612,134 @@ export default function EmployeeDashboard() {
             
             {/* Filas de tareas */}
             <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-2 -mr-2">
-              {newTasks.map((task) => (
-                <div key={task.id} className="flex gap-2 items-start">
-                  {/* Proyecto */}
-                  <div className="flex-1 min-w-0">
-                    <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal", !task.projectId && "text-muted-foreground")}>
-                          <span className="truncate">{task.projectId ? formatProjectName(activeProjects.find((p) => p.id === task.projectId)?.name || '') : "Seleccionar..."}</span>
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[300px] p-0" align="start">
-                        <Command>
-                          <CommandInput placeholder="Buscar proyecto..." />
-                          <CommandList>
-                            <CommandEmpty>No encontrado.</CommandEmpty>
-                            <CommandGroup className="max-h-[200px] overflow-y-auto">
-                              {activeProjects.map((project) => (
-                                <CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}>
-                                  <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
-                                  {formatProjectName(project.name)}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+              {newTasks.map((task) => {
+                const projectExceeds = task.projectId && getProjectExceedStatus(task.projectId);
+                const weekExceeds = task.weekDate && getWeekExceedStatus(task.weekDate);
+                
+                return (
+                  <div key={task.id} className="flex gap-2 items-start">
+                    {/* Proyecto - con highlight si excede */}
+                    <div className="flex-1 min-w-0">
+                      <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
+                        <PopoverTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            role="combobox" 
+                            className={cn(
+                              "w-full justify-between h-10 px-3 text-left font-normal transition-all",
+                              !task.projectId && "text-muted-foreground",
+                              projectExceeds && "border-amber-400 bg-amber-50 hover:bg-amber-100 ring-2 ring-amber-200"
+                            )}
+                          >
+                            <span className="truncate flex items-center gap-2">
+                              {projectExceeds && <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                              {task.projectId ? formatProjectName(activeProjects.find((p) => p.id === task.projectId)?.name || '') : "Seleccionar..."}
+                            </span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Buscar proyecto..." />
+                            <CommandList>
+                              <CommandEmpty>No encontrado.</CommandEmpty>
+                              <CommandGroup className="max-h-[200px] overflow-y-auto">
+                                {activeProjects.map((project) => {
+                                  // Verificar si este proyecto ya está en la lista y excede
+                                  const wouldExceed = tasksImpact.projects.find(p => p.id === project.id)?.exceeds;
+                                  return (
+                                    <CommandItem 
+                                      key={project.id} 
+                                      value={project.name} 
+                                      onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}
+                                      className={cn(wouldExceed && "bg-amber-50")}
+                                    >
+                                      <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
+                                      <span className="flex-1">{formatProjectName(project.name)}</span>
+                                      {wouldExceed && <AlertTriangle className="w-3.5 h-3.5 text-amber-500 ml-2" />}
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    {/* Tarea */}
+                    <Input 
+                      className="flex-1 h-10" 
+                      placeholder="Nombre de la tarea..." 
+                      value={task.taskName} 
+                      onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} 
+                    />
+
+                    {/* Horas - con highlight si la semana excede */}
+                    <Input 
+                      type="number" 
+                      className={cn(
+                        "w-24 h-10 text-center transition-all",
+                        weekExceeds && "border-amber-400 bg-amber-50 ring-2 ring-amber-200"
+                      )}
+                      placeholder="0" 
+                      value={task.hours} 
+                      onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} 
+                      step="0.5" 
+                      min="0"
+                    />
+
+                    {/* Semana - con highlight si excede */}
+                    <div className="w-32">
+                      <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
+                        <SelectTrigger 
+                          className={cn(
+                            "h-10 transition-all",
+                            weekExceeds && "border-amber-400 bg-amber-50 ring-2 ring-amber-200"
+                          )}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            {weekExceeds && <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                            <SelectValue />
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {weeks.map((w, i) => {
+                            const weekKey = getStorageKey(w.weekStart, currentMonth);
+                            const weekImpact = tasksImpact.weeks.find(wk => wk.weekDate === weekKey);
+                            return (
+                              <SelectItem 
+                                key={w.weekStart.toISOString()} 
+                                value={weekKey}
+                                className={cn(weekImpact?.exceeds && "bg-amber-50")}
+                              >
+                                <span className="flex items-center gap-2">
+                                  Sem {i + 1}
+                                  {weekImpact?.exceeds && (
+                                    <span className="text-[10px] text-amber-600 font-medium">
+                                      ({weekImpact.newTotal}h/{weekImpact.capacity}h)
+                                    </span>
+                                  )}
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Eliminar */}
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-10 w-8 text-muted-foreground hover:text-destructive" 
+                      onClick={() => removeTaskRow(task.id)} 
+                      disabled={newTasks.length === 1}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
-
-                  {/* Tarea */}
-                  <Input 
-                    className="flex-1 h-10" 
-                    placeholder="Nombre de la tarea..." 
-                    value={task.taskName} 
-                    onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} 
-                  />
-
-                  {/* Horas */}
-                  <Input 
-                    type="number" 
-                    className="w-24 h-10 text-center" 
-                    placeholder="0" 
-                    value={task.hours} 
-                    onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} 
-                    step="0.5" 
-                    min="0"
-                  />
-
-                  {/* Semana */}
-                  <div className="w-32">
-                    <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
-                      <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {weeks.map((w, i) => (
-                          <SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, currentMonth)}>
-                            Sem {i + 1}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Eliminar */}
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-10 w-8 text-muted-foreground hover:text-destructive" 
-                    onClick={() => removeTaskRow(task.id)} 
-                    disabled={newTasks.length === 1}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
             
             <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed">
