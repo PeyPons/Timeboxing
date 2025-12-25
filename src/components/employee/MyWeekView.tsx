@@ -5,7 +5,7 @@ import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { format, startOfWeek, addDays, isSameWeek, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar, Briefcase, AlertCircle, CheckCircle2, Circle, PlusCircle, Save } from 'lucide-react';
+import { Calendar, Briefcase, AlertCircle, CheckCircle2, Circle, PlusCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -59,6 +59,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
               await updateAllocation({
                   ...allocation,
                   hoursActual: numValue,
+                  // Si pone horas y estaba solo "planeada", pasa a "activa"
                   status: allocation.status === 'planned' && numValue > 0 ? 'active' : allocation.status
               });
               toast.success("Horas registradas");
@@ -81,6 +82,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       }
   };
 
+  // FUNCIÓN PARA CREAR TAREA IMPREVISTA
   const handleAddExtraTask = async () => {
       if (!extraProjectId || !extraTaskName) {
           toast.error("Rellena proyecto y nombre");
@@ -92,15 +94,16 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
               projectId: extraProjectId,
               employeeId: employeeId,
               weekStartDate: startOfCurrentWeek.toISOString(),
-              hoursAssigned: 0, // No estaba planeada
+              hoursAssigned: 0, // 0 porque no estaba planificada
               hoursActual: Number(extraHours),
-              hoursComputed: 0, // No se computó
+              hoursComputed: 0,
               taskName: extraTaskName,
-              status: 'active', // Entra directa como activa
-              description: 'Tarea añadida manualmente por el empleado'
+              status: 'active',
+              description: 'Tarea añadida manualmente por el empleado (Imprevisto)'
           });
           toast.success("Tarea imprevista registrada");
           setIsAddingExtra(false);
+          // Reset
           setExtraProjectId('');
           setExtraTaskName('');
           setExtraHours('1');
@@ -116,6 +119,8 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       const assigned = Number(task.hoursAssigned);
       const actual = editingValues[task.id] !== undefined ? Number(editingValues[task.id]) : Number(task.hoursActual || 0);
       
+      // Cálculo inteligente del progreso
+      // Si assigned es 0 (imprevisto), si hay horas reales es 100%, si no 0%
       const percent = assigned > 0 ? Math.min(100, (actual / assigned) * 100) : (actual > 0 ? 100 : 0);
       const isOverBudget = assigned > 0 && actual > assigned;
       const isUnplanned = assigned === 0;
@@ -133,7 +138,8 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                               {client?.name || 'Interno'}
                           </Badge>
                           <span className="font-semibold text-slate-700 text-sm">{project?.name}</span>
-                          {isUnplanned && <Badge variant="secondary" className="text-[9px] h-4 bg-amber-100 text-amber-700 hover:bg-amber-100">Extra</Badge>}
+                          {/* ETIQUETA VISUAL PARA TAREAS EXTRA */}
+                          {isUnplanned && <Badge variant="secondary" className="text-[9px] h-4 bg-amber-100 text-amber-700 hover:bg-amber-100 border border-amber-200">Extra / Imprevisto</Badge>}
                       </div>
                       <p className="text-sm text-slate-600 font-medium">
                           {task.taskName || "Asignación general"}
@@ -181,17 +187,18 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
             <h2 className="text-lg font-bold text-slate-900 capitalize">{weekLabel}</h2>
           </div>
 
+          {/* BOTÓN + DIÁLOGO PARA TAREA EXTRA */}
           <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
             <DialogTrigger asChild>
-                <Button size="sm" variant="secondary" className="text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200">
+                <Button size="sm" variant="secondary" className="text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-sm">
                     <PlusCircle className="w-4 h-4 mr-2" /> Fichar Tarea Extra
                 </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle>Añadir Tarea Imprevista</DialogTitle>
                     <DialogDescription>
-                        Registra una tarea que no estaba planificada en tu agenda semanal.
+                        Registra una tarea urgente o no planificada que hayas realizado esta semana.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -209,7 +216,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                     <div className="space-y-2">
                         <Label>Nombre de la Tarea</Label>
                         <Input 
-                            placeholder="Ej: Hotfix urgente, Reunión imprevista..." 
+                            placeholder="Ej: Hotfix urgente, Reunión con cliente..." 
                             value={extraTaskName} 
                             onChange={e => setExtraTaskName(e.target.value)} 
                         />
@@ -225,12 +232,14 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                     </div>
                 </div>
                 <DialogFooter>
-                    <Button onClick={handleAddExtraTask} className="bg-indigo-600 hover:bg-indigo-700">Guardar</Button>
+                    <Button variant="outline" onClick={() => setIsAddingExtra(false)}>Cancelar</Button>
+                    <Button onClick={handleAddExtraTask} className="bg-indigo-600 hover:bg-indigo-700">Guardar Tarea</Button>
                 </DialogFooter>
             </DialogContent>
           </Dialog>
       </div>
 
+      {/* TAREAS PENDIENTES */}
       <div className="space-y-4">
           <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
               <Briefcase className="w-4 h-4" /> En Curso / Pendientes ({pendingAllocations.length})
@@ -249,6 +258,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
           )}
       </div>
 
+      {/* TAREAS COMPLETADAS */}
       {completedAllocations.length > 0 && (
           <div className="space-y-4 pt-4">
               <h3 className="text-sm font-semibold text-emerald-600 uppercase tracking-wider flex items-center gap-2 opacity-80">
