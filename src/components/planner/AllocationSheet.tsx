@@ -13,11 +13,11 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
-import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown, Trash2, Link as LinkIcon, AlertOctagon, CheckCircle2 } from 'lucide-react';
+import { Allocation, Project } from '@/types';
+import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown, Trash2, Link as LinkIcon, AlertOctagon, CheckCircle2, AlertTriangle, Users } from 'lucide-react';
 import { cn, formatProjectName } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
-import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
+import { format, addMonths, subMonths, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 interface AllocationSheetProps {
@@ -36,6 +36,16 @@ interface NewTaskRow {
   weekDate: string;
   description: string;
   dependencyId?: string;
+}
+
+// Tipo para el estado del proyecto
+interface ProjectBudgetStatus {
+  totalComputed: number;
+  budgetMax: number;
+  budgetMin: number;
+  percentage: number;
+  status: 'healthy' | 'warning' | 'overload' | 'under';
+  breakdown: { employeeId: string; employeeName: string; hours: number }[];
 }
 
 export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, viewDateContext }: AllocationSheetProps) {
@@ -79,6 +89,58 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const activeProjects = useMemo(() => 
     projects.filter(p => p.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
   [projects]);
+
+  // FUNCIÓN: Calcular estado del presupuesto de un proyecto para el mes actual
+  const getProjectBudgetStatus = useMemo(() => {
+    return (projectId: string): ProjectBudgetStatus => {
+      const project = projects.find(p => p.id === projectId);
+      if (!project) {
+        return { totalComputed: 0, budgetMax: 0, budgetMin: 0, percentage: 0, status: 'healthy', breakdown: [] };
+      }
+
+      // Obtener todas las allocations del proyecto en el mes actual
+      const monthAllocations = allocations.filter(a => 
+        a.projectId === projectId && 
+        isSameMonth(parseISO(a.weekStartDate), viewDate)
+      );
+
+      // Calcular total computado y desglose por empleado
+      const breakdownMap: Record<string, number> = {};
+      let totalComputed = 0;
+
+      monthAllocations.forEach(a => {
+        const computed = a.status === 'completed' ? (a.hoursComputed || 0) : 0;
+        totalComputed += computed;
+        
+        if (computed > 0) {
+          if (!breakdownMap[a.employeeId]) {
+            breakdownMap[a.employeeId] = 0;
+          }
+          breakdownMap[a.employeeId] += computed;
+        }
+      });
+
+      const breakdown = Object.entries(breakdownMap).map(([empId, hours]) => {
+        const emp = employees.find(e => e.id === empId);
+        return { employeeId: empId, employeeName: emp?.name || 'Desconocido', hours };
+      }).sort((a, b) => b.hours - a.hours);
+
+      const budgetMax = project.budgetHours || 0;
+      const budgetMin = project.minimumHours || 0;
+      const percentage = budgetMax > 0 ? (totalComputed / budgetMax) * 100 : 0;
+
+      let status: 'healthy' | 'warning' | 'overload' | 'under' = 'healthy';
+      if (totalComputed > budgetMax) {
+        status = 'overload';
+      } else if (percentage >= 80) {
+        status = 'warning';
+      } else if (budgetMin > 0 && totalComputed < budgetMin) {
+        status = 'under';
+      }
+
+      return { totalComputed, budgetMax, budgetMin, percentage, status, breakdown };
+    };
+  }, [projects, allocations, employees, viewDate]);
 
   const getAvailableDependencies = (projectId: string, currentTaskId?: string) => {
       if (!projectId) return [];
@@ -200,6 +262,129 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const saveInlineEdit = (allocation: Allocation) => { if (inlineNameValue.trim() !== allocation.taskName) { updateAllocation({ ...allocation, taskName: inlineNameValue }); } setInlineEditingId(null); };
   const moveTaskToWeek = (allocation: Allocation, targetWeekStartReal: Date) => { const targetKey = getStorageKey(targetWeekStartReal, viewDate); updateAllocation({ ...allocation, weekStartDate: targetKey }); };
 
+  // Helper para renderizar el status del proyecto
+  const renderProjectHeader = (project: Project | undefined, budgetStatus: ProjectBudgetStatus) => {
+    if (!project) return <span className="font-bold text-xs truncate">Desc.</span>;
+
+    const { totalComputed, budgetMax, budgetMin, percentage, status, breakdown } = budgetStatus;
+    
+    const statusConfig = {
+      healthy: { color: 'bg-emerald-500', bgLight: 'bg-emerald-50', textColor: 'text-emerald-700', icon: null },
+      warning: { color: 'bg-amber-500', bgLight: 'bg-amber-50', textColor: 'text-amber-700', icon: <AlertTriangle className="w-3 h-3" /> },
+      overload: { color: 'bg-red-500', bgLight: 'bg-red-50', textColor: 'text-red-700', icon: <AlertOctagon className="w-3 h-3" /> },
+      under: { color: 'bg-blue-500', bgLight: 'bg-blue-50', textColor: 'text-blue-700', icon: null }
+    };
+
+    const config = statusConfig[status];
+    const exceededBy = totalComputed > budgetMax ? totalComputed - budgetMax : 0;
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={cn("px-3 py-2 border-b cursor-help transition-colors", config.bgLight)}>
+            {/* Fila 1: Nombre + Indicador */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-xs truncate flex-1">{formatProjectName(project.name)}</span>
+              {budgetMax > 0 && (
+                <div className={cn("flex items-center gap-1 text-[10px] font-semibold", config.textColor)}>
+                  {config.icon}
+                  <span>{Math.round(percentage)}%</span>
+                </div>
+              )}
+            </div>
+            
+            {/* Fila 2: Barra de progreso (solo si hay presupuesto) */}
+            {budgetMax > 0 && (
+              <div className="mt-1.5">
+                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                  <div 
+                    className={cn("h-full transition-all duration-300", config.color)} 
+                    style={{ width: `${Math.min(percentage, 100)}%` }} 
+                  />
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <span className="text-[9px] text-slate-500">
+                    {totalComputed.toFixed(1)}h / {budgetMax}h
+                  </span>
+                  {exceededBy > 0 && (
+                    <span className="text-[9px] font-bold text-red-600">
+                      +{exceededBy.toFixed(1)}h
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-xs p-0">
+          <div className="p-3 space-y-2">
+            <div className="font-bold text-sm border-b pb-2">{project.name}</div>
+            
+            {/* Info presupuesto */}
+            <div className="text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Presupuesto:</span>
+                <span className="font-medium">{budgetMin > 0 ? `${budgetMin}-` : ''}{budgetMax}h</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Computado:</span>
+                <span className={cn("font-bold", status === 'overload' ? 'text-red-600' : 'text-emerald-600')}>
+                  {totalComputed.toFixed(1)}h
+                </span>
+              </div>
+              {exceededBy > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <span>Exceso:</span>
+                  <span className="font-bold">+{exceededBy.toFixed(1)}h</span>
+                </div>
+              )}
+            </div>
+
+            {/* Desglose por empleado */}
+            {breakdown.length > 0 && (
+              <div className="border-t pt-2 mt-2">
+                <div className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                  <Users className="w-3 h-3" /> Desglose
+                </div>
+                <div className="space-y-1">
+                  {breakdown.map(({ employeeId: empId, employeeName, hours }) => {
+                    const isCurrentEmployee = empId === employeeId;
+                    return (
+                      <div 
+                        key={empId} 
+                        className={cn(
+                          "flex justify-between text-xs px-1.5 py-0.5 rounded",
+                          isCurrentEmployee ? "bg-indigo-50 font-medium" : ""
+                        )}
+                      >
+                        <span className={isCurrentEmployee ? "text-indigo-700" : "text-slate-600"}>
+                          {employeeName} {isCurrentEmployee && "(tú)"}
+                        </span>
+                        <span className="font-mono">{hours.toFixed(1)}h</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Mensaje de estado */}
+            {status === 'overload' && (
+              <div className="bg-red-50 text-red-700 text-[10px] p-2 rounded border border-red-200 mt-2">
+                ⚠️ Se ha excedido el presupuesto máximo. Revisar horas computadas.
+              </div>
+            )}
+            {status === 'warning' && (
+              <div className="bg-amber-50 text-amber-700 text-[10px] p-2 rounded border border-amber-200 mt-2">
+                ⚡ Cerca del límite. Quedan {(budgetMax - totalComputed).toFixed(1)}h disponibles.
+              </div>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -239,7 +424,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
             </div>
           </SheetHeader>
 
-          <TooltipProvider>
+          <TooltipProvider delayDuration={300}>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 pb-20">
             {weeks.map((week, index) => {
                 const weekStr = week.weekStart.toISOString().split('T')[0];
@@ -275,9 +460,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                         <div className="flex-1 overflow-y-auto max-h-[60vh] space-y-3 pr-1 custom-scrollbar">
                             {Object.entries(weekAllocations.reduce((acc, a) => ({...acc, [a.projectId]: [...(acc[a.projectId]||[]), a]}), {} as Record<string, Allocation[]>)).map(([projId, projAllocations]) => {
                                 const project = getProjectById(projId);
+                                const budgetStatus = getProjectBudgetStatus(projId);
+                                
                                 return (
                                     <div key={projId} className="bg-white border rounded-lg shadow-sm overflow-hidden">
-                                        <div className="bg-slate-50 px-3 py-2 border-b"><span className="font-bold text-xs truncate">{formatProjectName(project?.name || 'Desc.')}</span></div>
+                                        {/* HEADER PROYECTO CON STATUS */}
+                                        {renderProjectHeader(project, budgetStatus)}
+                                        
                                         <div className="divide-y divide-slate-100">
                                             {projAllocations.map(alloc => {
                                                 const isCompleted = alloc.status === 'completed';
@@ -339,39 +528,39 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                 )}
                                                             </div>
                                                             
-                                                            {/* BADGES DE HORAS: EST + REAL + COMP */}
-                                                            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                                            {/* BADGES DE HORAS: EST + REAL + COMP (en una línea) */}
+                                                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                                                 {/* Badge Estimado (siempre visible) */}
-                                                                <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                                                                <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
                                                                     EST {alloc.hoursAssigned}h
-                                                                </Badge>
+                                                                </span>
                                                                 
                                                                 {/* Inputs Real y Computado (solo si está completada) */}
                                                                 {isCompleted && (
                                                                     <>
                                                                         {/* Input REAL (azul) */}
-                                                                        <div className="flex items-center gap-0.5 bg-blue-100 text-blue-700 rounded px-1 h-4">
-                                                                            <span className="text-[9px] font-medium">Real:</span>
-                                                                            <Input
+                                                                        <div className="flex items-center bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                                                                            <span className="text-[10px] font-medium mr-1">Real:</span>
+                                                                            <input
                                                                                 type="number"
                                                                                 step="0.5"
                                                                                 min="0"
                                                                                 defaultValue={alloc.hoursActual || 0}
                                                                                 onBlur={(e) => updateInlineHours(alloc, 'hoursActual', e.target.value)}
-                                                                                className="w-10 h-4 px-0.5 text-[9px] text-center border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-300 rounded"
+                                                                                className="w-8 text-[10px] text-center bg-transparent border-0 focus:outline-none focus:bg-white focus:ring-1 focus:ring-blue-300 rounded font-medium"
                                                                             />
                                                                         </div>
                                                                         
                                                                         {/* Input COMPUTADO (verde) */}
-                                                                        <div className="flex items-center gap-0.5 bg-emerald-100 text-emerald-700 rounded px-1 h-4">
-                                                                            <span className="text-[9px] font-medium">Comp:</span>
-                                                                            <Input
+                                                                        <div className="flex items-center bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">
+                                                                            <span className="text-[10px] font-medium mr-1">Comp:</span>
+                                                                            <input
                                                                                 type="number"
                                                                                 step="0.5"
                                                                                 min="0"
                                                                                 defaultValue={alloc.hoursComputed || 0}
                                                                                 onBlur={(e) => updateInlineHours(alloc, 'hoursComputed', e.target.value)}
-                                                                                className="w-10 h-4 px-0.5 text-[9px] text-center border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-emerald-300 rounded"
+                                                                                className="w-8 text-[10px] text-center bg-transparent border-0 focus:outline-none focus:bg-white focus:ring-1 focus:ring-emerald-300 rounded font-medium"
                                                                             />
                                                                         </div>
                                                                     </>
