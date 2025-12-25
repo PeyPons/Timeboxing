@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Employee } from '@/types';
+import { Employee, WorkSchedule } from '@/types'; // Importamos WorkSchedule
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -22,6 +22,10 @@ interface EmployeeDialogProps {
   employeeToEdit?: Employee | null;
 }
 
+const defaultSchedule: WorkSchedule = {
+  monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0
+};
+
 export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeDialogProps) {
   const { addEmployee, updateEmployee } = useApp();
   
@@ -33,6 +37,10 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
   const [department, setDepartment] = useState('Development');
   const [capacity, setCapacity] = useState(40);
   const [hourlyRate, setHourlyRate] = useState(0);
+  
+  // Estado para el Horario (NUEVO)
+  const [workSchedule, setWorkSchedule] = useState<WorkSchedule>(defaultSchedule);
+  
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Sheets
@@ -50,6 +58,8 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setDepartment(employeeToEdit.department || 'Development');
         setCapacity(employeeToEdit.defaultWeeklyCapacity);
         setHourlyRate(employeeToEdit.hourlyRate || 0);
+        // Cargamos el horario existente o el default
+        setWorkSchedule(employeeToEdit.workSchedule || defaultSchedule);
       } else {
         setName('');
         setEmail('');
@@ -58,6 +68,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setDepartment('Development');
         setCapacity(40);
         setHourlyRate(0);
+        setWorkSchedule(defaultSchedule);
       }
     }
   }, [open, employeeToEdit]);
@@ -102,9 +113,8 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
             department,
             defaultWeeklyCapacity: Number(capacity),
             hourlyRate: Number(hourlyRate),
-            workSchedule: employeeToEdit?.workSchedule || { 
-                monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 
-            },
+            // Usamos el estado workSchedule que ahora gestionamos correctamente
+            workSchedule: workSchedule,
             isActive: true,
             avatarUrl: employeeToEdit?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
         };
@@ -234,11 +244,17 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
             </TabsContent>
 
             <TabsContent value="schedule" className="py-4">
-              {employeeToEdit && (
-                <div className="space-y-4">
-                    <ScheduleEditor employee={employeeToEdit} />
-                </div>
-              )}
+              {/* Aquí estaba el error. Ahora pasamos 'schedule' y 'onChange' correctamente */}
+              <div className="space-y-4">
+                  <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm flex gap-2">
+                      <Clock className="h-5 w-5 shrink-0" />
+                      <p>Define las horas laborables exactas para cada día. Afecta al cálculo de capacidad.</p>
+                  </div>
+                  <ScheduleEditor 
+                      schedule={workSchedule} 
+                      onChange={setWorkSchedule} 
+                  />
+              </div>
             </TabsContent>
 
             <TabsContent value="management" className="py-4 space-y-4">
