@@ -78,10 +78,19 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
     let authUserId = employeeToEdit?.user_id;
     let authMessage = "";
 
+    // DEBUG: Ver qué valores tenemos
+    console.log('[EmployeeDialog] handleSubmit called');
+    console.log('[EmployeeDialog] password value:', JSON.stringify(password));
+    console.log('[EmployeeDialog] password.length:', password.length);
+    console.log('[EmployeeDialog] email value:', email);
+
     try {
         // SOLO gestionar autenticación si el usuario proporciona una contraseña nueva
         // Si no hay contraseña, simplemente guardamos los datos del empleado sin tocar auth
-        if (password && password.length >= 6) {
+        const shouldCreateAuth = password.length >= 6;
+        console.log('[EmployeeDialog] shouldCreateAuth:', shouldCreateAuth);
+        
+        if (shouldCreateAuth) {
             if (!email) {
                 toast.error("Debes proporcionar un email para crear acceso");
                 setIsProcessing(false);
@@ -184,7 +193,14 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="password">{hasAccess ? 'Nueva Contraseña' : 'Crear Contraseña'}</Label>
-                            <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={hasAccess ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"} />
+                            <Input 
+                                id="password" 
+                                type="password" 
+                                value={password} 
+                                onChange={e => setPassword(e.target.value)} 
+                                placeholder={hasAccess ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"}
+                                autoComplete="new-password"
+                            />
                         </div>
                     </div>
                     <p className="text-xs text-slate-500">
