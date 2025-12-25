@@ -90,7 +90,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           first_name: e.first_name,
           last_name: e.last_name,
           email: e.email,
-          user_id: e.user_id
+          user_id: e.user_id,
+          crmUserId: e.crm_user_id  // NUEVO: Mapeo del CRM User ID
         }));
         setEmployees(mappedEmployees);
 
@@ -111,7 +112,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ...p,
           clientId: p.client_id,
           budgetHours: round2(p.budget_hours),
-          minimumHours: round2(p.minimum_hours || 0)
+          minimumHours: round2(p.minimum_hours || 0),
+          monthlyFee: p.monthly_fee,
+          healthStatus: p.health_status,
+          externalId: p.external_id,      // NUEVO: ID externo del CRM
+          projectType: p.project_type     // NUEVO: Tipo de proyecto
         })));
       }
       if (allocRes.data) {
@@ -209,7 +214,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       avatar_url: employee.avatarUrl,
       default_weekly_capacity: employee.defaultWeeklyCapacity,
       work_schedule: employee.workSchedule,
-      is_active: employee.isActive
+      is_active: employee.isActive,
+      hourly_rate: employee.hourlyRate,
+      crm_user_id: employee.crmUserId  // NUEVO: CRM User ID
     }).eq('id', employee.id);
   }, []);
 
