@@ -6,13 +6,12 @@ import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/Dashbo
 import { Card } from '@/components/ui/card';
 import { EmployeeRow } from '@/components/planner/EmployeeRow'; 
 import { AllocationSheet } from '@/components/planner/AllocationSheet';
-// IMPORTAMOS LOS SHEETS QUE FALTABAN
 import { AbsencesSheet } from '@/components/team/AbsencesSheet';
 import { ProfessionalGoalsSheet } from '@/components/team/ProfessionalGoalsSheet';
 import { getWeeksForMonth, getMonthName } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar } from 'lucide-react'; // Iconos añadidos
+import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar } from 'lucide-react';
 import { startOfMonth, endOfMonth, max, min, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Employee } from '@/types';
@@ -25,7 +24,6 @@ export default function EmployeeDashboard() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: Date } | null>(null);
   
-  // ESTADOS PARA LOS BOTONES
   const [showGoals, setShowGoals] = useState(false);
   const [showAbsences, setShowAbsences] = useState(false);
 
@@ -69,7 +67,6 @@ export default function EmployeeDashboard() {
               <p className="text-slate-500">Tu planificación mensual.</p>
           </div>
           <div className="flex gap-2">
-            {/* BOTONES CON FUNCIONALIDAD REACTIVADA */}
             <Button variant="outline" onClick={() => setShowGoals(true)} className="gap-2 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100">
                 <TrendingUp className="h-4 w-4" /> Mis Objetivos
             </Button>
@@ -135,10 +132,14 @@ export default function EmployeeDashboard() {
           <div className="lg:col-span-2"><ProjectTeamPulse employeeId={myEmployeeProfile.id} /></div>
       </div>
 
-      {/* 5. LISTA DE TAREAS */}
+      {/* 5. LISTA DE TAREAS (MENSUAL) */}
       <div className="pt-4 border-t">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">Detalle de Tareas (Semana Actual)</h3>
-          <MyWeekView employeeId={myEmployeeProfile.id} />
+          {/* CAMBIADO TÍTULO PARA REFLEJAR EL MES */}
+          <h3 className="text-lg font-bold text-slate-800 mb-4 capitalize">
+              Detalle de Tareas: {getMonthName(currentMonth)}
+          </h3>
+          {/* PASAMOS LA FECHA SELECCIONADA A MYWEEKVIEW */}
+          <MyWeekView employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
       </div>
 
       {selectedCell && (
@@ -151,13 +152,8 @@ export default function EmployeeDashboard() {
         />
       )}
 
-      {/* VENTANAS EMERGENTES (SHEETS) */}
-      {showGoals && (
-          <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={myEmployeeProfile.id} />
-      )}
-      {showAbsences && (
-          <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={myEmployeeProfile.id} />
-      )}
+      {showGoals && <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={myEmployeeProfile.id} />}
+      {showAbsences && <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={myEmployeeProfile.id} />}
     </div>
   );
 }
