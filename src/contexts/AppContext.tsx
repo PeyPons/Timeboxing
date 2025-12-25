@@ -7,10 +7,8 @@ import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 import { addDays } from 'date-fns';
 
 interface AppContextType {
-  // Auth & User Identity
   currentUser: Employee | undefined;
   isAdmin: boolean;
-
   employees: Employee[];
   clients: Client[];
   projects: Project[];
@@ -18,49 +16,31 @@ interface AppContextType {
   absences: Absence[];
   teamEvents: TeamEvent[];
   isLoading: boolean;
-  
-  // CRUD
   addEmployee: (employee: Omit<Employee, 'id'>) => Promise<void>;
   updateEmployee: (employee: Employee) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
   toggleEmployeeActive: (id: string) => Promise<void>;
-  
   addClient: (client: Omit<Client, 'id'>) => void;
   updateClient: (client: Client) => void;
   deleteClient: (id: string) => void;
-  
   addProject: (project: Omit<Project, 'id'>) => void;
   updateProject: (project: Project) => void;
   deleteProject: (id: string) => void;
-  
   addAllocation: (allocation: Omit<Allocation, 'id'>) => void;
   updateAllocation: (allocation: Allocation) => void;
   deleteAllocation: (id: string) => void;
-  
   addAbsence: (absence: Omit<Absence, 'id'>) => void;
   deleteAbsence: (id: string) => void;
-  
   addTeamEvent: (event: Omit<TeamEvent, 'id'>) => void;
   updateTeamEvent: (event: TeamEvent) => void;
   deleteTeamEvent: (id: string) => void;
-  
-  // Helpers
   getEmployeeAllocationsForWeek: (employeeId: string, weekStart: string) => Allocation[];
-  getEmployeeLoadForWeek: (employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => { 
-      hours: number; 
-      capacity: number; 
-      baseCapacity: number; 
-      status: LoadStatus; 
-      percentage: number;
-      breakdown: { reason: string; hours: number; type: 'absence' | 'event' }[]
-  };
+  getEmployeeLoadForWeek: (employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => { hours: number; capacity: number; baseCapacity: number; status: LoadStatus; percentage: number; breakdown: { reason: string; hours: number; type: 'absence' | 'event' }[] };
   getEmployeeMonthlyLoad: (employeeId: string, year: number, month: number) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
   getProjectHoursForMonth: (projectId: string, month: Date) => { used: number; budget: number; available: number; percentage: number };
   getClientTotalHoursForMonth: (clientId: string, month: Date) => { used: number; budget: number; percentage: number };
   getProjectById: (id: string) => Project | undefined;
   getClientById: (id: string) => Client | undefined;
-  
-  // Goals
   professionalGoals: ProfessionalGoal[];
   addProfessionalGoal: (goal: Omit<ProfessionalGoal, 'id'>) => void;
   updateProfessionalGoal: (goal: ProfessionalGoal) => void;
@@ -86,7 +66,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      // 1. Obtenemos el usuario autenticado actual de Supabase
       const { data: { user: authUser } } = await supabase.auth.getUser();
 
       const [empRes, cliRes, projRes, allocRes, absRes, evRes, goalsRes] = await Promise.all([
@@ -104,12 +83,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (empRes.data) {
         mappedEmployees = empRes.data.map((e: any) => ({
           ...e,
-          // Mapeamos los campos de la DB (snake_case) a nuestro Frontend (camelCase)
           avatarUrl: e.avatar_url,
           defaultWeeklyCapacity: e.default_weekly_capacity,
           workSchedule: e.work_schedule,
           isActive: e.is_active,
-          // Nuevos campos para Login
           first_name: e.first_name,
           last_name: e.last_name,
           email: e.email,
@@ -117,25 +94,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }));
         setEmployees(mappedEmployees);
 
-        // 2. Identificamos al usuario actual dentro de la lista de empleados
         if (authUser) {
-          // Buscamos por user_id (vinculación fuerte) o por email (vinculación débil/inicial)
           const foundUser = mappedEmployees.find(e => 
             e.user_id === authUser.id || 
             (e.email && authUser.email && e.email.toLowerCase() === authUser.email.toLowerCase())
           );
           if (foundUser) {
             setCurrentUser(foundUser);
-            // Opcional: Si el empleado no tenía user_id guardado, podríamos actualizarlo aquí
-            if (!foundUser.user_id) {
-               console.log("Vinculando usuario por primera vez:", foundUser.name);
-               // supabase.from('employees').update({ user_id: authUser.id }).eq('id', foundUser.id);
-            }
           }
         }
       }
 
-      // ... Resto de mapeos se mantienen igual ...
       if (cliRes.data) setClients(cliRes.data);
       if (projRes.data) {
         setProjects(projRes.data.map((p: any) => ({
@@ -154,7 +123,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           hoursAssigned: round2(a.hours_assigned),
           hoursActual: a.hours_actual ? round2(a.hours_actual) : undefined,
           hoursComputed: a.hours_computed ? round2(a.hours_computed) : undefined,
-          taskName: a.task_name
+          taskName: a.task_name,
+          dependencyId: a.dependency_id // <--- Mapeo
         })));
       }
       if (absRes.data) {
@@ -192,28 +162,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchData();
-    
-    // Escuchar cambios de sesión para recargar el currentUser si cambia
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          // Podríamos recargar solo el usuario, pero fetchData es seguro
-          // fetchData(); 
-       }
-       if (event === 'SIGNED_OUT') {
-          setCurrentUser(undefined);
-       }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+       if (event === 'SIGNED_OUT') setCurrentUser(undefined);
     });
     return () => subscription.unsubscribe();
-
   }, [fetchData]);
 
-  // --- CRUD EMPLEADOS (ACTUALIZADO) ---
   const addEmployee = useCallback(async (employee: Omit<Employee, 'id'>) => {
     const { data } = await supabase.from('employees').insert({
       name: employee.name,
       first_name: employee.first_name,
       last_name: employee.last_name,
-      email: employee.email, // Guardamos email para vincular
+      email: employee.email,
       role: employee.role,
       department: employee.department,
       avatar_url: employee.avatarUrl,
@@ -238,15 +198,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateEmployee = useCallback(async (employee: Employee) => {
-    // Actualización optimista en local
     setEmployees(prev => prev.map(e => e.id === employee.id ? employee : e));
-    
-    // Actualización en Supabase (Asegurando que enviamos el email)
-    const { error } = await supabase.from('employees').update({
+    await supabase.from('employees').update({
       name: employee.name,
       first_name: employee.first_name,
       last_name: employee.last_name,
-      email: employee.email, // <--- IMPORTANTE: Esto permite corregir emails
+      email: employee.email,
       role: employee.role,
       department: employee.department,
       avatar_url: employee.avatarUrl,
@@ -254,10 +211,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       work_schedule: employee.workSchedule,
       is_active: employee.isActive
     }).eq('id', employee.id);
-
-    if (error) {
-        console.error("Error actualizando empleado:", error);
-    }
   }, []);
 
   const deleteEmployee = useCallback(async (id: string) => {
@@ -275,10 +228,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('employees').update({ is_active: newState }).eq('id', id);
   }, [employees]);
 
-  // ... Resto de CRUD operaciones (se mantienen igual que antes) ...
-  const addAllocation = useCallback(async (allocation: Omit<Allocation, 'id'>) => { const { data } = await supabase.from('allocations').insert({ employee_id: allocation.employeeId, project_id: allocation.projectId, week_start_date: allocation.weekStartDate, hours_assigned: allocation.hoursAssigned, hours_actual: allocation.hoursActual||0, hours_computed: allocation.hoursComputed||0, status: allocation.status, description: allocation.description, task_name: allocation.taskName }).select().single(); if(data) setAllocations(prev => [...prev, { ...data, employeeId: data.employee_id, projectId: data.project_id, weekStartDate: data.week_start_date, hoursAssigned: round2(data.hours_assigned), hoursActual: round2(data.hours_actual), hoursComputed: round2(data.hours_computed), taskName: data.task_name }]); }, []);
-  const updateAllocation = useCallback(async (allocation: Allocation) => { setAllocations(prev => prev.map(a => a.id === allocation.id ? allocation : a)); await supabase.from('allocations').update({ hours_assigned: allocation.hoursAssigned, hours_actual: allocation.hoursActual, hours_computed: allocation.hoursComputed, status: allocation.status, description: allocation.description, task_name: allocation.taskName }).eq('id', allocation.id); }, []);
+  // --- ALLOCATIONS (Actualizado con dependency_id) ---
+  const addAllocation = useCallback(async (allocation: Omit<Allocation, 'id'>) => { 
+    const { data } = await supabase.from('allocations').insert({ 
+      employee_id: allocation.employeeId, 
+      project_id: allocation.projectId, 
+      week_start_date: allocation.weekStartDate, 
+      hours_assigned: allocation.hoursAssigned, 
+      hours_actual: allocation.hoursActual||0, 
+      hours_computed: allocation.hoursComputed||0, 
+      status: allocation.status, 
+      description: allocation.description, 
+      task_name: allocation.taskName,
+      dependency_id: allocation.dependencyId 
+    }).select().single(); 
+    
+    if(data) setAllocations(prev => [...prev, { 
+        ...data, 
+        employeeId: data.employee_id, 
+        projectId: data.project_id, 
+        weekStartDate: data.week_start_date, 
+        hoursAssigned: round2(data.hours_assigned), 
+        hoursActual: round2(data.hours_actual), 
+        hoursComputed: round2(data.hours_computed), 
+        taskName: data.task_name,
+        dependencyId: data.dependency_id
+    }]); 
+  }, []);
+
+  const updateAllocation = useCallback(async (allocation: Allocation) => { 
+    setAllocations(prev => prev.map(a => a.id === allocation.id ? allocation : a)); 
+    await supabase.from('allocations').update({ 
+      hours_assigned: allocation.hoursAssigned, 
+      hours_actual: allocation.hoursActual, 
+      hours_computed: allocation.hoursComputed, 
+      status: allocation.status, 
+      description: allocation.description, 
+      task_name: allocation.taskName,
+      dependency_id: allocation.dependencyId
+    }).eq('id', allocation.id); 
+  }, []);
+
   const deleteAllocation = useCallback(async (id: string) => { setAllocations(prev => prev.filter(a => a.id !== id)); await supabase.from('allocations').delete().eq('id', id); }, []);
+  
+  // ... Resto de funciones CRUD (Client, Project, etc) se mantienen igual ...
   const addClient = useCallback(async (client: Omit<Client, 'id'>) => { const { data } = await supabase.from('clients').insert(client).select().single(); if(data) setClients(prev => [...prev, data]); }, []);
   const updateClient = useCallback(async (client: Client) => { setClients(prev => prev.map(c => c.id === client.id ? client : c)); await supabase.from('clients').update({ name: client.name, color: client.color }).eq('id', client.id); }, []);
   const deleteClient = useCallback(async (id: string) => { setClients(prev => prev.filter(c => c.id !== id)); setProjects(prev => prev.filter(p => p.clientId !== id)); await supabase.from('clients').delete().eq('id', id); }, []);
@@ -295,7 +288,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deleteProfessionalGoal = useCallback(async (id: string) => { setProfessionalGoals(prev => prev.filter(g => g.id !== id)); await supabase.from('professional_goals').delete().eq('id', id); }, []);
   const getEmployeeGoals = useCallback((employeeId: string) => professionalGoals.filter(g => g.employeeId === employeeId), [professionalGoals]);
 
-  // --- LOGIC (Cálculos de Carga) ---
   const getEmployeeAllocationsForWeek = useCallback((employeeId: string, weekStart: string) => {
     return allocations.filter(a => a.employeeId === employeeId && a.weekStartDate === weekStart);
   }, [allocations]);
@@ -426,7 +418,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(() => ({
     currentUser,
-    isAdmin: currentUser?.role === 'admin' || currentUser?.role === 'manager', // Ajusta según tus roles reales
+    isAdmin: currentUser?.role === 'admin' || currentUser?.role === 'manager',
     employees, clients, projects, allocations, absences, teamEvents, isLoading,
     addEmployee, updateEmployee, deleteEmployee, toggleEmployeeActive,
     addClient, updateClient, deleteClient,
