@@ -511,60 +511,93 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                 </Button>
                             </div>
                             
-                            {/* Barra de carga */}
-                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                <div className={cn("h-full transition-all duration-500 ease-out", load.status === 'overload' ? "bg-red-500" : "bg-green-500")} style={{ width: `${Math.min(load.percentage, 100)}%` }} />
+                            {/* Barra de carga con marca de capacidad */}
+                            <div className="relative">
+                                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                    <div 
+                                        className={cn(
+                                            "h-full transition-all duration-500 ease-out",
+                                            load.percentage > 110 ? "bg-red-500" : 
+                                            load.percentage > 100 ? "bg-amber-500" : 
+                                            load.percentage >= 85 ? "bg-emerald-500" : "bg-emerald-400"
+                                        )} 
+                                        style={{ width: `${Math.min(load.percentage, 150) * 0.67}%` }} 
+                                    />
+                                </div>
+                                {/* Marca del 100% (capacidad) */}
+                                <div 
+                                    className="absolute top-0 h-2 w-0.5 bg-slate-700" 
+                                    style={{ left: '67%' }}
+                                    title="Capacidad máxima"
+                                />
+                                {/* Porcentaje */}
+                                <div className={cn(
+                                    "absolute -top-0.5 text-[9px] font-bold",
+                                    load.percentage > 100 ? "text-red-600" : "text-slate-500"
+                                )} style={{ left: '72%' }}>
+                                    {Math.round(load.percentage)}%
+                                </div>
                             </div>
                             
-                            {/* Métricas: Est, Real, Comp, Capacidad */}
-                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-                                <div className="flex justify-between">
-                                    <span className="text-slate-500">Est.</span>
-                                    <span className="font-medium tabular-nums">{weekEst}h</span>
+                            {/* Planificación: Est vs Capacidad */}
+                            <div className="flex items-center justify-between text-[11px]">
+                                <div className="flex items-center gap-1">
+                                    <span className="text-slate-500">Plan:</span>
+                                    <span className="font-semibold tabular-nums">{weekEst}h</span>
+                                    <span className="text-slate-400">/</span>
+                                    <span className="tabular-nums text-slate-500">{load.capacity}h</span>
                                 </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-500">Capacidad</span>
-                                    <span className="font-medium tabular-nums">{load.capacity}h</span>
-                                </div>
-                                {completedTasks.length > 0 && (
-                                    <>
-                                        <div className="flex justify-between">
-                                            <span className="text-blue-600">Real</span>
-                                            <span className="font-medium tabular-nums text-blue-600">{weekReal}h</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-emerald-600">Comp.</span>
-                                            <span className="font-medium tabular-nums text-emerald-600">{weekComp}h</span>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                            
-                            {/* Balance / Ausencias */}
-                            <div className="flex items-center justify-between">
-                                {completedTasks.length > 0 && (
-                                    <div className={cn("flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded", weekBalance >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700")}>
-                                        {weekBalance >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                                        <span>{weekBalance >= 0 ? '+' : ''}{weekBalance}h</span>
+                                {weekEst !== load.capacity && (
+                                    <div className={cn(
+                                        "font-bold tabular-nums px-1.5 py-0.5 rounded text-[10px]",
+                                        weekEst > load.capacity 
+                                            ? "text-red-700 bg-red-50" 
+                                            : "text-slate-500 bg-slate-50"
+                                    )}>
+                                        {weekEst > load.capacity ? '+' : ''}{round2(weekEst - load.capacity)}h
                                     </div>
                                 )}
-                                {load.breakdown && load.breakdown.length > 0 && (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="flex items-center gap-1 text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded cursor-help">
-                                                {load.breakdown.some(b => b.type === 'absence') && <Palmtree className="w-3 h-3" />}
-                                                {load.breakdown.some(b => b.type === 'event') && <Zap className="w-3 h-3" />}
-                                                <span>-{load.breakdown.reduce((s, b) => s + b.hours, 0)}h</span>
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="bottom" className="text-xs">
-                                            {load.breakdown.map((b, i) => (
-                                                <div key={i}>{b.reason}: -{b.hours}h</div>
-                                            ))}
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
                             </div>
+                            
+                            {/* Ejecución: Real → Comp (solo si hay completadas) */}
+                            {completedTasks.length > 0 && (
+                                <div className="flex items-center justify-between text-[11px] pt-1 border-t border-dashed">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-blue-600 tabular-nums">
+                                            <span className="text-slate-400 text-[10px]">Real</span> {weekReal}h
+                                        </span>
+                                        <span className="text-slate-300">→</span>
+                                        <span className="text-emerald-600 tabular-nums">
+                                            <span className="text-slate-400 text-[10px]">Comp</span> {weekComp}h
+                                        </span>
+                                    </div>
+                                    <div className={cn(
+                                        "flex items-center gap-1 font-bold tabular-nums px-1.5 py-0.5 rounded text-[10px]",
+                                        weekBalance >= 0 ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"
+                                    )}>
+                                        {weekBalance >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                        {weekBalance >= 0 ? '+' : ''}{weekBalance}h
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Ausencias/Eventos (si hay) */}
+                            {load.breakdown && load.breakdown.length > 0 && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="flex items-center gap-1.5 text-[10px] text-orange-600 bg-orange-50 px-2 py-1 rounded cursor-help border border-orange-100">
+                                            {load.breakdown.some(b => b.type === 'absence') && <Palmtree className="w-3 h-3" />}
+                                            {load.breakdown.some(b => b.type === 'event') && <Zap className="w-3 h-3" />}
+                                            <span className="font-medium">-{round2(load.breakdown.reduce((s, b) => s + b.hours, 0))}h capacidad</span>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom" className="text-xs">
+                                        {load.breakdown.map((b, i) => (
+                                            <div key={i}>{b.reason}: -{b.hours}h</div>
+                                        ))}
+                                    </TooltipContent>
+                                </Tooltip>
+                            )}
                         </div>
 
                         {/* LISTA TAREAS */}
