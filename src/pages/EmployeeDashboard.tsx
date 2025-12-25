@@ -321,21 +321,29 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    // Generar las filas del CSV
+    // Generar las filas del CSV según formato del CRM:
+    // "Nombre Tarea",ID usuario,project,ID proyecto,horas,directa(0/1),recurrente(0/1),"fecha inicio","fecha fin"
     const csvRows: string[] = [];
-    
-    // Cabecera (sin la línea de cabecera porque el CRM no la necesita según el ejemplo)
-    // El formato es: Nombre Tarea,Número de usuario,project,Número de proyecto,Tiempo estimado con punto
     
     myPendingTasks.forEach(task => {
       const project = projects.find(p => p.id === task.projectId);
       if (project && project.externalId) {
-        const taskName = (task.taskName || 'Tarea').replace(/,/g, ' ').replace(/;/g, ' '); // Limpiar comas y punto y coma
+        // Limpiar nombre: quitar comillas internas y saltos de línea
+        const taskName = (task.taskName || 'Tarea')
+          .replace(/"/g, "'")
+          .replace(/\n/g, ' ')
+          .replace(/\r/g, '')
+          .trim();
+        
         const userId = myEmployeeProfile.crmUserId;
         const projectId = project.externalId;
         const hours = task.hoursAssigned;
         
-        csvRows.push(`${taskName},${userId},project,${projectId},${hours}`);
+        // Formato: "nombre",usuario,project,id_proyecto,horas,directa,recurrente,fecha_inicio,fecha_fin
+        // - directa: 0 (tarea directa), 1 (indirecta)
+        // - recurrente: vacío o 0 (no recurrente), 1 (recurrente)
+        // - fechas: vacías = hoy como inicio, sin fecha fin
+        csvRows.push(`"${taskName}",${userId},project,${projectId},${hours},0,,,""`);
       }
     });
 
@@ -344,8 +352,8 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    // Crear el CSV con cabecera
-    const csvContent = "Nombre Tarea,Número de usuario,project,Número de proyecto,Tiempo estimado con punto\n" + csvRows.join("\n");
+    // Crear el CSV SIN cabecera (el CRM no la necesita)
+    const csvContent = csvRows.join("\n");
     
     // Descargar el archivo
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
