@@ -792,62 +792,19 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
             )}
           </div>
           <DialogFooter className="p-6 pt-2 bg-muted/10 border-t flex flex-col gap-2 w-full">
-            {/* Resumen compacto de excesos (solo en modo creación) */}
-            {!editingAllocation && newTasks.some(t => t.projectId && t.hours) && (() => {
-                const projectSummary: Record<string, { name: string; total: number; budget: number; exceeds: number }> = {};
-                
-                newTasks.forEach(task => {
-                    if (!task.projectId || !task.hours) return;
-                    const proj = projects.find(p => p.id === task.projectId);
-                    if (!proj) return;
-                    
-                    if (!projectSummary[task.projectId]) {
-                        const existingStatus = getProjectBudgetStatus(task.projectId);
-                        projectSummary[task.projectId] = {
-                            name: formatProjectName(proj.name),
-                            total: existingStatus.totalComputed + existingStatus.totalPlanned,
-                            budget: proj.budgetHours || 0,
-                            exceeds: 0
-                        };
-                    }
-                    projectSummary[task.projectId].total += parseFloat(task.hours) || 0;
-                });
-                
-                Object.values(projectSummary).forEach(p => {
-                    if (p.budget > 0 && p.total > p.budget) {
-                        p.exceeds = round2(p.total - p.budget);
-                    }
-                });
-                
-                const projectsWithExcess = Object.values(projectSummary).filter(p => p.exceeds > 0);
-                const projectsOk = Object.values(projectSummary).filter(p => p.exceeds === 0 && p.budget > 0);
-                
-                if (projectsWithExcess.length === 0 && projectsOk.length === 0) return null;
-                
-                return (
-                    <div className="flex items-center gap-3 text-[11px] overflow-x-auto pb-2 w-full">
-                        {projectsWithExcess.map(p => (
-                            <div key={p.name} className="flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200 whitespace-nowrap">
-                                <AlertTriangle className="w-3 h-3" />
-                                <span className="font-medium">{p.name}</span>
-                                <span>+{p.exceeds}h</span>
-                            </div>
-                        ))}
-                        {projectsOk.length > 0 && projectsWithExcess.length > 0 && (
-                            <div className="text-slate-300">|</div>
-                        )}
-                        {projectsOk.slice(0, 3).map(p => (
-                            <div key={p.name} className="flex items-center gap-1 text-emerald-600 whitespace-nowrap">
-                                <CheckCircle2 className="w-3 h-3" />
-                                <span>{p.name}</span>
-                            </div>
-                        ))}
-                        {projectsOk.length > 3 && (
-                            <span className="text-slate-400 whitespace-nowrap">+{projectsOk.length - 3} OK</span>
-                        )}
-                    </div>
-                );
-            })()}
+            {/* Resumen compacto de impacto en proyectos y capacidad */}
+            {!editingAllocation && newTasks.some(t => t.projectId && t.hours) && (
+              <ProjectImpactSummary 
+                newTasks={newTasks} 
+                projects={projects} 
+                allocations={allocations} 
+                viewDate={viewDate}
+                getProjectBudgetStatus={getProjectBudgetStatus}
+                getEmployeeLoadForWeek={getEmployeeLoadForWeek}
+                employeeId={employeeId}
+                weeks={weeks}
+              />
+            )}
             <div className="flex justify-between items-center w-full">
               {editingAllocation && <Button variant="ghost" size="sm" onClick={handleDeleteAllocation} className="text-red-500"><Trash2 className="w-4 h-4 mr-2" /> Eliminar</Button>}
               <div className="flex gap-2 ml-auto">
@@ -937,19 +894,25 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   }
 }
 
-// Componente para mostrar el resumen de impacto en proyectos
+// Componente para mostrar el resumen de impacto en proyectos y capacidad
 function ProjectImpactSummary({ 
   newTasks, 
   projects, 
   allocations, 
   viewDate,
-  getProjectBudgetStatus
+  getProjectBudgetStatus,
+  getEmployeeLoadForWeek,
+  employeeId,
+  weeks
 }: { 
   newTasks: NewTaskRow[]; 
   projects: Project[]; 
   allocations: Allocation[];
   viewDate: Date;
   getProjectBudgetStatus: (projectId: string) => ProjectBudgetStatus;
+  getEmployeeLoadForWeek: (employeeId: string, weekStart: string, effectiveStart?: Date, effectiveEnd?: Date) => { hours: number; capacity: number; percentage: number };
+  employeeId: string;
+  weeks: { weekStart: Date; effectiveStart?: Date; effectiveEnd?: Date }[];
 }) {
   // Agrupar horas por proyecto
   const projectImpact = useMemo(() => {
@@ -983,16 +946,66 @@ function ProjectImpactSummary({
     }));
   }, [newTasks, projects, getProjectBudgetStatus]);
 
-  const hasExcesses = projectImpact.some(p => p.exceeds);
-  const allOk = projectImpact.length > 0 && !hasExcesses;
+  // Agrupar horas por semana para verificar capacidad
+  const weekImpact = useMemo(() => {
+    const impact: Record<string, { weekIndex: number; adding: number; weekData: { weekStart: Date; effectiveStart?: Date; effectiveEnd?: Date } }> = {};
+    
+    newTasks.forEach(task => {
+      if (task.weekDate && task.hours) {
+        const hours = parseFloat(task.hours) || 0;
+        if (hours > 0) {
+          if (!impact[task.weekDate]) {
+            const weekIndex = weeks.findIndex(w => {
+              const storageKey = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-W${String(weeks.indexOf(w) + 1).padStart(2, '0')}`;
+              return storageKey === task.weekDate || w.weekStart.toISOString().split('T')[0] === task.weekDate;
+            });
+            const weekData = weeks[weekIndex] || weeks[0];
+            impact[task.weekDate] = {
+              weekIndex: weekIndex >= 0 ? weekIndex : 0,
+              adding: 0,
+              weekData
+            };
+          }
+          impact[task.weekDate].adding += hours;
+        }
+      }
+    });
+    
+    return Object.entries(impact).map(([weekDate, data]) => {
+      const currentLoad = getEmployeeLoadForWeek(
+        employeeId, 
+        weekDate, 
+        data.weekData.effectiveStart, 
+        data.weekData.effectiveEnd
+      );
+      const newTotal = round2(currentLoad.hours + data.adding);
+      const exceeds = newTotal > currentLoad.capacity;
+      
+      return {
+        weekDate,
+        weekIndex: data.weekIndex,
+        adding: data.adding,
+        currentHours: currentLoad.hours,
+        capacity: currentLoad.capacity,
+        newTotal,
+        exceeds,
+        excessAmount: exceeds ? round2(newTotal - currentLoad.capacity) : 0
+      };
+    }).sort((a, b) => a.weekIndex - b.weekIndex);
+  }, [newTasks, weeks, viewDate, getEmployeeLoadForWeek, employeeId]);
 
-  if (projectImpact.length === 0) return null;
+  const hasProjectExcesses = projectImpact.some(p => p.exceeds);
+  const hasWeekExcesses = weekImpact.some(w => w.exceeds);
+  const hasAnyExcess = hasProjectExcesses || hasWeekExcesses;
+
+  if (projectImpact.length === 0 && weekImpact.length === 0) return null;
 
   return (
     <div className={cn(
       "flex items-center gap-3 text-xs px-3 py-2 rounded-lg w-full flex-wrap",
-      hasExcesses ? "bg-amber-50 border border-amber-200" : "bg-emerald-50 border border-emerald-200"
+      hasAnyExcess ? "bg-amber-50 border border-amber-200" : "bg-emerald-50 border border-emerald-200"
     )}>
+      {/* Impacto en proyectos */}
       {projectImpact.map((p, idx) => (
         <div key={p.id} className="flex items-center gap-1.5">
           {idx > 0 && <span className="text-slate-300">│</span>}
@@ -1001,15 +1014,43 @@ function ProjectImpactSummary({
           ) : (
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
           )}
-          <span className={cn("font-medium truncate max-w-[150px]", p.exceeds ? "text-amber-700" : "text-emerald-700")}>
+          <span className={cn("font-medium truncate max-w-[120px]", p.exceeds ? "text-amber-700" : "text-emerald-700")}>
             {formatProjectName(p.name)}
           </span>
           <span className={cn("tabular-nums", p.exceeds ? "text-amber-600" : "text-emerald-600")}>
             +{p.adding}h
           </span>
           {p.exceeds && p.current.budgetMax > 0 && (
-            <span className="text-amber-600 font-semibold">
+            <span className="text-amber-600 font-semibold text-[10px]">
               ({p.newTotal}/{p.current.budgetMax}h)
+            </span>
+          )}
+        </div>
+      ))}
+      
+      {/* Separador si hay ambos */}
+      {projectImpact.length > 0 && weekImpact.length > 0 && (
+        <span className="text-slate-300">║</span>
+      )}
+      
+      {/* Impacto en capacidad por semana */}
+      {weekImpact.map((w, idx) => (
+        <div key={w.weekDate} className="flex items-center gap-1.5">
+          {idx > 0 && <span className="text-slate-300">│</span>}
+          {w.exceeds ? (
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+          ) : (
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          )}
+          <span className={cn("font-medium", w.exceeds ? "text-amber-700" : "text-emerald-700")}>
+            S{w.weekIndex + 1}
+          </span>
+          <span className={cn("tabular-nums text-[10px]", w.exceeds ? "text-amber-600" : "text-emerald-600")}>
+            {w.newTotal}h/{w.capacity}h
+          </span>
+          {w.exceeds && (
+            <span className="text-amber-600 font-semibold text-[10px]">
+              (+{w.excessAmount}h)
             </span>
           )}
         </div>
