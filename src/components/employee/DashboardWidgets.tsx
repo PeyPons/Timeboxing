@@ -1,19 +1,18 @@
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Lightbulb, Users, ArrowRight, AlertOctagon, Link as LinkIcon, CheckCircle2, Clock, Flag, Zap } from 'lucide-react';
+import { Lightbulb, Users, ArrowRight, AlertOctagon, Link as LinkIcon, CheckCircle2, Clock, Flag, Zap, PlayCircle } from 'lucide-react';
 import { isSameMonth, parseISO } from 'date-fns';
 
 interface WidgetProps {
   employeeId: string;
 }
 
-// WIDGET 1: RECOMENDACIONES INTELIGENTES (V2)
+// WIDGET 1: RECOMENDACIONES (V2)
 export function PriorityInsights({ employeeId }: WidgetProps) {
   const { allocations, projects, employees } = useApp();
   const today = new Date();
   
-  // Tareas activas del mes
   const myTasks = allocations.filter(a => 
     a.employeeId === employeeId && 
     a.status !== 'completed' &&
@@ -36,7 +35,6 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
   // 3. CRITERIO CARGA: TAREA MÁS PESADA
   const heavyTask = [...myTasks].sort((a, b) => b.hoursAssigned - a.hoursAssigned)[0];
   
-  // --- DECISOR DE RECOMENDACIÓN ---
   let recommendation = null;
 
   if (blockingTask) {
@@ -90,26 +88,23 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
   const { allocations, projects, employees } = useApp();
   const today = new Date();
   
-  // 1. OBTENER MIS TAREAS DEL MES ACTUAL (No solo la semana)
   const myAllocations = allocations.filter(a => 
     a.employeeId === employeeId && 
     a.status !== 'completed' && 
     isSameMonth(parseISO(a.weekStartDate), today)
   );
 
-  // 2. TAREAS QUE ME BLOQUEAN (Incoming)
   const incomingDependencies = myAllocations
-    .filter(a => a.dependencyId) // Solo las que tienen dependencia
+    .filter(a => a.dependencyId) 
     .map(a => {
         const depTask = allocations.find(d => d.id === a.dependencyId);
         const depOwner = employees.find(e => e.id === depTask?.employeeId);
-        const depProject = projects.find(p => p.id === depTask?.projectId); // Proyecto de la dependencia
+        const depProject = projects.find(p => p.id === depTask?.projectId); 
         const isReady = depTask?.status === 'completed'; 
         return { myTask: a, depTask, depOwner, depProject, isReady };
     })
     .filter(item => item.depTask !== undefined);
 
-  // 3. TAREAS QUE YO BLOQUEO (Outgoing)
   const outgoingBlocks = myAllocations
     .map(a => {
         const blockedTasks = allocations.filter(b => 
@@ -135,7 +130,7 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
              <p className="text-xs text-slate-400 text-center py-4">No hay bloqueos activos. ¡Todo fluido!</p>
         )}
 
-        {/* ME BLOQUEAN (O YA PUEDO EMPEZAR) */}
+        {/* ME BLOQUEAN */}
         {incomingDependencies.length > 0 && (
             <div>
                 <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase flex items-center gap-1">
@@ -146,18 +141,17 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
                         <div key={i} className={`flex flex-col gap-1 text-xs p-2 rounded border ${item.isReady ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-100'}`}>
                             <div className="flex justify-between items-start">
                                 <div>
-                                    {/* NOMBRE DEL PROYECTO */}
                                     <Badge variant="outline" className="text-[9px] h-4 bg-white border-slate-200 text-slate-500 mb-1">
                                         {item.depProject?.name}
                                     </Badge>
                                     <div className="font-medium text-slate-700">{item.myTask.taskName}</div>
                                 </div>
                                 {item.isReady ? (
-                                    <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-white px-1.5 py-0.5 rounded shadow-sm">
-                                        <CheckCircle2 className="w-3 h-3"/> ¡Listo!
+                                    <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-white px-2 py-1 rounded shadow-sm border border-emerald-100">
+                                        <PlayCircle className="w-3 h-3"/> ¡Puedes empezar!
                                     </span>
                                 ) : (
-                                    <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-white px-1.5 py-0.5 rounded shadow-sm">
+                                    <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-white px-2 py-1 rounded shadow-sm border border-amber-100">
                                         <Clock className="w-3 h-3"/> Espera
                                     </span>
                                 )}
@@ -184,7 +178,6 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
                         <div key={i} className="flex flex-col gap-1 text-xs bg-red-50 p-2 rounded border border-red-100">
                             <div className="flex justify-between items-start">
                                 <div>
-                                    {/* NOMBRE DEL PROYECTO */}
                                     <Badge variant="outline" className="text-[9px] h-4 bg-white border-red-200 text-red-400 mb-1">
                                         {item.myProject?.name}
                                     </Badge>
