@@ -14,7 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown, Trash2, Link as LinkIcon } from 'lucide-react';
+import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown, Trash2, Link as LinkIcon, AlertOctagon } from 'lucide-react';
 import { cn, formatProjectName } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
@@ -35,19 +35,13 @@ interface NewTaskRow {
   hours: string;
   weekDate: string;
   description: string;
+  dependencyId?: string; // Campo para dependencia en creación
 }
 
 export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, viewDateContext }: AllocationSheetProps) {
   const { 
-    employees, 
-    projects, 
-    allocations, // Necesario para buscar dependencias
-    getEmployeeAllocationsForWeek, 
-    getEmployeeLoadForWeek,
-    getProjectById,
-    addAllocation,
-    updateAllocation,
-    deleteAllocation // Necesario para borrar
+    employees, projects, allocations, getEmployeeAllocationsForWeek, getEmployeeLoadForWeek, getProjectById,
+    addAllocation, updateAllocation, deleteAllocation 
   } = useApp();
 
   const [viewDate, setViewDate] = useState(() => viewDateContext || new Date(weekStart));
@@ -72,7 +66,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const [editHours, setEditHours] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editWeek, setEditWeek] = useState('');
-  const [editDependencyId, setEditDependencyId] = useState<string>('none'); // Estado dependencia
+  const [editDependencyId, setEditDependencyId] = useState<string>('none');
   
   const [openComboboxId, setOpenComboboxId] = useState<string | null>(null);
   const [editComboboxOpen, setEditComboboxOpen] = useState(false);
@@ -87,15 +81,15 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     projects.filter(p => p.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
   [projects]);
 
-  // Lista de tareas candidatas para dependencia (mismo proyecto, no completadas)
-  const availableDependencies = useMemo(() => {
-      if (!editProjectId) return [];
+  // Lógica para obtener dependencias disponibles (Mismo proyecto, no completadas)
+  const getAvailableDependencies = (projectId: string, currentTaskId?: string) => {
+      if (!projectId) return [];
       return allocations.filter(a => 
-          a.projectId === editProjectId && 
-          a.id !== editingAllocation?.id && 
+          a.projectId === projectId && 
+          a.id !== currentTaskId && 
           a.status !== 'completed'
       );
-  }, [editProjectId, allocations, editingAllocation]);
+  };
 
   useEffect(() => {
     if (inlineEditingId && inlineInputRef.current) inlineInputRef.current.focus();
@@ -110,8 +104,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     const storageKey = getStorageKey(weekStartReal, viewDate);
     setEditingAllocation(null);
     setNewTasks([{
-      id: crypto.randomUUID(),
-      projectId: '', taskName: '', hours: '', weekDate: storageKey, description: ''
+      id: crypto.randomUUID(), projectId: '', taskName: '', hours: '', weekDate: storageKey, description: '', dependencyId: 'none'
     }]);
     setIsFormOpen(true);
   };
@@ -122,7 +115,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setNewTasks(prev => [...prev, {
       id: crypto.randomUUID(),
       projectId: lastTask ? lastTask.projectId : '', 
-      taskName: '', hours: '', weekDate: lastTask ? lastTask.weekDate : defaultKey, description: ''
+      taskName: '', hours: '', weekDate: lastTask ? lastTask.weekDate : defaultKey, description: '', dependencyId: 'none'
     }]);
   };
 
@@ -145,7 +138,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
         weekStartDate: editWeek,
         hoursAssigned: parseFloat(editHours),
         description: editDescription,
-        dependencyId: editDependencyId === 'none' ? undefined : editDependencyId // Guardar
+        dependencyId: editDependencyId === 'none' ? undefined : editDependencyId
       });
     } else {
       newTasks.forEach(task => {
@@ -158,6 +151,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
             hoursAssigned: parseFloat(task.hours),
             status: 'planned', 
             description: task.description,
+            dependencyId: task.dependencyId === 'none' ? undefined : task.dependencyId
           });
         }
       });
@@ -197,7 +191,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setEditHours(allocation.hoursAssigned.toString());
     setEditDescription(allocation.description || '');
     setEditWeek(allocation.weekStartDate);
-    setEditDependencyId(allocation.dependencyId || 'none'); // Cargar
+    setEditDependencyId(allocation.dependencyId || 'none');
     setIsFormOpen(true);
   };
 
@@ -364,8 +358,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                 const real = alloc.hoursActual || 0;
                                                 const computed = alloc.hoursComputed || 0;
                                                 const gain = computed - real;
-                                                // Mostrar si depende de algo
+                                                
+                                                // 1. DEPENDENCIA DE SALIDA (Yo dependo de X)
                                                 const depTask = alloc.dependencyId ? allocations.find(a => a.id === alloc.dependencyId) : null;
+                                                const depOwner = depTask ? employees.find(e => e.id === depTask.employeeId) : null;
+                                                
+                                                // 2. DEPENDENCIA DE ENTRADA (Alguien depende de mi)
+                                                const blockingTasks = allocations.filter(a => a.dependencyId === alloc.id && a.status !== 'completed');
 
                                                 return (
                                                 <div key={alloc.id} className={cn("group flex items-start gap-2 p-2 hover:bg-slate-50/80 transition-colors", isCompleted && "bg-slate-50/50")}>
@@ -393,10 +392,26 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                             {alloc.taskName || 'Tarea'}
                                                                         </span>
                                                                         
+                                                                        {/* Badge: YO DEPENDO DE... */}
                                                                         {depTask && (
-                                                                            <div className="flex items-center gap-1 mt-0.5 text-[9px] text-amber-600 bg-amber-50 px-1 rounded w-fit border border-amber-100">
+                                                                            <div className="flex items-center gap-1 mt-1 text-[9px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded w-fit border border-amber-200" title={`Esta tarea está bloqueada hasta que ${depOwner?.name} termine`}>
                                                                                 <LinkIcon className="w-2.5 h-2.5" />
-                                                                                <span className="truncate max-w-[100px]">Dep: {depTask.taskName}</span>
+                                                                                <span className="truncate max-w-[120px]">Dep: {depTask.taskName} <strong>({depOwner?.name})</strong></span>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Badge: YO BLOQUEO A... */}
+                                                                        {blockingTasks.length > 0 && (
+                                                                            <div className="flex flex-col gap-0.5 mt-1">
+                                                                                {blockingTasks.map(bt => {
+                                                                                    const blockedUser = employees.find(e => e.id === bt.employeeId);
+                                                                                    return (
+                                                                                        <div key={bt.id} className="flex items-center gap-1 text-[9px] text-red-700 bg-red-50 px-1.5 py-0.5 rounded w-fit border border-red-200">
+                                                                                            <AlertOctagon className="w-2.5 h-2.5" />
+                                                                                            <span>Bloquea a: <strong>{blockedUser?.name}</strong></span>
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -484,100 +499,49 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       </Sheet>
 
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[900px]" : "")}>
+        <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[950px]" : "")}>
           <DialogHeader className="p-6 pb-2">
             <DialogTitle>{editingAllocation ? 'Editar Tarea' : 'Añadir Tareas'}</DialogTitle>
-            <DialogDescription>{editingAllocation ? `Editando tarea de ${employee.name}` : 'Añade múltiples tareas rápidamente.'}</DialogDescription>
+            <DialogDescription>{editingAllocation ? 'Modifica detalles y dependencias.' : 'Añade múltiples tareas rápidamente.'}</DialogDescription>
           </DialogHeader>
 
           <div className="p-6 pt-2">
             {editingAllocation ? (
+              // --- MODO EDICIÓN INDIVIDUAL ---
               <div className="grid gap-4 mt-4">
-                <div className="space-y-2 flex flex-col">
-                  <Label>Proyecto</Label>
-                  <Popover open={editComboboxOpen} onOpenChange={setEditComboboxOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" role="combobox" className="justify-between w-full">
-                        {editProjectId ? formatProjectName(activeProjects.find((p) => p.id === editProjectId)?.name || '') : "Seleccionar proyecto..."}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[400px] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Buscar proyecto..." />
-                        <CommandList>
-                            <CommandEmpty>No encontrado.</CommandEmpty>
-                            <CommandGroup className="max-h-[300px] overflow-y-auto">
-                            {activeProjects.map((project) => (
-                                <CommandItem key={project.id} value={project.name} onSelect={() => { setEditProjectId(project.id); setEditComboboxOpen(false); }}>
-                                <Check className={cn("mr-2 h-4 w-4", editProjectId === project.id ? "opacity-100" : "opacity-0")} />
-                                {formatProjectName(project.name)}
-                                </CommandItem>
-                            ))}
-                            </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                 <div className="space-y-2">
+                    <Label>Proyecto</Label>
+                    <Select value={editProjectId} onValueChange={setEditProjectId}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{activeProjects.map(p=><SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>
                 </div>
-                <div className="space-y-2">
-                    <Label>Nombre de la Tarea</Label>
-                    <Input placeholder="Ej: Maquetación, Diseño..." value={editTaskName} onChange={(e) => setEditTaskName(e.target.value)} />
-                </div>
+                <div className="space-y-2"><Label>Tarea</Label><Input value={editTaskName} onChange={e=>setEditTaskName(e.target.value)} /></div>
                 
-                {/* SELECTOR DEPENDENCIA */}
+                {/* SELECTOR DEPENDENCIA EDICIÓN */}
                 <div className="space-y-2">
-                    <Label className="flex items-center gap-2">
-                        <LinkIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                        Bloqueado por / Depende de (Opcional)
-                    </Label>
+                    <Label className="flex items-center gap-2 text-xs text-slate-500"><LinkIcon className="w-3 h-3"/> Dependencia (Bloqueante)</Label>
                     <Select value={editDependencyId} onValueChange={setEditDependencyId} disabled={!editProjectId}>
-                        <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Sin dependencia" />
-                        </SelectTrigger>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Sin dependencia" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="none">-- Ninguna --</SelectItem>
-                            {availableDependencies.map(dep => {
+                            {getAvailableDependencies(editProjectId, editingAllocation.id).map(dep => {
                                 const owner = employees.find(e => e.id === dep.employeeId);
-                                return (
-                                    <SelectItem key={dep.id} value={dep.id} className="text-xs">
-                                        {dep.taskName} <span className="text-muted-foreground">({owner?.name})</span>
-                                    </SelectItem>
-                                )
+                                return <SelectItem key={dep.id} value={dep.id} className="text-xs">{dep.taskName} ({owner?.name})</SelectItem>;
                             })}
                         </SelectContent>
                     </Select>
                 </div>
-
+                
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <Label>Horas Estimadas</Label>
-                        <Input type="number" value={editHours} onChange={(e) => setEditHours(e.target.value)} step="0.5" />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Semana</Label>
-                        <Select value={editWeek} onValueChange={setEditWeek}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                {weeks.map((w, i) => (
-                                    <SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>
-                                        Sem {i + 1} ({format(w.effectiveStart!, 'd MMM', { locale: es })} - {format(w.effectiveEnd!, 'd MMM', { locale: es })})
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </div>
-                <div className="space-y-2">
-                    <Label>Descripción (Opcional)</Label>
-                    <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} />
+                    <div className="space-y-2"><Label>Horas</Label><Input type="number" value={editHours} onChange={e=>setEditHours(e.target.value)} step="0.5" /></div>
+                    <div className="space-y-2"><Label>Semana</Label><Select value={editWeek} onValueChange={setEditWeek}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{weeks.map((w,i)=><SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>Sem {i+1}</SelectItem>)}</SelectContent></Select></div>
                 </div>
               </div>
             ) : (
+              // --- MODO CREACIÓN MÚLTIPLE (Con Dependencias) ---
               <div className="space-y-3 mt-4">
                 <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
                     <div className="flex-1 pl-1">Proyecto</div>
                     <div className="flex-1 pl-1">Tarea</div>
+                    <div className="w-40 px-2">Dependencia?</div> {/* AÑADIDO */}
                     <div className="w-20 mx-2 text-center">Horas</div>
                     <div className="w-36">Semana</div>
                     <div className="w-8"></div>
@@ -585,15 +549,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
                     {newTasks.map((task) => (
-                        <div key={task.id} className="flex gap-2 items-start animate-in fade-in slide-in-from-top-1 duration-200">
-                            {/* ... (Filas de creación múltiple sin cambios) ... */}
+                        <div key={task.id} className="flex gap-2 items-start">
+                            {/* Proyecto */}
                             <div className="flex-1 min-w-0">
                                 <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
                                     <PopoverTrigger asChild>
-                                        <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal bg-muted/30 hover:bg-muted/50 border-input/50", !task.projectId && "text-muted-foreground")}>
-                                            <span className="truncate">
-                                                {task.projectId ? formatProjectName(activeProjects.find((p) => p.id === task.projectId)?.name || '') : "Buscar..."}
-                                            </span>
+                                        <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal", !task.projectId && "text-muted-foreground")}>
+                                            <span className="truncate">{task.projectId ? formatProjectName(activeProjects.find((p) => p.id === task.projectId)?.name || '') : "Buscar..."}</span>
                                         </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-[300px] p-0" align="start">
@@ -615,61 +577,44 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                 </Popover>
                             </div>
 
-                            <Input 
-                                className="flex-1 h-10 px-2 bg-muted/30 border-input/50" 
-                                placeholder="Nombre tarea..." 
-                                value={task.taskName} 
-                                onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} 
-                            />
+                            <Input className="flex-1 h-10" placeholder="Nombre..." value={task.taskName} onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} />
 
-                            <Input 
-                                type="number" 
-                                className="w-20 h-10 text-center px-1 font-mono bg-muted/30 border-input/50" 
-                                placeholder="0" 
-                                value={task.hours} 
-                                onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} 
-                                step="0.5"
-                            />
-
-                            <div className="w-36">
-                                <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
-                                    <SelectTrigger className="h-10 px-2 bg-muted/30 border-input/50"><SelectValue /></SelectTrigger>
+                            {/* SELECTOR DEPENDENCIA EN CREACIÓN */}
+                            <div className="w-40">
+                                <Select value={task.dependencyId} onValueChange={(v) => updateTaskRow(task.id, 'dependencyId', v)} disabled={!task.projectId}>
+                                    <SelectTrigger className="h-10 text-xs px-2"><SelectValue placeholder="-" /></SelectTrigger>
                                     <SelectContent>
-                                        {weeks.map((w, i) => (
-                                            <SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>
-                                                Sem {i+1} ({format(w.effectiveStart!, 'd', { locale: es })})
-                                            </SelectItem>
-                                        ))}
+                                        <SelectItem value="none">Ninguna</SelectItem>
+                                        {getAvailableDependencies(task.projectId).map(dep => {
+                                            const owner = employees.find(e => e.id === dep.employeeId);
+                                            return <SelectItem key={dep.id} value={dep.id} className="text-xs">{dep.taskName} ({owner?.name?.substring(0,6)}..)</SelectItem>;
+                                        })}
                                     </SelectContent>
                                 </Select>
                             </div>
 
-                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => removeTaskRow(task.id)} disabled={newTasks.length === 1}>
-                                <X className="h-4 w-4" />
-                            </Button>
+                            <Input type="number" className="w-20 h-10 text-center" placeholder="0" value={task.hours} onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} step="0.5" />
+
+                            <div className="w-36">
+                                <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
+                                    <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                                    <SelectContent>{weeks.map((w, i) => (<SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>Sem {i+1}</SelectItem>))}</SelectContent>
+                                </Select>
+                            </div>
+
+                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive" onClick={() => removeTaskRow(task.id)} disabled={newTasks.length === 1}><X className="h-4 w-4" /></Button>
                         </div>
                     ))}
                 </div>
-
-                <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed h-10 hover:bg-primary/5 hover:text-primary hover:border-primary/30">
-                    <Plus className="h-4 w-4 mr-2" /> Añadir otra fila
-                </Button>
+                <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed"><Plus className="h-4 w-4 mr-2" /> Añadir otra fila</Button>
               </div>
             )}
           </div>
-          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t flex justify-between sm:justify-between items-center w-full">
-            {/* BOTÓN ELIMINAR */}
-            {editingAllocation && (
-                <Button variant="ghost" size="sm" onClick={handleDeleteAllocation} className="text-red-500 hover:text-red-700 hover:bg-red-50">
-                    <Trash2 className="w-4 h-4 mr-2" /> Eliminar
-                </Button>
-            )}
-            
+          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t flex justify-between items-center w-full">
+            {editingAllocation && <Button variant="ghost" size="sm" onClick={handleDeleteAllocation} className="text-red-500"><Trash2 className="w-4 h-4 mr-2" /> Eliminar</Button>}
             <div className="flex gap-2 ml-auto">
                 <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
-                <Button onClick={handleSave}>
-                    {editingAllocation ? 'Guardar Cambios' : `Guardar ${newTasks.filter(t => t.projectId && t.hours).length} Tareas`}
-                </Button>
+                <Button onClick={handleSave}>Guardar</Button>
             </div>
           </DialogFooter>
         </DialogContent>
