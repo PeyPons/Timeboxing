@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { format, startOfWeek, addDays, isSameWeek, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar, Briefcase, AlertCircle, CheckCircle2, Circle, PlusCircle, Link as LinkIcon } from 'lucide-react';
+import { Clock, CheckCircle2, Briefcase, AlertCircle, PlusCircle, Save } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -18,303 +19,283 @@ import {
   DialogFooter
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface MyWeekViewProps {
   employeeId: string;
 }
 
 export function MyWeekView({ employeeId }: MyWeekViewProps) {
-  // AÑADIDO: 'employees' para poder mostrar nombres en las dependencias
   const { allocations, projects, clients, updateAllocation, addAllocation, employees } = useApp();
   
   const today = new Date();
   const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
+  const weekLabel = `Semana del ${format(startOfCurrentWeek, 'd MMM', { locale: es })} al ${format(addDays(startOfCurrentWeek, 4), 'd MMM', { locale: es })}`;
   
-  const mondayDate = startOfCurrentWeek;
-  const fridayDate = addDays(startOfCurrentWeek, 4);
-  const weekLabel = `Semana del ${format(mondayDate, 'd', { locale: es })} al ${format(fridayDate, 'd ' + (mondayDate.getMonth() !== fridayDate.getMonth() ? 'MMM' : ''), { locale: es })} de ${format(fridayDate, 'MMMM', { locale: es })}`;
+  // Datos del empleado para capacidad
+  const me = employees.find(e => e.id === employeeId);
+  const weeklyCapacity = me?.defaultWeeklyCapacity || 40;
 
-  const myAllocations = allocations.filter(a => {
-    const allocDate = parseISO(a.weekStartDate);
-    return a.employeeId === employeeId && isSameWeek(allocDate, today, { weekStartsOn: 1 });
-  });
-
-  const pendingAllocations = myAllocations.filter(a => a.status !== 'completed');
-  const completedAllocations = myAllocations.filter(a => a.status === 'completed');
+  // Filtramos las allocations de ESTA semana
+  const myAllocations = allocations.filter(a => 
+    a.employeeId === employeeId && 
+    (a.status === 'planned' || a.status === 'active' || a.status === 'completed') &&
+    isSameWeek(parseISO(a.weekStartDate), today, { weekStartsOn: 1 })
+  );
 
   const [editingValues, setEditingValues] = useState<Record<string, string>>({});
 
-  // --- ESTADOS PARA TAREA EXTRA Y DEPENDENCIAS ---
+  // --- ESTADOS TAREA EXTRA ---
   const [isAddingExtra, setIsAddingExtra] = useState(false);
-  const [extraProjectId, setExtraProjectId] = useState('');
   const [extraTaskName, setExtraTaskName] = useState('');
-  const [extraHours, setExtraHours] = useState('1');
-  const [dependencyId, setDependencyId] = useState<string>('none'); // Estado para dependencia
+  const [extraEstimated, setExtraEstimated] = useState('1'); // Estimado manual
+  const [extraReal, setExtraReal] = useState('0'); // Real manual
 
-  // Filtramos tareas activas del proyecto seleccionado para ofrecerlas como dependencia
-  const projectTasks = allocations.filter(a => 
-      a.projectId === extraProjectId && 
-      a.status !== 'completed' &&
-      a.id // Asegurar que tiene ID
-  );
+  // --- BUSCAR PROYECTO INTERNO AUTOMÁTICAMENTE ---
+  const internalProject = useMemo(() => {
+      // Busca un proyecto que se llame "Interno", "Gestión", "General", etc.
+      return projects.find(p => 
+          p.name.toLowerCase().includes('interno') || 
+          p.name.toLowerCase().includes('gestión') ||
+          p.name.toLowerCase().includes('general')
+      ) || projects[0]; // Fallback al primero si no hay ninguno específico
+  }, [projects]);
 
   const handleUpdateHours = async (allocation: any, newValue: string) => {
       const numValue = parseFloat(newValue);
       if (isNaN(numValue) || numValue < 0) return;
 
       if (numValue !== allocation.hoursActual) {
-          try {
-              await updateAllocation({
-                  ...allocation,
-                  hoursActual: numValue,
-                  status: allocation.status === 'planned' && numValue > 0 ? 'active' : allocation.status
-              });
-              toast.success("Horas registradas");
-          } catch (error) {
-              toast.error("Error al guardar");
-          }
+        try {
+            await updateAllocation({
+                ...allocation,
+                hoursActual: numValue,
+                status: allocation.status === 'planned' && numValue > 0 ? 'active' : allocation.status
+            });
+            toast.success("Horas actualizadas");
+            setEditingValues(prev => {
+                const newState = { ...prev };
+                delete newState[allocation.id];
+                return newState;
+            });
+        } catch (error) {
+            console.error(error);
+            toast.error("Error al guardar horas");
+        }
       }
   };
 
-  const toggleComplete = async (allocation: any) => {
-      const newStatus = allocation.status === 'completed' ? 'active' : 'completed';
-      try {
-          await updateAllocation({
-              ...allocation,
-              status: newStatus
-          });
-          toast.success(newStatus === 'completed' ? "Tarea completada" : "Tarea reactivada");
-      } catch (error) {
-          toast.error("Error al cambiar estado");
-      }
-  };
-
-  // --- FUNCIÓN PARA CREAR TAREA IMPREVISTA ---
   const handleAddExtraTask = async () => {
-      if (!extraProjectId || !extraTaskName) {
-          toast.error("Rellena proyecto y nombre");
+      if (!extraTaskName) {
+          toast.error("Debes poner un nombre a la tarea");
+          return;
+      }
+      if (!internalProject) {
+          toast.error("No hay proyectos disponibles para asignar.");
           return;
       }
 
       try {
           await addAllocation({
-              projectId: extraProjectId,
+              projectId: internalProject.id,
               employeeId: employeeId,
               weekStartDate: startOfCurrentWeek.toISOString(),
-              hoursAssigned: 0, // 0 porque no estaba planificada (es Extra)
-              hoursActual: Number(extraHours),
+              hoursAssigned: Number(extraEstimated), // Usuario define estimado
+              hoursActual: Number(extraReal),       // Usuario define real inicial
               hoursComputed: 0,
               taskName: extraTaskName,
               status: 'active',
-              description: 'Tarea añadida manualmente por el empleado (Imprevisto)',
-              dependencyId: dependencyId === 'none' ? undefined : dependencyId // Guardamos la dependencia
+              description: 'Tarea interna añadida manualmente'
           });
-          toast.success("Tarea imprevista registrada");
+          toast.success("Tarea interna registrada");
           setIsAddingExtra(false);
-          
-          // Resetear formulario
-          setExtraProjectId('');
           setExtraTaskName('');
-          setExtraHours('1');
-          setDependencyId('none');
+          setExtraEstimated('1');
+          setExtraReal('0');
       } catch (error) {
           console.error(error);
           toast.error("Error al crear tarea");
       }
   };
 
-  const TaskRow = ({ task, isCompleted = false }: { task: any, isCompleted?: boolean }) => {
-      const project = projects.find(p => p.id === task.projectId);
-      const client = clients.find(c => c.id === project?.clientId);
-      const assigned = Number(task.hoursAssigned);
-      const actual = editingValues[task.id] !== undefined ? Number(editingValues[task.id]) : Number(task.hoursActual || 0);
-      
-      const percent = assigned > 0 ? Math.min(100, (actual / assigned) * 100) : (actual > 0 ? 100 : 0);
-      const isOverBudget = assigned > 0 && actual > assigned;
-      const isUnplanned = assigned === 0;
-
-      // Buscar info de dependencia para mostrarla
-      const depTask = task.dependencyId ? allocations.find(a => a.id === task.dependencyId) : null;
-      const depUser = depTask ? employees.find(e => e.id === depTask.employeeId) : null;
-
-      return (
-          <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white border rounded-lg shadow-sm transition-all ${isCompleted ? 'opacity-60 bg-slate-50' : 'hover:border-indigo-300'} ${isUnplanned ? 'border-amber-200 bg-amber-50/30' : ''}`}>
-              
-              <div className="flex items-start gap-3 flex-1 mb-3 sm:mb-0">
-                  <button onClick={() => toggleComplete(task)} className="mt-1 text-slate-400 hover:text-emerald-500 transition-colors" title={isCompleted ? "Marcar como pendiente" : "Marcar como completada"}>
-                      {isCompleted ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Circle className="w-5 h-5" />}
-                  </button>
-                  <div>
-                      <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="outline" className="text-[10px] h-5 bg-white text-slate-500 border-slate-200">
-                              {client?.name || 'Interno'}
-                          </Badge>
-                          <span className="font-semibold text-slate-700 text-sm">{project?.name}</span>
-                          
-                          {/* ETIQUETA VISUAL PARA TAREAS EXTRA */}
-                          {isUnplanned && <Badge variant="secondary" className="text-[9px] h-4 bg-amber-100 text-amber-700 hover:bg-amber-100 border border-amber-200">Extra / Imprevisto</Badge>}
-                      </div>
-                      <p className="text-sm text-slate-600 font-medium">
-                          {task.taskName || "Asignación general"}
-                      </p>
-                      
-                      {/* MOSTRAR DEPENDENCIA SI EXISTE */}
-                      {depTask && (
-                          <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded w-fit border border-slate-200">
-                              <LinkIcon className="w-3 h-3" />
-                              <span>Depende de: <strong>{depTask.taskName}</strong> ({depUser?.name || '...'})</span>
-                          </div>
-                      )}
-                  </div>
-              </div>
-
-              <div className="flex items-center gap-4 sm:border-l sm:pl-4 border-slate-100">
-                  <div className="flex flex-col items-end min-w-[100px]">
-                      <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs text-slate-400 uppercase font-medium">Realizado</span>
-                          {isOverBudget && <AlertCircle className="w-3 h-3 text-red-500" />}
-                      </div>
-                      <div className="flex items-center gap-2">
-                          <Input 
-                              type="number" 
-                              className={`h-8 w-16 text-right font-mono font-medium ${isOverBudget ? 'text-red-600 bg-red-50 border-red-200' : 'text-slate-900'}`}
-                              value={editingValues[task.id] ?? (task.hoursActual || '')}
-                              onChange={(e) => setEditingValues({...editingValues, [task.id]: e.target.value})}
-                              onBlur={(e) => handleUpdateHours(task, e.target.value)}
-                              placeholder="0"
-                              disabled={isCompleted}
-                          />
-                          <span className="text-sm text-slate-400">/ {assigned}h</span>
-                      </div>
-                  </div>
-                  
-                  <div className="hidden sm:block w-24">
-                      <Progress 
-                          value={percent} 
-                          className={`h-2 ${isOverBudget ? '[&>div]:bg-red-500' : isCompleted ? '[&>div]:bg-emerald-500' : isUnplanned ? '[&>div]:bg-amber-500' : '[&>div]:bg-indigo-600'}`} 
-                      />
-                  </div>
-              </div>
-          </div>
-      );
-  };
+  // Cálculos totales para el Header
+  const totalAssigned = myAllocations.reduce((acc, curr) => acc + Number(curr.hoursAssigned), 0);
+  const totalDone = myAllocations.reduce((acc, curr) => acc + Number(curr.hoursActual || 0), 0);
+  // Progreso real vs asignado
+  const totalProgress = totalAssigned > 0 ? Math.min(100, (totalDone / totalAssigned) * 100) : 0;
 
   return (
     <div className="space-y-8">
       
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-indigo-600" />
-            <h2 className="text-lg font-bold text-slate-900 capitalize">{weekLabel}</h2>
-          </div>
-
-          {/* BOTÓN + DIÁLOGO PARA TAREA EXTRA */}
-          <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
-            <DialogTrigger asChild>
-                <Button size="sm" variant="secondary" className="text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-sm">
-                    <PlusCircle className="w-4 h-4 mr-2" /> Fichar Tarea Extra
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                    <DialogTitle>Añadir Tarea Imprevista</DialogTitle>
-                    <DialogDescription>
-                        Registra una tarea urgente o no planificada que hayas realizado esta semana.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="space-y-2">
-                        <Label>Proyecto</Label>
-                        <Select onValueChange={setExtraProjectId} value={extraProjectId}>
-                            <SelectTrigger><SelectValue placeholder="Selecciona proyecto..." /></SelectTrigger>
-                            <SelectContent>
-                                {projects.filter(p => p.status === 'active').map(p => (
-                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    
-                    {/* SELECTOR DE DEPENDENCIAS (NUEVO) */}
-                    <div className="space-y-2">
-                        <Label className="text-xs text-slate-500">¿Depende de otra tarea? (Opcional)</Label>
-                        <Select onValueChange={setDependencyId} value={dependencyId} disabled={!extraProjectId}>
-                            <SelectTrigger className="h-9 text-xs">
-                                <SelectValue placeholder={!extraProjectId ? "Primero elige proyecto" : "Sin dependencia"} />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none">-- Ninguna --</SelectItem>
-                                {projectTasks.map(t => {
-                                    const owner = employees.find(e => e.id === t.employeeId);
-                                    return (
-                                        <SelectItem key={t.id} value={t.id} className="text-xs">
-                                            {t.taskName} <span className="text-slate-400">({owner?.name})</span>
-                                        </SelectItem>
-                                    );
-                                })}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label>Nombre de la Tarea</Label>
-                        <Input 
-                            placeholder="Ej: Hotfix urgente, Reunión con cliente..." 
-                            value={extraTaskName} 
-                            onChange={e => setExtraTaskName(e.target.value)} 
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Horas Dedicadas (Aprox)</Label>
-                        <Input 
-                            type="number" 
-                            step="0.5" 
-                            value={extraHours} 
-                            onChange={e => setExtraHours(e.target.value)} 
-                        />
-                    </div>
+      {/* 1. MÓDULO DE RESUMEN (HEADER RESTAURADO) */}
+      <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b pb-6">
+        <div>
+            <h2 className="text-2xl font-bold text-slate-900">Mis Tareas</h2>
+            <p className="text-slate-500 flex items-center gap-2 mt-1">
+                <Clock className="w-4 h-4"/> {weekLabel}
+            </p>
+        </div>
+        
+        {/* Tarjeta de Resumen de Carga */}
+        <div className="flex items-center gap-6 bg-white p-4 rounded-xl border shadow-sm w-full md:w-auto">
+            <div className="text-center">
+                <div className="text-xs text-slate-400 uppercase font-semibold">Capacidad</div>
+                <div className="font-mono text-lg font-bold text-slate-700">{weeklyCapacity}h</div>
+            </div>
+            <div className="h-8 w-px bg-slate-200"></div>
+            <div className="text-center">
+                <div className="text-xs text-slate-400 uppercase font-semibold">Asignado</div>
+                <div className={`font-mono text-lg font-bold ${totalAssigned > weeklyCapacity ? 'text-red-500' : 'text-indigo-600'}`}>
+                    {totalAssigned.toFixed(1)}h
                 </div>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsAddingExtra(false)}>Cancelar</Button>
-                    <Button onClick={handleAddExtraTask} className="bg-indigo-600 hover:bg-indigo-700">Guardar Tarea</Button>
-                </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            </div>
+            <div className="h-8 w-px bg-slate-200"></div>
+            <div className="flex-1 min-w-[120px]">
+                <div className="flex justify-between text-xs mb-1">
+                    <span className="text-slate-500">Completado</span>
+                    <span className="font-bold text-emerald-600">{totalProgress.toFixed(0)}%</span>
+                </div>
+                <Progress value={totalProgress} className="h-2" />
+            </div>
+
+            {/* BOTÓN TAREA EXTRA */}
+            <div className="border-l pl-4 ml-2">
+                <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
+                    <DialogTrigger asChild>
+                        <Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 shadow-sm">
+                            <PlusCircle className="w-4 h-4 mr-2" /> Tarea Extra
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>Fichar Tarea Interna</DialogTitle>
+                            <DialogDescription>
+                                Se asignará automáticamente al proyecto <strong>{internalProject?.name}</strong>.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-4">
+                            <div className="space-y-2">
+                                <Label>Nombre de la Tarea</Label>
+                                <Input 
+                                    placeholder="Ej: Reunión imprevista, Gestión emails..." 
+                                    value={extraTaskName} 
+                                    onChange={e => setExtraTaskName(e.target.value)} 
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>Horas Estimadas</Label>
+                                    <Input 
+                                        type="number" 
+                                        step="0.5" 
+                                        value={extraEstimated} 
+                                        onChange={e => setExtraEstimated(e.target.value)} 
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Horas Reales (Ya hechas)</Label>
+                                    <Input 
+                                        type="number" 
+                                        step="0.5" 
+                                        value={extraReal} 
+                                        onChange={e => setExtraReal(e.target.value)} 
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsAddingExtra(false)}>Cancelar</Button>
+                            <Button onClick={handleAddExtraTask} className="bg-indigo-600 hover:bg-indigo-700">Guardar</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </div>
+        </div>
       </div>
 
-      {/* TAREAS PENDIENTES */}
-      <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-              <Briefcase className="w-4 h-4" /> En Curso / Pendientes ({pendingAllocations.length})
-          </h3>
-          
-          {pendingAllocations.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <p className="text-slate-500 text-sm">¡Todo limpio! No tienes tareas pendientes.</p>
-              </div>
-          ) : (
-              <div className="grid gap-3">
-                  {pendingAllocations.map(task => (
-                      <TaskRow key={task.id} task={task} />
-                  ))}
-              </div>
-          )}
-      </div>
+      {/* 2. GRID DE TARJETAS (VISTA RESTAURADA) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {myAllocations.length === 0 ? (
+            <div className="col-span-full py-16 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                <Briefcase className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                <h3 className="text-lg font-medium text-slate-600">Semana libre</h3>
+                <p className="text-slate-400 max-w-sm mx-auto mt-1">No tienes tareas asignadas en el planificador para esta semana.</p>
+            </div>
+        ) : (
+            myAllocations.map(task => {
+                const project = projects.find(p => p.id === task.projectId);
+                const client = clients.find(c => c.id === project?.clientId);
+                const percent = task.hoursAssigned > 0 
+                    ? Math.min(100, ((task.hoursActual || 0) / task.hoursAssigned) * 100)
+                    : (task.hoursActual || 0) > 0 ? 100 : 0;
+                
+                const isOverBudget = (task.hoursActual || 0) > task.hoursAssigned;
+                const isExtra = task.description?.includes('manualmente'); // Detectar si es extra por descripción o lógica
 
-      {/* TAREAS COMPLETADAS */}
-      {completedAllocations.length > 0 && (
-          <div className="space-y-4 pt-4">
-              <h3 className="text-sm font-semibold text-emerald-600 uppercase tracking-wider flex items-center gap-2 opacity-80">
-                  <CheckCircle2 className="w-4 h-4" /> Completadas ({completedAllocations.length})
-              </h3>
-              <div className="grid gap-3">
-                  {completedAllocations.map(task => (
-                      <TaskRow key={task.id} task={task} isCompleted={true} />
-                  ))}
-              </div>
-          </div>
-      )}
+                return (
+                    <Card key={task.id} className={`flex flex-col hover:border-indigo-300 transition-all shadow-sm hover:shadow-md group ${isExtra ? 'border-amber-200 bg-amber-50/20' : ''}`}>
+                        <CardHeader className="pb-3">
+                            <div className="flex justify-between items-start">
+                                <Badge variant="outline" className="mb-2 bg-slate-50 text-slate-500 border-slate-200">
+                                    {client?.name || 'Interno'}
+                                </Badge>
+                                {isOverBudget && (
+                                    <span className="text-[10px] text-red-500 flex items-center font-medium bg-red-50 px-2 py-0.5 rounded-full">
+                                        <AlertCircle className="w-3 h-3 mr-1"/> Excedido
+                                    </span>
+                                )}
+                                {isExtra && !isOverBudget && (
+                                    <Badge variant="secondary" className="text-[9px] bg-amber-100 text-amber-700 hover:bg-amber-100">Extra</Badge>
+                                )}
+                            </div>
+                            <CardTitle className="text-lg leading-tight text-slate-800 line-clamp-1" title={project?.name}>
+                                {project?.name}
+                            </CardTitle>
+                        </CardHeader>
+                        
+                        <CardContent className="flex-1 flex flex-col gap-4">
+                            {/* Descripción de la tarea */}
+                            <div className="flex-1 bg-slate-50 p-3 rounded-lg text-sm text-slate-600 italic border border-slate-100 min-h-[60px]">
+                                {task.taskName || "Asignación general."}
+                            </div>
+
+                            {/* Control de Progreso */}
+                            <div className="space-y-3 pt-2 border-t border-slate-100">
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="font-medium text-slate-700">Horas Reales</span>
+                                    <div className="flex items-baseline gap-1">
+                                        {/* Input editable para horas reales */}
+                                        <div className="relative w-20">
+                                            <Input 
+                                                type="number" 
+                                                className="h-8 text-right pr-7 font-bold text-slate-900 border-indigo-100 focus:border-indigo-500 bg-white"
+                                                value={editingValues[task.id] ?? task.hoursActual ?? 0}
+                                                onChange={(e) => setEditingValues({...editingValues, [task.id]: e.target.value})}
+                                                onBlur={(e) => handleUpdateHours(task, e.target.value)}
+                                            />
+                                            <span className="absolute right-2 top-2 text-xs text-slate-400">h</span>
+                                        </div>
+                                        <span className="text-slate-400 text-xs ml-1">/ {task.hoursAssigned}h Planif.</span>
+                                    </div>
+                                </div>
+                                
+                                <Progress 
+                                    value={percent} 
+                                    className={`h-2.5 ${isOverBudget ? '[&>div]:bg-red-500' : percent >= 100 ? '[&>div]:bg-emerald-500' : '[&>div]:bg-indigo-600'}`} 
+                                />
+                                
+                                {percent >= 100 && !isOverBudget && (
+                                    <div className="flex items-center justify-center gap-1 text-xs text-emerald-600 font-medium bg-emerald-50 py-1 rounded">
+                                        <CheckCircle2 className="w-3 h-3"/> Completado
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                );
+            })
+        )}
+      </div>
     </div>
   );
 }
