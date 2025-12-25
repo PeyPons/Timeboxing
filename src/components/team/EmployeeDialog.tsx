@@ -9,7 +9,7 @@ import { Employee, WorkSchedule } from '@/types';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Briefcase, CalendarClock, Target, Mail, Lock, Clock, ShieldCheck, Hash } from 'lucide-react';
+import { Briefcase, CalendarClock, Target, Lock, Clock, ShieldCheck, Hash } from 'lucide-react';
 
 import { ScheduleEditor } from './ScheduleEditor';
 import { ProjectsSheet } from './ProjectsSheet';
@@ -33,12 +33,11 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('');
-  const [department, setDepartment] = useState('Development');
+  const [department, setDepartment] = useState('SEO');
   const [capacity, setCapacity] = useState(40);
   const [hourlyRate, setHourlyRate] = useState(0);
-  const [crmUserId, setCrmUserId] = useState<number | ''>('');  // NUEVO: Estado para CRM User ID
+  const [crmUserId, setCrmUserId] = useState<number | ''>('');
   
-  // ESTADO CRÍTICO: Aquí guardamos los cambios del horario
   const [workSchedule, setWorkSchedule] = useState<WorkSchedule>(defaultSchedule);
   
   const [isProcessing, setIsProcessing] = useState(false);
@@ -53,21 +52,20 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setEmail(employeeToEdit.email || '');
         setPassword(''); 
         setRole(employeeToEdit.role);
-        setDepartment(employeeToEdit.department || 'Development');
+        setDepartment(employeeToEdit.department || 'SEO');
         setCapacity(employeeToEdit.defaultWeeklyCapacity);
         setHourlyRate(employeeToEdit.hourlyRate || 0);
-        setCrmUserId(employeeToEdit.crmUserId || '');  // NUEVO: Cargar CRM User ID
-        // Cargamos el horario del empleado o el default
+        setCrmUserId(employeeToEdit.crmUserId || '');
         setWorkSchedule(employeeToEdit.workSchedule || defaultSchedule);
       } else {
         setName('');
         setEmail('');
         setPassword('');
         setRole('');
-        setDepartment('Development');
+        setDepartment('SEO');
         setCapacity(40);
         setHourlyRate(0);
-        setCrmUserId('');  // NUEVO: Reset CRM User ID
+        setCrmUserId('');
         setWorkSchedule(defaultSchedule);
       }
     }
@@ -81,14 +79,18 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
     let authMessage = "";
 
     try {
-        if (email && password) {
+        // SOLO intentar crear/actualizar usuario si hay email Y password con al menos 6 caracteres
+        // Esto evita el error cuando solo queremos guardar otros campos como crmUserId
+        if (email && password && password.length >= 6) {
             if (employeeToEdit && employeeToEdit.user_id) {
+                // Actualizar usuario existente
                 const { error } = await supabase.functions.invoke('update-user', {
                     body: { userId: employeeToEdit.user_id, password, email }
                 });
                 if (error) throw error;
                 authMessage = "Credenciales actualizadas.";
             } else {
+                // Crear nuevo usuario
                 const { data, error } = await supabase.functions.invoke('create-user', {
                     body: { email, password, name }
                 });
@@ -108,8 +110,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
             department,
             defaultWeeklyCapacity: Number(capacity),
             hourlyRate: Number(hourlyRate),
-            crmUserId: crmUserId !== '' ? Number(crmUserId) : undefined,  // NUEVO: Enviar CRM User ID
-            // IMPORTANTE: Enviamos el estado local 'workSchedule' que tiene los cambios
+            crmUserId: crmUserId !== '' ? Number(crmUserId) : undefined,
             workSchedule: workSchedule, 
             isActive: true,
             avatarUrl: employeeToEdit?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
@@ -126,7 +127,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
 
     } catch (error: any) {
         console.error("Error:", error);
-        toast.error("Error al guardar");
+        toast.error(error?.message || "Error al guardar");
     } finally {
         setIsProcessing(false);
     }
@@ -166,29 +167,60 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                         </span>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="grid gap-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="usuario@agencia.com" /></div>
-                        <div className="grid gap-2"><Label htmlFor="password">{hasAccess ? 'Nueva Contraseña' : 'Crear Contraseña'}</Label><Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={hasAccess ? "Opcional" : "Mínimo 6 chars"} /></div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="email">Email</Label>
+                            <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="usuario@agencia.com" />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="password">{hasAccess ? 'Nueva Contraseña' : 'Crear Contraseña'}</Label>
+                            <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={hasAccess ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"} />
+                        </div>
                     </div>
+                    <p className="text-xs text-slate-500">
+                        {hasAccess 
+                            ? "Deja la contraseña vacía si no quieres cambiarla." 
+                            : "Introduce email y contraseña solo si deseas crear acceso al sistema."}
+                    </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2"><Label htmlFor="role">Rol</Label><Input id="role" value={role} onChange={e => setRole(e.target.value)} required /></div>
-                  <div className="grid gap-2"><Label htmlFor="dept">Departamento</Label><Select value={department} onValueChange={setDepartment}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Development">Desarrollo</SelectItem><SelectItem value="Design">Diseño</SelectItem><SelectItem value="Management">Gestión</SelectItem><SelectItem value="Marketing">Marketing</SelectItem></SelectContent></Select></div>
+                  <div className="grid gap-2">
+                      <Label htmlFor="role">Rol</Label>
+                      <Input id="role" value={role} onChange={e => setRole(e.target.value)} placeholder="Ej: Consultor, Manager..." required />
+                  </div>
+                  <div className="grid gap-2">
+                      <Label htmlFor="dept">Departamento</Label>
+                      <Select value={department} onValueChange={setDepartment}>
+                          <SelectTrigger>
+                              <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                              <SelectItem value="SEO">SEO</SelectItem>
+                              <SelectItem value="PPC">PPC</SelectItem>
+                          </SelectContent>
+                      </Select>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2"><Label htmlFor="capacity">Capacidad (h/sem)</Label><Input id="capacity" type="number" value={capacity} onChange={e => setCapacity(Number(e.target.value))} /></div>
-                  <div className="grid gap-2"><Label htmlFor="rate">Coste/Hora (€)</Label><Input id="rate" type="number" value={hourlyRate} onChange={e => setHourlyRate(Number(e.target.value))} /></div>
+                  <div className="grid gap-2">
+                      <Label htmlFor="capacity">Capacidad (h/sem)</Label>
+                      <Input id="capacity" type="number" value={capacity} onChange={e => setCapacity(Number(e.target.value))} />
+                  </div>
+                  <div className="grid gap-2">
+                      <Label htmlFor="rate">Coste/Hora (€)</Label>
+                      <Input id="rate" type="number" step="0.01" value={hourlyRate} onChange={e => setHourlyRate(Number(e.target.value))} />
+                  </div>
                 </div>
 
-                {/* NUEVO: Campo CRM User ID */}
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                {/* Campo CRM User ID */}
+                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg space-y-2">
                     <div className="flex items-center gap-2">
-                        <Hash className="w-4 h-4 text-blue-600"/>
-                        <span className="text-sm font-semibold text-blue-800">Integración CRM</span>
+                        <Hash className="w-4 h-4 text-purple-600"/>
+                        <span className="text-sm font-semibold text-purple-800">Integración CRM</span>
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="crmUserId" className="text-blue-700">ID Usuario CRM</Label>
+                        <Label htmlFor="crmUserId" className="text-purple-700">ID Usuario CRM</Label>
                         <Input 
                             id="crmUserId" 
                             type="number" 
@@ -197,14 +229,16 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                             placeholder="Ej: 33"
                             className="bg-white"
                         />
-                        <p className="text-xs text-blue-600">
+                        <p className="text-xs text-purple-600">
                             Este ID se usa para exportar tareas al CRM. Déjalo vacío si no aplica.
                         </p>
                     </div>
                 </div>
 
                 <div className="flex justify-end pt-4">
-                    <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={isProcessing}>{isProcessing ? 'Guardando...' : 'Guardar Datos'}</Button>
+                    <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={isProcessing}>
+                        {isProcessing ? 'Guardando...' : 'Guardar Datos'}
+                    </Button>
                 </div>
               </form>
             </TabsContent>
@@ -215,7 +249,6 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                       <Clock className="h-5 w-5 shrink-0" />
                       <p>Ajusta las horas diarias. Esto recalculará la capacidad semanal automáticamente.</p>
                   </div>
-                  {/* Editor editable conectado al estado workSchedule */}
                   <ScheduleEditor 
                       schedule={workSchedule} 
                       onChange={setWorkSchedule} 
@@ -228,9 +261,27 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
 
             <TabsContent value="management" className="py-4 space-y-4">
                <div className="grid grid-cols-1 gap-4">
-                  <Button variant="outline" className="justify-start gap-4 h-auto p-4" onClick={() => setShowProjects(true)}><Briefcase className="h-5 w-5 text-indigo-600" /><div className="text-left"><div className="font-semibold">Proyectos</div><div className="text-xs text-muted-foreground">Asignaciones</div></div></Button>
-                  <Button variant="outline" className="justify-start gap-4 h-auto p-4" onClick={() => setShowGoals(true)}><Target className="h-5 w-5 text-emerald-600" /><div className="text-left"><div className="font-semibold">Objetivos</div><div className="text-xs text-muted-foreground">OKRs</div></div></Button>
-                  <Button variant="outline" className="justify-start gap-4 h-auto p-4" onClick={() => setShowAbsences(true)}><CalendarClock className="h-5 w-5 text-amber-600" /><div className="text-left"><div className="font-semibold">Ausencias</div><div className="text-xs text-muted-foreground">Vacaciones</div></div></Button>
+                  <Button variant="outline" className="justify-start gap-4 h-auto p-4" onClick={() => setShowProjects(true)}>
+                      <Briefcase className="h-5 w-5 text-indigo-600" />
+                      <div className="text-left">
+                          <div className="font-semibold">Proyectos</div>
+                          <div className="text-xs text-muted-foreground">Asignaciones</div>
+                      </div>
+                  </Button>
+                  <Button variant="outline" className="justify-start gap-4 h-auto p-4" onClick={() => setShowGoals(true)}>
+                      <Target className="h-5 w-5 text-emerald-600" />
+                      <div className="text-left">
+                          <div className="font-semibold">Objetivos</div>
+                          <div className="text-xs text-muted-foreground">OKRs</div>
+                      </div>
+                  </Button>
+                  <Button variant="outline" className="justify-start gap-4 h-auto p-4" onClick={() => setShowAbsences(true)}>
+                      <CalendarClock className="h-5 w-5 text-amber-600" />
+                      <div className="text-left">
+                          <div className="font-semibold">Ausencias</div>
+                          <div className="text-xs text-muted-foreground">Vacaciones</div>
+                      </div>
+                  </Button>
                </div>
             </TabsContent>
           </Tabs>
