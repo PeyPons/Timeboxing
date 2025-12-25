@@ -5,7 +5,7 @@ import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { format, startOfWeek, addDays, isSameWeek, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar, Briefcase, AlertCircle, CheckCircle2, Circle, PlusCircle } from 'lucide-react';
+import { Calendar, Briefcase, AlertCircle, CheckCircle2, Circle, PlusCircle, Link as LinkIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,11 +25,12 @@ interface MyWeekViewProps {
 }
 
 export function MyWeekView({ employeeId }: MyWeekViewProps) {
-  const { allocations, projects, clients, updateAllocation, addAllocation } = useApp();
+  // AÑADIDO: 'employees' para poder mostrar nombres en las dependencias
+  const { allocations, projects, clients, updateAllocation, addAllocation, employees } = useApp();
   
   const today = new Date();
   const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
-  const [dependencyId, setDependencyId] = useState<string>('none');
+  
   const mondayDate = startOfCurrentWeek;
   const fridayDate = addDays(startOfCurrentWeek, 4);
   const weekLabel = `Semana del ${format(mondayDate, 'd', { locale: es })} al ${format(fridayDate, 'd ' + (mondayDate.getMonth() !== fridayDate.getMonth() ? 'MMM' : ''), { locale: es })} de ${format(fridayDate, 'MMMM', { locale: es })}`;
@@ -44,11 +45,19 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
 
   const [editingValues, setEditingValues] = useState<Record<string, string>>({});
 
-  // --- ESTADOS PARA TAREA EXTRA (NUEVO) ---
+  // --- ESTADOS PARA TAREA EXTRA Y DEPENDENCIAS ---
   const [isAddingExtra, setIsAddingExtra] = useState(false);
   const [extraProjectId, setExtraProjectId] = useState('');
   const [extraTaskName, setExtraTaskName] = useState('');
   const [extraHours, setExtraHours] = useState('1');
+  const [dependencyId, setDependencyId] = useState<string>('none'); // Estado para dependencia
+
+  // Filtramos tareas activas del proyecto seleccionado para ofrecerlas como dependencia
+  const projectTasks = allocations.filter(a => 
+      a.projectId === extraProjectId && 
+      a.status !== 'completed' &&
+      a.id // Asegurar que tiene ID
+  );
 
   const handleUpdateHours = async (allocation: any, newValue: string) => {
       const numValue = parseFloat(newValue);
@@ -59,7 +68,6 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
               await updateAllocation({
                   ...allocation,
                   hoursActual: numValue,
-                  // Si pone horas y estaba solo "planeada", pasa a "activa"
                   status: allocation.status === 'planned' && numValue > 0 ? 'active' : allocation.status
               });
               toast.success("Horas registradas");
@@ -82,7 +90,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       }
   };
 
-  // --- FUNCIÓN PARA CREAR TAREA IMPREVISTA (NUEVO) ---
+  // --- FUNCIÓN PARA CREAR TAREA IMPREVISTA ---
   const handleAddExtraTask = async () => {
       if (!extraProjectId || !extraTaskName) {
           toast.error("Rellena proyecto y nombre");
@@ -99,7 +107,8 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
               hoursComputed: 0,
               taskName: extraTaskName,
               status: 'active',
-              description: 'Tarea añadida manualmente por el empleado (Imprevisto)'
+              description: 'Tarea añadida manualmente por el empleado (Imprevisto)',
+              dependencyId: dependencyId === 'none' ? undefined : dependencyId // Guardamos la dependencia
           });
           toast.success("Tarea imprevista registrada");
           setIsAddingExtra(false);
@@ -108,6 +117,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
           setExtraProjectId('');
           setExtraTaskName('');
           setExtraHours('1');
+          setDependencyId('none');
       } catch (error) {
           console.error(error);
           toast.error("Error al crear tarea");
@@ -120,11 +130,13 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       const assigned = Number(task.hoursAssigned);
       const actual = editingValues[task.id] !== undefined ? Number(editingValues[task.id]) : Number(task.hoursActual || 0);
       
-      // Cálculo inteligente del progreso:
-      // Si assigned es 0 (imprevisto), si hay horas reales es 100%, si no 0%
       const percent = assigned > 0 ? Math.min(100, (actual / assigned) * 100) : (actual > 0 ? 100 : 0);
       const isOverBudget = assigned > 0 && actual > assigned;
       const isUnplanned = assigned === 0;
+
+      // Buscar info de dependencia para mostrarla
+      const depTask = task.dependencyId ? allocations.find(a => a.id === task.dependencyId) : null;
+      const depUser = depTask ? employees.find(e => e.id === depTask.employeeId) : null;
 
       return (
           <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white border rounded-lg shadow-sm transition-all ${isCompleted ? 'opacity-60 bg-slate-50' : 'hover:border-indigo-300'} ${isUnplanned ? 'border-amber-200 bg-amber-50/30' : ''}`}>
@@ -146,6 +158,14 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                       <p className="text-sm text-slate-600 font-medium">
                           {task.taskName || "Asignación general"}
                       </p>
+                      
+                      {/* MOSTRAR DEPENDENCIA SI EXISTE */}
+                      {depTask && (
+                          <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded w-fit border border-slate-200">
+                              <LinkIcon className="w-3 h-3" />
+                              <span>Depende de: <strong>{depTask.taskName}</strong> ({depUser?.name || '...'})</span>
+                          </div>
+                      )}
                   </div>
               </div>
 
@@ -215,6 +235,28 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                             </SelectContent>
                         </Select>
                     </div>
+                    
+                    {/* SELECTOR DE DEPENDENCIAS (NUEVO) */}
+                    <div className="space-y-2">
+                        <Label className="text-xs text-slate-500">¿Depende de otra tarea? (Opcional)</Label>
+                        <Select onValueChange={setDependencyId} value={dependencyId} disabled={!extraProjectId}>
+                            <SelectTrigger className="h-9 text-xs">
+                                <SelectValue placeholder={!extraProjectId ? "Primero elige proyecto" : "Sin dependencia"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">-- Ninguna --</SelectItem>
+                                {projectTasks.map(t => {
+                                    const owner = employees.find(e => e.id === t.employeeId);
+                                    return (
+                                        <SelectItem key={t.id} value={t.id} className="text-xs">
+                                            {t.taskName} <span className="text-slate-400">({owner?.name})</span>
+                                        </SelectItem>
+                                    );
+                                })}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
                     <div className="space-y-2">
                         <Label>Nombre de la Tarea</Label>
                         <Input 
