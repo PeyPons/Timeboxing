@@ -336,13 +336,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         reducedCapacity -= absenceReductionTotal;
     }
 
-    const relevantEvents = teamEvents.filter(te => 
-      te.affectedEmployeeIds === 'all' || te.affectedEmployeeIds.includes(employeeId)
-    );
-    const eventReductionTotal = getTeamEventHoursInRange(rangeStart, rangeEnd, employeeId, teamEvents, employee.workSchedule);
+    // NUEVO: Pasar las ausencias del empleado para no contar eventos en días de ausencia
+    const eventReductionTotal = getTeamEventHoursInRange(rangeStart, rangeEnd, employeeId, teamEvents, employee.workSchedule, relevantAbsences);
     if (eventReductionTotal > 0) {
         // Usar getTeamEventDetailsInRange para obtener las horas correctas por empleado
-        const eventDetails = getTeamEventDetailsInRange(rangeStart, rangeEnd, employeeId, teamEvents, employee.workSchedule);
+        const eventDetails = getTeamEventDetailsInRange(rangeStart, rangeEnd, employeeId, teamEvents, employee.workSchedule, relevantAbsences);
         eventDetails.forEach(detail => {
             breakdown.push({ reason: `Evento: ${detail.name}`, hours: detail.hours, type: 'event' });
         });
@@ -374,9 +372,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     totalHours = round2(totalHours);
     const monthEnd = new Date(year, month + 1, 0);
+    const employeeAbsences = absences.filter(a => a.employeeId === employeeId);
     let capacity = getMonthlyCapacity(year, month, employee.workSchedule);
-    capacity = Math.max(0, capacity - getAbsenceHoursInRange(monthStart, monthEnd, absences.filter(a => a.employeeId === employeeId), employee.workSchedule));
-    capacity = Math.max(0, capacity - getTeamEventHoursInRange(monthStart, monthEnd, employeeId, teamEvents, employee.workSchedule));
+    capacity = Math.max(0, capacity - getAbsenceHoursInRange(monthStart, monthEnd, employeeAbsences, employee.workSchedule));
+    // NUEVO: Pasar ausencias para no contar eventos en días de ausencia
+    capacity = Math.max(0, capacity - getTeamEventHoursInRange(monthStart, monthEnd, employeeId, teamEvents, employee.workSchedule, employeeAbsences));
     capacity = round2(capacity);
     const percentage = capacity > 0 ? round2((totalHours / capacity) * 100) : (totalHours > 0 ? 999 : 0);
     let status: LoadStatus = 'empty';
