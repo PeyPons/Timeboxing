@@ -4,12 +4,15 @@ import { supabase } from '@/lib/supabase';
 import { MyWeekView } from '@/components/employee/MyWeekView';
 import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/DashboardWidgets'; 
 import { Card } from '@/components/ui/card';
-import { EmployeeRow } from '@/components/planner/EmployeeRow'; // Reutilizamos para el Header S1-S5
+import { EmployeeRow } from '@/components/planner/EmployeeRow'; 
 import { AllocationSheet } from '@/components/planner/AllocationSheet';
+// IMPORTAMOS LOS SHEETS QUE FALTABAN
+import { AbsencesSheet } from '@/components/team/AbsencesSheet';
+import { ProfessionalGoalsSheet } from '@/components/team/ProfessionalGoalsSheet';
 import { getWeeksForMonth, getMonthName } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar } from 'lucide-react'; // Iconos añadidos
 import { startOfMonth, endOfMonth, max, min, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Employee } from '@/types';
@@ -21,6 +24,10 @@ export default function EmployeeDashboard() {
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: Date } | null>(null);
+  
+  // ESTADOS PARA LOS BOTONES
+  const [showGoals, setShowGoals] = useState(false);
+  const [showAbsences, setShowAbsences] = useState(false);
 
   useEffect(() => {
     const checkUserLink = async () => {
@@ -46,7 +53,6 @@ export default function EmployeeDashboard() {
   if (isGlobalLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">Cargando...</div>;
   if (!myEmployeeProfile) return null;
 
-  // Configuración Header Resumen
   const weeks = getWeeksForMonth(currentMonth);
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -63,8 +69,13 @@ export default function EmployeeDashboard() {
               <p className="text-slate-500">Tu planificación mensual.</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="text-emerald-700 bg-emerald-50 border-emerald-200">Mis Objetivos</Button>
-            <Button variant="outline" className="text-amber-700 bg-amber-50 border-amber-200">Ausencias</Button>
+            {/* BOTONES CON FUNCIONALIDAD REACTIVADA */}
+            <Button variant="outline" onClick={() => setShowGoals(true)} className="gap-2 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100">
+                <TrendingUp className="h-4 w-4" /> Mis Objetivos
+            </Button>
+            <Button variant="outline" onClick={() => setShowAbsences(true)} className="gap-2 text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100">
+                <Calendar className="h-4 w-4" /> Ausencias
+            </Button>
           </div>
       </div>
 
@@ -81,7 +92,7 @@ export default function EmployeeDashboard() {
             </div>
       </div>
 
-      {/* 3. RESUMEN TIPO PLANIFICADOR (S1-S5) */}
+      {/* 3. RESUMEN TIPO PLANIFICADOR */}
       <Card className="overflow-hidden border-slate-200 shadow-sm bg-white">
           <div className="overflow-x-auto custom-scrollbar">
             <div style={{ minWidth: '1000px' }}>
@@ -118,13 +129,13 @@ export default function EmployeeDashboard() {
           </div>
       </Card>
 
-      {/* 4. WIDGETS DE INTELIGENCIA Y DEPENDENCIAS */}
+      {/* 4. WIDGETS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1"><PriorityInsights employeeId={myEmployeeProfile.id} /></div>
           <div className="lg:col-span-2"><ProjectTeamPulse employeeId={myEmployeeProfile.id} /></div>
       </div>
 
-      {/* 5. LISTA DE TAREAS (DETALLE) */}
+      {/* 5. LISTA DE TAREAS */}
       <div className="pt-4 border-t">
           <h3 className="text-lg font-bold text-slate-800 mb-4">Detalle de Tareas (Semana Actual)</h3>
           <MyWeekView employeeId={myEmployeeProfile.id} />
@@ -138,6 +149,14 @@ export default function EmployeeDashboard() {
             weekStart={selectedCell.weekStart.toISOString()} 
             viewDateContext={currentMonth} 
         />
+      )}
+
+      {/* VENTANAS EMERGENTES (SHEETS) */}
+      {showGoals && (
+          <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={myEmployeeProfile.id} />
+      )}
+      {showAbsences && (
+          <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={myEmployeeProfile.id} />
       )}
     </div>
   );
