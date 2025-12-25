@@ -16,7 +16,7 @@ interface MyWeekViewProps {
 }
 
 export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
-  const { allocations, projects, clients, employees } = useApp();
+  const { allocations, projects, clients, employees, getEmployeeMonthlyLoad } = useApp();
   
   const monthLabel = format(viewDate, 'MMMM yyyy', { locale: es });
   
@@ -122,9 +122,9 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
   const totalAssigned = projectGroups.reduce((acc, g) => acc + g.myEst, 0);
   const totalDone = projectGroups.reduce((acc, g) => acc + g.myReal, 0);
   
-  const me = employees.find(e => e.id === employeeId);
-  const weeksCount = getWeeksForMonth(viewDate).length;
-  const monthlyCapacity = (me?.defaultWeeklyCapacity || 40) * weeksCount;
+  // Usar la función correcta que tiene en cuenta horario real y ausencias
+  const monthlyLoadData = getEmployeeMonthlyLoad(employeeId, viewDate.getFullYear(), viewDate.getMonth());
+  const monthlyCapacity = monthlyLoadData.capacity;
   const totalProgress = totalAssigned > 0 ? Math.min(100, (totalDone / totalAssigned) * 100) : 0;
 
   return (
