@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { format, startOfWeek, addDays, isSameWeek, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { CheckCircle2, AlertCircle, PlusCircle, Link as LinkIcon, AlertOctagon } from 'lucide-react';
+import { CheckCircle2, AlertCircle, PlusCircle, Link as LinkIcon, AlertOctagon, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -163,6 +163,8 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                 // Lógica de Dependencias para la Tarjeta
                 const depTask = task.dependencyId ? allocations.find(a => a.id === task.dependencyId) : null;
                 const depOwner = depTask ? employees.find(e => e.id === depTask.employeeId) : null;
+                const isDepReady = depTask?.status === 'completed';
+                
                 const blockingTasks = allocations.filter(a => a.dependencyId === task.id && a.status !== 'completed');
 
                 return (
@@ -183,20 +185,22 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                                 <div className="font-medium mb-1">{task.taskName || "Asignación general."}</div>
                                 
                                 {/* VISUALIZACIÓN DE DEPENDENCIAS EN LA TARJETA */}
-                                {depTask && (
-                                    <div className="flex items-center gap-1 mt-2 text-[10px] text-amber-700 bg-amber-50 px-2 py-1 rounded w-fit border border-amber-200">
-                                        <LinkIcon className="w-3 h-3" />
-                                        <span>Esperando por: <strong>{depOwner?.name}</strong></span>
+                                {depTask && task.status !== 'completed' && (
+                                    <div className={`flex items-center gap-1 mt-2 text-[10px] px-2 py-1 rounded w-fit border ${isDepReady ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200'}`}>
+                                        {isDepReady ? <CheckCircle2 className="w-3 h-3" /> : <LinkIcon className="w-3 h-3" />}
+                                        <span>
+                                            {isDepReady ? 'Listo para empezar' : 'Esperando por'}: <strong>{depOwner?.name}</strong>
+                                        </span>
                                     </div>
                                 )}
-                                {blockingTasks.length > 0 && (
+                                {blockingTasks.length > 0 && task.status !== 'completed' && (
                                     <div className="flex flex-col gap-1 mt-2">
                                         {blockingTasks.map(bt => {
                                             const blockedUser = employees.find(e => e.id === bt.employeeId);
                                             return (
                                                 <div key={bt.id} className="flex items-center gap-1 text-[10px] text-red-700 bg-red-50 px-2 py-1 rounded w-fit border border-red-200">
                                                     <AlertOctagon className="w-3 h-3" />
-                                                    <span>Estás bloqueando a: <strong>{blockedUser?.name}</strong></span>
+                                                    <span>Frenando a: <strong>{blockedUser?.name}</strong></span>
                                                 </div>
                                             );
                                         })}
