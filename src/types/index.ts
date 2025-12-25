@@ -19,6 +19,10 @@ export interface Employee {
   department?: string;
   hourlyRate?: number;
   isActive: boolean;
+  user_id?: string;
+  first_name?: string;
+  last_name?: string;
+  crmUserId?: number;  // NUEVO: ID del usuario en el CRM
 }
 
 export interface TeamEvent {
@@ -48,6 +52,8 @@ export interface Project {
   lastMeetingDate?: string;
   okrs?: OKR[];
   deliverables_log?: Record<string, string[]>;
+  externalId?: number;    // NUEVO: ID del proyecto en el CRM
+  projectType?: string;   // NUEVO: 'PPC' | 'Entregable' | 'Mensual'
 }
 
 export interface OKR {
@@ -67,7 +73,7 @@ export interface Allocation {
   status: 'planned' | 'completed' | 'active';
   description?: string;
   taskName?: string;
-  dependencyId?: string; // <--- NUEVO CAMPO
+  dependencyId?: string;
 }
 
 export type LoadStatus = 'empty' | 'healthy' | 'warning' | 'overload';
