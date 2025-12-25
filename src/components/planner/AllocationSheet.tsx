@@ -5,20 +5,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useApp } from '@/contexts/AppContext';
 import { Allocation, Project } from '@/types';
-import { Plus, Pencil, Clock, CalendarDays, ChevronsUpDown, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown, Trash2, Link as LinkIcon, AlertOctagon, CheckCircle2, AlertTriangle, Users } from 'lucide-react';
+import { Plus, Pencil, CalendarDays, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, Check, TrendingUp, TrendingDown, Trash2, Link as LinkIcon, AlertOctagon, CheckCircle2, AlertTriangle, Users, ChevronDown, Palmtree, Zap } from 'lucide-react';
 import { cn, formatProjectName } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
-import { format, addMonths, subMonths, isSameMonth, parseISO } from 'date-fns';
+import { format, addMonths, subMonths, isSameMonth, parseISO, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 interface AllocationSheetProps {
   open: boolean;
@@ -38,14 +40,14 @@ interface NewTaskRow {
   dependencyId?: string;
 }
 
-// Tipo para el estado del proyecto
 interface ProjectBudgetStatus {
   totalComputed: number;
+  totalPlanned: number;
   budgetMax: number;
   budgetMin: number;
   percentage: number;
   status: 'healthy' | 'warning' | 'overload' | 'under';
-  breakdown: { employeeId: string; employeeName: string; hours: number }[];
+  breakdown: { employeeId: string; employeeName: string; computed: number; planned: number }[];
 }
 
 export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, viewDateContext }: AllocationSheetProps) {
@@ -55,6 +57,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   } = useApp();
 
   const [viewDate, setViewDate] = useState(() => viewDateContext || new Date(weekStart));
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (open) setViewDate(viewDateContext || new Date(weekStart));
@@ -70,7 +73,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const [inlineNameValue, setInlineNameValue] = useState('');
   const inlineInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados de Edición
   const [editProjectId, setEditProjectId] = useState('');
   const [editTaskName, setEditTaskName] = useState('');
   const [editHours, setEditHours] = useState('');
@@ -90,40 +92,40 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     projects.filter(p => p.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
   [projects]);
 
-  // FUNCIÓN: Calcular estado del presupuesto de un proyecto para el mes actual
+  // Calcular estado del presupuesto con desglose Plan + Comp
   const getProjectBudgetStatus = useMemo(() => {
     return (projectId: string): ProjectBudgetStatus => {
       const project = projects.find(p => p.id === projectId);
       if (!project) {
-        return { totalComputed: 0, budgetMax: 0, budgetMin: 0, percentage: 0, status: 'healthy', breakdown: [] };
+        return { totalComputed: 0, totalPlanned: 0, budgetMax: 0, budgetMin: 0, percentage: 0, status: 'healthy', breakdown: [] };
       }
 
-      // Obtener todas las allocations del proyecto en el mes actual
       const monthAllocations = allocations.filter(a => 
         a.projectId === projectId && 
         isSameMonth(parseISO(a.weekStartDate), viewDate)
       );
 
-      // Calcular total computado y desglose por empleado
-      const breakdownMap: Record<string, number> = {};
+      const breakdownMap: Record<string, { computed: number; planned: number }> = {};
       let totalComputed = 0;
+      let totalPlanned = 0;
 
       monthAllocations.forEach(a => {
         const computed = a.status === 'completed' ? (a.hoursComputed || 0) : 0;
+        const planned = a.status !== 'completed' ? (a.hoursAssigned || 0) : 0;
         totalComputed += computed;
+        totalPlanned += planned;
         
-        if (computed > 0) {
-          if (!breakdownMap[a.employeeId]) {
-            breakdownMap[a.employeeId] = 0;
-          }
-          breakdownMap[a.employeeId] += computed;
+        if (!breakdownMap[a.employeeId]) {
+          breakdownMap[a.employeeId] = { computed: 0, planned: 0 };
         }
+        breakdownMap[a.employeeId].computed += computed;
+        breakdownMap[a.employeeId].planned += planned;
       });
 
-      const breakdown = Object.entries(breakdownMap).map(([empId, hours]) => {
+      const breakdown = Object.entries(breakdownMap).map(([empId, data]) => {
         const emp = employees.find(e => e.id === empId);
-        return { employeeId: empId, employeeName: emp?.name || 'Desconocido', hours };
-      }).sort((a, b) => b.hours - a.hours);
+        return { employeeId: empId, employeeName: emp?.name || 'Desconocido', ...data };
+      }).sort((a, b) => (b.computed + b.planned) - (a.computed + a.planned));
 
       const budgetMax = project.budgetHours || 0;
       const budgetMin = project.minimumHours || 0;
@@ -134,11 +136,11 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
         status = 'overload';
       } else if (percentage >= 80) {
         status = 'warning';
-      } else if (budgetMin > 0 && totalComputed < budgetMin) {
+      } else if (budgetMin > 0 && totalComputed < budgetMin && totalPlanned === 0) {
         status = 'under';
       }
 
-      return { totalComputed, budgetMax, budgetMin, percentage, status, breakdown };
+      return { totalComputed, totalPlanned, budgetMax, budgetMin, percentage, status, breakdown };
     };
   }, [projects, allocations, employees, viewDate]);
 
@@ -159,6 +161,18 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
 
   const handlePrevMonth = () => setViewDate(prev => subMonths(prev, 1));
   const handleNextMonth = () => setViewDate(prev => addMonths(prev, 1));
+
+  const toggleProjectCollapse = (projectId: string) => {
+    setCollapsedProjects(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(projectId)) {
+        newSet.delete(projectId);
+      } else {
+        newSet.add(projectId);
+      }
+      return newSet;
+    });
+  };
 
   const startAdd = (weekStartReal: Date) => {
     const storageKey = getStorageKey(weekStartReal, viewDate);
@@ -239,7 +253,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       setTimeout(() => { setRecentlyToggled(prev => { const newSet = new Set(prev); newSet.delete(allocation.id); return newSet; }); }, 30000);
   };
 
-  // FUNCIÓN PARA ACTUALIZAR HORAS INLINE (Real y Computado)
   const updateInlineHours = (allocation: Allocation, field: 'hoursActual' | 'hoursComputed', value: string) => {
       const numValue = parseFloat(value) || 0;
       if (allocation[field] !== numValue) { 
@@ -262,11 +275,42 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const saveInlineEdit = (allocation: Allocation) => { if (inlineNameValue.trim() !== allocation.taskName) { updateAllocation({ ...allocation, taskName: inlineNameValue }); } setInlineEditingId(null); };
   const moveTaskToWeek = (allocation: Allocation, targetWeekStartReal: Date) => { const targetKey = getStorageKey(targetWeekStartReal, viewDate); updateAllocation({ ...allocation, weekStartDate: targetKey }); };
 
-  // Helper para renderizar el status del proyecto
-  const renderProjectHeader = (project: Project | undefined, budgetStatus: ProjectBudgetStatus) => {
+  // Ordenar proyectos: por presupuesto (mayor primero), completados al final
+  const sortProjectGroups = (groups: Record<string, Allocation[]>) => {
+    return Object.entries(groups).sort(([projIdA, allocsA], [projIdB, allocsB]) => {
+      const projA = getProjectById(projIdA);
+      const projB = getProjectById(projIdB);
+      
+      const allCompletedA = allocsA.every(a => a.status === 'completed') && !allocsA.some(a => recentlyToggled.has(a.id));
+      const allCompletedB = allocsB.every(a => a.status === 'completed') && !allocsB.some(a => recentlyToggled.has(a.id));
+      
+      // Proyectos completados al final
+      if (allCompletedA && !allCompletedB) return 1;
+      if (!allCompletedA && allCompletedB) return -1;
+      
+      // Ordenar por presupuesto (mayor primero)
+      const budgetA = projA?.budgetHours || 0;
+      const budgetB = projB?.budgetHours || 0;
+      return budgetB - budgetA;
+    });
+  };
+
+  // Ordenar tareas: pendientes primero, completadas (no recientes) al final
+  const sortTasks = (tasks: Allocation[]) => {
+    return [...tasks].sort((a, b) => {
+      const aCompleted = a.status === 'completed' && !recentlyToggled.has(a.id);
+      const bCompleted = b.status === 'completed' && !recentlyToggled.has(b.id);
+      
+      if (aCompleted && !bCompleted) return 1;
+      if (!aCompleted && bCompleted) return -1;
+      return 0;
+    });
+  };
+
+  const renderProjectHeader = (project: Project | undefined, budgetStatus: ProjectBudgetStatus, allCompleted: boolean, taskCount: number) => {
     if (!project) return <span className="font-bold text-xs truncate">Desc.</span>;
 
-    const { totalComputed, budgetMax, budgetMin, percentage, status, breakdown } = budgetStatus;
+    const { totalComputed, totalPlanned, budgetMax, budgetMin, percentage, status, breakdown } = budgetStatus;
     
     const statusConfig = {
       healthy: { color: 'bg-emerald-500', bgLight: 'bg-emerald-50', textColor: 'text-emerald-700', icon: null },
@@ -277,50 +321,46 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
 
     const config = statusConfig[status];
     const exceededBy = totalComputed > budgetMax ? totalComputed - budgetMax : 0;
+    const projection = totalComputed + totalPlanned;
 
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className={cn("px-3 py-2 border-b cursor-help transition-colors", config.bgLight)}>
-            {/* Fila 1: Nombre + Indicador */}
+          <div className={cn(
+            "px-3 py-2 border-b cursor-help transition-colors",
+            allCompleted ? "bg-slate-100" : config.bgLight
+          )}>
             <div className="flex items-center justify-between gap-2">
-              <span className="font-bold text-xs truncate flex-1">{formatProjectName(project.name)}</span>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {allCompleted && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                <span className={cn("font-bold text-xs truncate", allCompleted && "text-slate-500")}>{formatProjectName(project.name)}</span>
+                {allCompleted && <span className="text-[9px] text-slate-400">({taskCount})</span>}
+              </div>
               {budgetMax > 0 && (
-                <div className={cn("flex items-center gap-1 text-[10px] font-semibold", config.textColor)}>
+                <div className={cn("flex items-center gap-1 text-[10px] font-semibold", allCompleted ? "text-slate-400" : config.textColor)}>
                   {config.icon}
                   <span>{Math.round(percentage)}%</span>
                 </div>
               )}
             </div>
             
-            {/* Fila 2: Barra de progreso (solo si hay presupuesto) */}
-            {budgetMax > 0 && (
+            {budgetMax > 0 && !allCompleted && (
               <div className="mt-1.5">
                 <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                  <div 
-                    className={cn("h-full transition-all duration-300", config.color)} 
-                    style={{ width: `${Math.min(percentage, 100)}%` }} 
-                  />
+                  <div className={cn("h-full transition-all duration-300", config.color)} style={{ width: `${Math.min(percentage, 100)}%` }} />
                 </div>
                 <div className="flex justify-between items-center mt-1">
-                  <span className="text-[9px] text-slate-500">
-                    {totalComputed.toFixed(1)}h / {budgetMax}h
-                  </span>
-                  {exceededBy > 0 && (
-                    <span className="text-[9px] font-bold text-red-600">
-                      +{exceededBy.toFixed(1)}h
-                    </span>
-                  )}
+                  <span className="text-[9px] text-slate-500">{totalComputed.toFixed(1)}h / {budgetMax}h</span>
+                  {exceededBy > 0 && <span className="text-[9px] font-bold text-red-600">+{exceededBy.toFixed(1)}h</span>}
                 </div>
               </div>
             )}
           </div>
         </TooltipTrigger>
-        <TooltipContent side="right" className="max-w-xs p-0">
+        <TooltipContent side="right" className="max-w-xs p-0 z-50">
           <div className="p-3 space-y-2">
             <div className="font-bold text-sm border-b pb-2">{project.name}</div>
             
-            {/* Info presupuesto */}
             <div className="text-xs space-y-1">
               <div className="flex justify-between">
                 <span className="text-slate-500">Presupuesto:</span>
@@ -328,9 +368,15 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Computado:</span>
-                <span className={cn("font-bold", status === 'overload' ? 'text-red-600' : 'text-emerald-600')}>
-                  {totalComputed.toFixed(1)}h
-                </span>
+                <span className={cn("font-bold", status === 'overload' ? 'text-red-600' : 'text-emerald-600')}>{totalComputed.toFixed(1)}h</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Planificado:</span>
+                <span className="text-blue-600">{totalPlanned.toFixed(1)}h</span>
+              </div>
+              <div className="flex justify-between border-t pt-1 mt-1">
+                <span className="text-slate-500">Proyección:</span>
+                <span className={cn("font-bold", projection > budgetMax ? 'text-red-600' : 'text-slate-700')}>{projection.toFixed(1)}h</span>
               </div>
               {exceededBy > 0 && (
                 <div className="flex justify-between text-red-600">
@@ -340,27 +386,23 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
               )}
             </div>
 
-            {/* Desglose por empleado */}
             {breakdown.length > 0 && (
               <div className="border-t pt-2 mt-2">
                 <div className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 uppercase mb-1">
                   <Users className="w-3 h-3" /> Desglose
                 </div>
                 <div className="space-y-1">
-                  {breakdown.map(({ employeeId: empId, employeeName, hours }) => {
+                  {breakdown.map(({ employeeId: empId, employeeName, computed, planned }) => {
                     const isCurrentEmployee = empId === employeeId;
                     return (
-                      <div 
-                        key={empId} 
-                        className={cn(
-                          "flex justify-between text-xs px-1.5 py-0.5 rounded",
-                          isCurrentEmployee ? "bg-indigo-50 font-medium" : ""
-                        )}
-                      >
-                        <span className={isCurrentEmployee ? "text-indigo-700" : "text-slate-600"}>
+                      <div key={empId} className={cn("text-xs px-1.5 py-1 rounded", isCurrentEmployee ? "bg-indigo-50" : "")}>
+                        <div className={cn("font-medium", isCurrentEmployee ? "text-indigo-700" : "text-slate-600")}>
                           {employeeName} {isCurrentEmployee && "(tú)"}
-                        </span>
-                        <span className="font-mono">{hours.toFixed(1)}h</span>
+                        </div>
+                        <div className="flex gap-3 text-[10px] mt-0.5">
+                          <span className="text-emerald-600">Comp: {computed.toFixed(1)}h</span>
+                          <span className="text-blue-600">Plan: {planned.toFixed(1)}h</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -368,7 +410,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
               </div>
             )}
 
-            {/* Mensaje de estado */}
             {status === 'overload' && (
               <div className="bg-red-50 text-red-700 text-[10px] p-2 rounded border border-red-200 mt-2">
                 ⚠️ Se ha excedido el presupuesto máximo. Revisar horas computadas.
@@ -377,6 +418,11 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
             {status === 'warning' && (
               <div className="bg-amber-50 text-amber-700 text-[10px] p-2 rounded border border-amber-200 mt-2">
                 ⚡ Cerca del límite. Quedan {(budgetMax - totalComputed).toFixed(1)}h disponibles.
+              </div>
+            )}
+            {projection > budgetMax && status !== 'overload' && (
+              <div className="bg-orange-50 text-orange-700 text-[10px] p-2 rounded border border-orange-200 mt-2">
+                📊 La proyección ({projection.toFixed(1)}h) supera el presupuesto.
               </div>
             )}
           </div>
@@ -407,12 +453,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 <div className="flex items-center gap-4">
                     <div className="relative w-48 hidden sm:block">
                         <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                        <Input 
-                            placeholder="Buscar tarea..." 
-                            className="pl-8 h-9 text-xs bg-background/50" 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                        <Input placeholder="Buscar tarea..." className="pl-8 h-9 text-xs bg-background/50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
 
                     <div className="flex items-center gap-4 bg-background/50 p-1.5 rounded-lg border shadow-sm">
@@ -440,136 +481,133 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 }
                 
                 const load = getEmployeeLoadForWeek(employeeId, storageKey, week.effectiveStart, week.effectiveEnd);
+                
+                // Calcular Est, Real, Comp para el header
+                const weekEst = round2(weekAllocations.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0));
+                const completedTasks = weekAllocations.filter(a => a.status === 'completed');
+                const weekReal = round2(completedTasks.reduce((sum, a) => sum + (a.hoursActual || 0), 0));
+                const weekComp = round2(completedTasks.reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
+                const weekBalance = round2(weekComp - weekReal);
+
+                // Fechas de la semana
+                const weekEndDate = addDays(week.weekStart, 6);
+                const weekDateLabel = `${format(week.weekStart, 'd', { locale: es })}-${format(weekEndDate, 'd MMM', { locale: es })}`;
+
+                // Agrupar y ordenar
+                const grouped = weekAllocations.reduce((acc, a) => ({...acc, [a.projectId]: [...(acc[a.projectId]||[]), a]}), {} as Record<string, Allocation[]>);
+                const sortedGroups = sortProjectGroups(grouped);
 
                 return (
                     <div key={weekStr} className="flex flex-col gap-3 p-3 rounded-xl border bg-card h-full min-h-[300px]">
-                        {/* HEADER SEMANA */}
+                        {/* HEADER SEMANA MEJORADO */}
                         <div className="flex flex-col gap-2 pb-2 border-b">
                             <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-foreground/80 uppercase tracking-wider">Semana {index + 1}</span>
+                                <div>
+                                    <span className="font-bold text-sm text-foreground/80 uppercase tracking-wider">Semana {index + 1}</span>
+                                    <span className="text-[10px] text-slate-400 ml-2">{weekDateLabel}</span>
+                                </div>
                                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-indigo-100 hover:text-indigo-700 rounded-full transition-colors" onClick={() => startAdd(week.weekStart)}>
                                     <Plus className="h-4 w-4" />
                                 </Button>
                             </div>
+                            
+                            {/* Barra de carga */}
                             <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                 <div className={cn("h-full transition-all duration-500 ease-out", load.status === 'overload' ? "bg-red-500" : "bg-green-500")} style={{ width: `${Math.min(load.percentage, 100)}%` }} />
+                            </div>
+                            
+                            {/* Métricas: Est, Real, Comp, Capacidad */}
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                                <div className="flex justify-between">
+                                    <span className="text-slate-500">Est.</span>
+                                    <span className="font-medium tabular-nums">{weekEst}h</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-500">Capacidad</span>
+                                    <span className="font-medium tabular-nums">{load.capacity}h</span>
+                                </div>
+                                {completedTasks.length > 0 && (
+                                    <>
+                                        <div className="flex justify-between">
+                                            <span className="text-blue-600">Real</span>
+                                            <span className="font-medium tabular-nums text-blue-600">{weekReal}h</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-emerald-600">Comp.</span>
+                                            <span className="font-medium tabular-nums text-emerald-600">{weekComp}h</span>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                            
+                            {/* Balance / Ausencias */}
+                            <div className="flex items-center justify-between">
+                                {completedTasks.length > 0 && (
+                                    <div className={cn("flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded", weekBalance >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700")}>
+                                        {weekBalance >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                        <span>{weekBalance >= 0 ? '+' : ''}{weekBalance}h</span>
+                                    </div>
+                                )}
+                                {load.breakdown && load.breakdown.length > 0 && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div className="flex items-center gap-1 text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded cursor-help">
+                                                {load.breakdown.some(b => b.type === 'absence') && <Palmtree className="w-3 h-3" />}
+                                                {load.breakdown.some(b => b.type === 'event') && <Zap className="w-3 h-3" />}
+                                                <span>-{load.breakdown.reduce((s, b) => s + b.hours, 0)}h</span>
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="bottom" className="text-xs">
+                                            {load.breakdown.map((b, i) => (
+                                                <div key={i}>{b.reason}: -{b.hours}h</div>
+                                            ))}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
                             </div>
                         </div>
 
                         {/* LISTA TAREAS */}
                         <div className="flex-1 overflow-y-auto max-h-[60vh] space-y-3 pr-1 custom-scrollbar">
-                            {Object.entries(weekAllocations.reduce((acc, a) => ({...acc, [a.projectId]: [...(acc[a.projectId]||[]), a]}), {} as Record<string, Allocation[]>)).map(([projId, projAllocations]) => {
+                            {sortedGroups.map(([projId, projAllocations]) => {
                                 const project = getProjectById(projId);
                                 const budgetStatus = getProjectBudgetStatus(projId);
+                                const allCompleted = projAllocations.every(a => a.status === 'completed') && !projAllocations.some(a => recentlyToggled.has(a.id));
+                                const isCollapsed = collapsedProjects.has(projId);
+                                const sortedTasks = sortTasks(projAllocations);
+                                
+                                // Si todas completadas, usar Collapsible
+                                if (allCompleted) {
+                                    return (
+                                        <Collapsible key={projId} open={!isCollapsed} onOpenChange={() => toggleProjectCollapse(projId)}>
+                                            <div className="bg-white border rounded-lg shadow-sm overflow-hidden opacity-75 hover:opacity-100 transition-opacity">
+                                                <CollapsibleTrigger asChild>
+                                                    <div className="cursor-pointer">
+                                                        <div className="flex items-center justify-between px-3 py-2 bg-slate-100 border-b">
+                                                            <div className="flex items-center gap-2">
+                                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                                <span className="font-bold text-xs text-slate-500 truncate">{formatProjectName(project?.name || 'Desc.')}</span>
+                                                                <span className="text-[9px] text-slate-400">({projAllocations.length} tareas)</span>
+                                                            </div>
+                                                            <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", !isCollapsed && "rotate-180")} />
+                                                        </div>
+                                                    </div>
+                                                </CollapsibleTrigger>
+                                                <CollapsibleContent>
+                                                    <div className="divide-y divide-slate-100">
+                                                        {sortedTasks.map(alloc => renderTask(alloc, index))}
+                                                    </div>
+                                                </CollapsibleContent>
+                                            </div>
+                                        </Collapsible>
+                                    );
+                                }
                                 
                                 return (
                                     <div key={projId} className="bg-white border rounded-lg shadow-sm overflow-hidden">
-                                        {/* HEADER PROYECTO CON STATUS */}
-                                        {renderProjectHeader(project, budgetStatus)}
-                                        
+                                        {renderProjectHeader(project, budgetStatus, allCompleted, projAllocations.length)}
                                         <div className="divide-y divide-slate-100">
-                                            {projAllocations.map(alloc => {
-                                                const isCompleted = alloc.status === 'completed';
-                                                
-                                                // 1. DEPENDENCIA DE SALIDA (Yo dependo de X)
-                                                const depTask = alloc.dependencyId ? allocations.find(a => a.id === alloc.dependencyId) : null;
-                                                const depOwner = depTask ? employees.find(e => e.id === depTask.employeeId) : null;
-                                                const isDepReady = depTask?.status === 'completed';
-                                                
-                                                // 2. DEPENDENCIA DE ENTRADA (Alguien depende de mi)
-                                                const blockingTasks = allocations.filter(a => a.dependencyId === alloc.id && a.status !== 'completed');
-                                                
-                                                return (
-                                                    <div key={alloc.id} className="group flex items-start gap-2 p-2 hover:bg-slate-50/80 transition-colors">
-                                                        <Checkbox checked={isCompleted} onCheckedChange={() => toggleTaskCompletion(alloc)} className="mt-1" />
-                                                        <div className="flex-1 min-w-0">
-                                                            <div onDoubleClick={() => startInlineEdit(alloc)}>
-                                                                {inlineEditingId === alloc.id ? (
-                                                                    <Input autoFocus value={inlineNameValue} onChange={e=>setInlineNameValue(e.target.value)} onBlur={()=>saveInlineEdit(alloc)} className="h-6 text-xs" />
-                                                                ) : (
-                                                                    <div className="flex justify-between items-start">
-                                                                        <div className="flex flex-col w-full">
-                                                                            <span className={cn("text-xs font-medium leading-tight", isCompleted && "line-through opacity-50")}>{alloc.taskName || 'Tarea'}</span>
-                                                                            
-                                                                            {/* Badge: YO DEPENDO DE... */}
-                                                                            {depTask && !isCompleted && (
-                                                                                <div className={`flex items-center gap-1 mt-1 text-[9px] px-1.5 py-0.5 rounded w-fit border ${isDepReady ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200'}`} title={`Depende de ${depOwner?.name}`}>
-                                                                                    {isDepReady ? <CheckCircle2 className="w-2.5 h-2.5" /> : <LinkIcon className="w-2.5 h-2.5" />}
-                                                                                    <span className="truncate max-w-[120px]">
-                                                                                        {isDepReady ? 'Listo:' : 'Dep:'} {depTask.taskName} <strong>({depOwner?.name})</strong>
-                                                                                    </span>
-                                                                                </div>
-                                                                            )}
-
-                                                                            {/* Badge: YO BLOQUEO A... */}
-                                                                            {blockingTasks.length > 0 && !isCompleted && (
-                                                                                <div className="flex flex-col gap-0.5 mt-1">
-                                                                                    {blockingTasks.map(bt => {
-                                                                                        const blockedUser = employees.find(e => e.id === bt.employeeId);
-                                                                                        return (
-                                                                                            <div key={bt.id} className="flex items-center gap-1 text-[9px] text-red-700 bg-red-50 px-1.5 py-0.5 rounded w-fit border border-red-200">
-                                                                                                <AlertOctagon className="w-2.5 h-2.5" />
-                                                                                                <span>Bloquea a: <strong>{blockedUser?.name}</strong></span>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                        
-                                                                        <DropdownMenu>
-                                                                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><MoreHorizontal className="h-3 w-3" /></Button></DropdownMenuTrigger>
-                                                                            <DropdownMenuContent align="end">
-                                                                                <DropdownMenuItem onClick={() => startEditFull(alloc)}><Pencil className="mr-2 h-3.5 w-3.5" /> Editar</DropdownMenuItem>
-                                                                                <DropdownMenuItem onClick={() => moveTaskToWeek(alloc, weeks[(index+1)%weeks.length].weekStart)}><ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Mover sem.</DropdownMenuItem>
-                                                                            </DropdownMenuContent>
-                                                                        </DropdownMenu>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            
-                                                            {/* BADGES DE HORAS: EST + REAL + COMP (en una línea) */}
-                                                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                                                {/* Badge Estimado (siempre visible) */}
-                                                                <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
-                                                                    EST {alloc.hoursAssigned}h
-                                                                </span>
-                                                                
-                                                                {/* Inputs Real y Computado (solo si está completada) */}
-                                                                {isCompleted && (
-                                                                    <>
-                                                                        {/* Input REAL (azul) */}
-                                                                        <div className="flex items-center bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
-                                                                            <span className="text-[10px] font-medium mr-1">Real:</span>
-                                                                            <input
-                                                                                type="number"
-                                                                                step="0.5"
-                                                                                min="0"
-                                                                                defaultValue={alloc.hoursActual || 0}
-                                                                                onBlur={(e) => updateInlineHours(alloc, 'hoursActual', e.target.value)}
-                                                                                className="w-8 text-[10px] text-center bg-transparent border-0 focus:outline-none focus:bg-white focus:ring-1 focus:ring-blue-300 rounded font-medium"
-                                                                            />
-                                                                        </div>
-                                                                        
-                                                                        {/* Input COMPUTADO (verde) */}
-                                                                        <div className="flex items-center bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">
-                                                                            <span className="text-[10px] font-medium mr-1">Comp:</span>
-                                                                            <input
-                                                                                type="number"
-                                                                                step="0.5"
-                                                                                min="0"
-                                                                                defaultValue={alloc.hoursComputed || 0}
-                                                                                onBlur={(e) => updateInlineHours(alloc, 'hoursComputed', e.target.value)}
-                                                                                className="w-8 text-[10px] text-center bg-transparent border-0 focus:outline-none focus:bg-white focus:ring-1 focus:ring-emerald-300 rounded font-medium"
-                                                                            />
-                                                                        </div>
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                            {sortedTasks.map(alloc => renderTask(alloc, index))}
                                         </div>
                                     </div>
                                 );
@@ -592,7 +630,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
 
           <div className="p-6 pt-2">
             {editingAllocation ? (
-              // --- MODO EDICIÓN INDIVIDUAL ---
               <div className="grid gap-4 mt-4">
                  <div className="space-y-2">
                     <Label>Proyecto</Label>
@@ -600,7 +637,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 </div>
                 <div className="space-y-2"><Label>Tarea</Label><Input value={editTaskName} onChange={e=>setEditTaskName(e.target.value)} /></div>
                 
-                {/* SELECTOR DEPENDENCIA EDICIÓN */}
                 <div className="space-y-2">
                     <Label className="flex items-center gap-2 text-xs text-slate-500"><LinkIcon className="w-3 h-3"/> Dependencia (Bloqueante)</Label>
                     <Select value={editDependencyId} onValueChange={setEditDependencyId} disabled={!editProjectId}>
@@ -621,7 +657,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 </div>
               </div>
             ) : (
-              // --- MODO CREACIÓN MÚLTIPLE (Con Dependencias) ---
               <div className="space-y-3 mt-4">
                 <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
                     <div className="flex-1 pl-1">Proyecto</div>
@@ -635,7 +670,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
                     {newTasks.map((task) => (
                         <div key={task.id} className="flex gap-2 items-start">
-                            {/* Proyecto */}
                             <div className="flex-1 min-w-0">
                                 <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
                                     <PopoverTrigger asChild>
@@ -664,7 +698,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
 
                             <Input className="flex-1 h-10" placeholder="Nombre..." value={task.taskName} onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} />
 
-                            {/* SELECTOR DEPENDENCIA EN CREACIÓN */}
                             <div className="w-40">
                                 <Select value={task.dependencyId} onValueChange={(v) => updateTaskRow(task.id, 'dependencyId', v)} disabled={!task.projectId}>
                                     <SelectTrigger className="h-10 text-xs px-2"><SelectValue placeholder="-" /></SelectTrigger>
@@ -706,4 +739,79 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       </Dialog>
     </>
   );
+
+  // Función auxiliar para renderizar una tarea
+  function renderTask(alloc: Allocation, weekIndex: number) {
+    const isCompleted = alloc.status === 'completed';
+    const depTask = alloc.dependencyId ? allocations.find(a => a.id === alloc.dependencyId) : null;
+    const depOwner = depTask ? employees.find(e => e.id === depTask.employeeId) : null;
+    const isDepReady = depTask?.status === 'completed';
+    const blockingTasks = allocations.filter(a => a.dependencyId === alloc.id && a.status !== 'completed');
+    
+    return (
+      <div key={alloc.id} className="group flex items-start gap-2 p-2 hover:bg-slate-50/80 transition-colors">
+        <Checkbox checked={isCompleted} onCheckedChange={() => toggleTaskCompletion(alloc)} className="mt-1" />
+        <div className="flex-1 min-w-0">
+          <div onDoubleClick={() => startInlineEdit(alloc)}>
+            {inlineEditingId === alloc.id ? (
+              <Input autoFocus value={inlineNameValue} onChange={e=>setInlineNameValue(e.target.value)} onBlur={()=>saveInlineEdit(alloc)} className="h-6 text-xs" />
+            ) : (
+              <div className="flex justify-between items-start">
+                <div className="flex flex-col w-full">
+                  <span className={cn("text-xs font-medium leading-tight", isCompleted && "line-through opacity-50")}>{alloc.taskName || 'Tarea'}</span>
+                  
+                  {depTask && !isCompleted && (
+                    <div className={`flex items-center gap-1 mt-1 text-[9px] px-1.5 py-0.5 rounded w-fit border ${isDepReady ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200'}`}>
+                      {isDepReady ? <CheckCircle2 className="w-2.5 h-2.5" /> : <LinkIcon className="w-2.5 h-2.5" />}
+                      <span className="truncate max-w-[120px]">{isDepReady ? 'Listo:' : 'Dep:'} {depTask.taskName} <strong>({depOwner?.name})</strong></span>
+                    </div>
+                  )}
+
+                  {blockingTasks.length > 0 && !isCompleted && (
+                    <div className="flex flex-col gap-0.5 mt-1">
+                      {blockingTasks.map(bt => {
+                        const blockedUser = employees.find(e => e.id === bt.employeeId);
+                        return (
+                          <div key={bt.id} className="flex items-center gap-1 text-[9px] text-red-700 bg-red-50 px-1.5 py-0.5 rounded w-fit border border-red-200">
+                            <AlertOctagon className="w-2.5 h-2.5" />
+                            <span>Bloquea a: <strong>{blockedUser?.name}</strong></span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><MoreHorizontal className="h-3 w-3" /></Button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => startEditFull(alloc)}><Pencil className="mr-2 h-3.5 w-3.5" /> Editar</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => moveTaskToWeek(alloc, weeks[(weekIndex+1)%weeks.length].weekStart)}><ArrowRightCircle className="mr-2 h-3.5 w-3.5" /> Mover sem.</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">EST {alloc.hoursAssigned}h</span>
+            
+            {isCompleted && (
+              <>
+                <div className="flex items-center bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                  <span className="text-[10px] font-medium mr-1">Real:</span>
+                  <input type="number" step="0.5" min="0" defaultValue={alloc.hoursActual || 0} onBlur={(e) => updateInlineHours(alloc, 'hoursActual', e.target.value)} className="w-8 text-[10px] text-center bg-transparent border-0 focus:outline-none focus:bg-white focus:ring-1 focus:ring-blue-300 rounded font-medium" />
+                </div>
+                
+                <div className="flex items-center bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">
+                  <span className="text-[10px] font-medium mr-1">Comp:</span>
+                  <input type="number" step="0.5" min="0" defaultValue={alloc.hoursComputed || 0} onBlur={(e) => updateInlineHours(alloc, 'hoursComputed', e.target.value)} className="w-8 text-[10px] text-center bg-transparent border-0 focus:outline-none focus:bg-white focus:ring-1 focus:ring-emerald-300 rounded font-medium" />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 }
