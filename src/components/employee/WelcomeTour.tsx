@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { 
@@ -12,7 +13,7 @@ const TOUR_STORAGE_KEY = 'timeboxing_welcome_tour_completed';
 
 interface TourStep {
   id: string;
-  target: string; // CSS selector o ID
+  target: string;
   title: string;
   description: string;
   icon: React.ReactNode;
@@ -113,6 +114,13 @@ const tourSteps: TourStep[] = [
   }
 ];
 
+interface HighlightPosition {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 interface WelcomeTourProps {
   onComplete?: () => void;
   forceShow?: boolean;
@@ -121,8 +129,8 @@ interface WelcomeTourProps {
 export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [highlightStyle, setHighlightStyle] = useState<React.CSSProperties | null>(null);
-  const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
+  const [highlightPos, setHighlightPos] = useState<HighlightPosition | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
   const [isReady, setIsReady] = useState(false);
 
   // Verificar si debe mostrarse
@@ -140,54 +148,39 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     }
   }, [forceShow]);
 
-  // Función para calcular posiciones
+  // Calcular posiciones
   const calculatePositions = useCallback(() => {
     const step = tourSteps[currentStep];
     
     if (step.position === 'center' || !step.highlight) {
-      setHighlightStyle(null);
-      setTooltipStyle({
-        position: 'fixed',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        zIndex: 10000
-      });
+      setHighlightPos(null);
+      setTooltipPos(null);
       setIsReady(true);
       return;
     }
 
     const element = document.querySelector(step.target);
     if (!element) {
-      setHighlightStyle(null);
-      setTooltipStyle({
-        position: 'fixed',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        zIndex: 10000
-      });
+      setHighlightPos(null);
+      setTooltipPos(null);
       setIsReady(true);
       return;
     }
 
-    // Obtener posición actual del elemento
     const rect = element.getBoundingClientRect();
     
-    // Highlight
-    const padding = 8;
-    setHighlightStyle({
-      position: 'fixed',
+    // Posición del highlight (coordenadas de viewport para position: fixed)
+    const padding = 6;
+    setHighlightPos({
       top: rect.top - padding,
       left: rect.left - padding,
       width: rect.width + padding * 2,
-      height: rect.height + padding * 2,
-      zIndex: 9999
+      height: rect.height + padding * 2
     });
 
-    // Tooltip
+    // Posición del tooltip
     const tooltipWidth = 380;
-    const tooltipHeight = 300;
+    const tooltipHeight = 320;
     const gap = 16;
     
     let top = 0;
@@ -216,13 +209,7 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
     top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 16));
 
-    setTooltipStyle({
-      position: 'fixed',
-      top: `${top}px`,
-      left: `${left}px`,
-      zIndex: 10000
-    });
-    
+    setTooltipPos({ top, left });
     setIsReady(true);
   }, [currentStep]);
 
@@ -244,32 +231,35 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
       return;
     }
 
-    // Primero hacer scroll al elemento
-    const rect = element.getBoundingClientRect();
-    const absoluteTop = rect.top + window.scrollY;
-    const targetScroll = absoluteTop - 150; // 150px desde arriba
-    
-    window.scrollTo({
-      top: Math.max(0, targetScroll),
-      behavior: 'smooth'
-    });
+    // Hacer scroll al elemento
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    // Esperar a que termine el scroll y luego calcular posiciones
+    // Esperar al scroll y luego calcular
     const timer = setTimeout(() => {
       calculatePositions();
-    }, 500);
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [currentStep, isVisible, calculatePositions]);
 
-  // Recalcular en resize
+  // Recalcular en resize/scroll
   useEffect(() => {
-    if (!isVisible) return;
+    if (!isVisible || !isReady) return;
     
-    const handleResize = () => calculatePositions();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [isVisible, calculatePositions]);
+    const handleUpdate = () => {
+      if (tourSteps[currentStep].highlight) {
+        calculatePositions();
+      }
+    };
+    
+    window.addEventListener('resize', handleUpdate);
+    window.addEventListener('scroll', handleUpdate, true);
+    
+    return () => {
+      window.removeEventListener('resize', handleUpdate);
+      window.removeEventListener('scroll', handleUpdate, true);
+    };
+  }, [isVisible, isReady, currentStep, calculatePositions]);
 
   const handleNext = useCallback(() => {
     if (currentStep < tourSteps.length - 1) {
@@ -314,208 +304,244 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
   const step = tourSteps[currentStep];
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === tourSteps.length - 1;
-  const isCentered = step.position === 'center';
+  const isCentered = step.position === 'center' || !highlightPos;
 
-  return (
-    <>
-      {/* Overlay con agujero usando SVG */}
+  // Renderizar en un portal para evitar problemas de contexto
+  const tourContent = (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 99999, pointerEvents: 'none' }}>
+      {/* Overlay SVG con spotlight */}
       <svg 
-        className="fixed inset-0 z-[9998] pointer-events-none"
-        style={{ width: '100%', height: '100%' }}
+        style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          width: '100vw', 
+          height: '100vh',
+          pointerEvents: 'auto'
+        }}
       >
         <defs>
-          <mask id="spotlight-mask">
-            {/* Fondo blanco = visible (oscuro) */}
+          <mask id="tour-spotlight-mask">
             <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {/* Agujero negro = transparente (claro) */}
-            {highlightStyle && isReady && (
+            {highlightPos && isReady && (
               <rect 
-                x={(highlightStyle.left as number) - 4}
-                y={(highlightStyle.top as number) - 4}
-                width={(highlightStyle.width as number) + 8}
-                height={(highlightStyle.height as number) + 8}
-                rx="12"
+                x={highlightPos.left - 2}
+                y={highlightPos.top - 2}
+                width={highlightPos.width + 4}
+                height={highlightPos.height + 4}
+                rx="10"
                 fill="black"
               />
             )}
           </mask>
         </defs>
         <rect 
-          x="0" y="0" 
-          width="100%" height="100%" 
-          fill="rgba(0,0,0,0.75)" 
-          mask="url(#spotlight-mask)"
+          x="0" 
+          y="0" 
+          width="100%" 
+          height="100%" 
+          fill="rgba(0, 0, 0, 0.75)" 
+          mask="url(#tour-spotlight-mask)"
         />
       </svg>
 
-      {/* Borde del highlight (separado del overlay) */}
-      {highlightStyle && isReady && (
+      {/* Borde del highlight */}
+      {highlightPos && isReady && (
         <div
-          className="fixed pointer-events-none rounded-xl z-[9999]"
           style={{
-            top: (highlightStyle.top as number) - 4,
-            left: (highlightStyle.left as number) - 4,
-            width: (highlightStyle.width as number) + 8,
-            height: (highlightStyle.height as number) + 8,
+            position: 'fixed',
+            top: highlightPos.top - 2,
+            left: highlightPos.left - 2,
+            width: highlightPos.width + 4,
+            height: highlightPos.height + 4,
             border: '3px solid #818cf8',
-            boxShadow: '0 0 0 4px rgba(129, 140, 248, 0.3), 0 0 30px rgba(129, 140, 248, 0.5)',
+            borderRadius: '10px',
+            boxShadow: '0 0 0 4px rgba(129, 140, 248, 0.3), 0 0 20px rgba(129, 140, 248, 0.4)',
+            pointerEvents: 'none',
+            zIndex: 100000
           }}
         >
-          {/* Pulso animado */}
-          <div className="absolute inset-0 rounded-xl border-2 border-indigo-400 animate-ping opacity-30" />
+          <div 
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '10px',
+              border: '2px solid #a5b4fc',
+              animation: 'tour-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite',
+              opacity: 0.3
+            }}
+          />
         </div>
       )}
 
-      {/* Tooltip/Card del paso actual */}
+      {/* Tooltip */}
       {isReady && (
         <Card 
-          className="w-[380px] shadow-2xl border-0 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
-          style={tooltipStyle}
+          className="shadow-2xl border-0 overflow-hidden"
+          style={{
+            position: 'fixed',
+            width: 380,
+            top: isCentered ? '50%' : tooltipPos?.top,
+            left: isCentered ? '50%' : tooltipPos?.left,
+            transform: isCentered ? 'translate(-50%, -50%)' : undefined,
+            zIndex: 100001,
+            pointerEvents: 'auto'
+          }}
         >
-        {/* Header con gradiente */}
-        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/20 rounded-lg">
-                {step.icon}
+          {/* Header */}
+          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  {step.icon}
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">{step.title}</h3>
+                  <p className="text-xs text-white/70">Paso {currentStep + 1} de {tourSteps.length}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-lg">{step.title}</h3>
-                <p className="text-xs text-white/70">Paso {currentStep + 1} de {tourSteps.length}</p>
-              </div>
-            </div>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="text-white/70 hover:text-white hover:bg-white/20 h-8 w-8"
-              onClick={handleSkip}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Contenido */}
-        <div className="p-5">
-          {step.customContent ? (
-            <div className="space-y-4">
-              <p className="text-sm text-slate-600">
-                Ya conoces lo básico. Ahora, un consejo clave:
-              </p>
-              
-              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">
-                <p className="text-sm font-medium text-indigo-900 mb-3">
-                  📊 Registra tus horas <strong>reales</strong> y <strong>computadas</strong> con precisión:
-                </p>
-                <ul className="space-y-2 text-xs text-slate-600">
-                  <li className="flex items-start gap-2">
-                    <TrendingUp className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-                    <span><strong>Mejora tus estimaciones</strong> con el tiempo</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Users className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                    <span><strong>Demuestra tu aportación</strong> a cada proyecto</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Target className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
-                    <span><strong>Identifica dónde optimizar</strong> tu tiempo</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Zap className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                    <span><strong>Crece como profesional</strong> midiendo tu eficiencia</span>
-                  </li>
-                </ul>
-              </div>
-              
-              <p className="text-xs text-center text-slate-500 italic">
-                La diferencia entre "Real" y "Computada" es tu ganancia de eficiencia. ¡Hazla crecer!
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-600 leading-relaxed">
-              {step.description}
-            </p>
-          )}
-
-          {/* Indicador de interacción */}
-          {step.highlight && (
-            <div className="flex items-center gap-2 mt-3 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg">
-              <MousePointerClick className="w-4 h-4" />
-              <span>Elemento resaltado arriba</span>
-            </div>
-          )}
-        </div>
-
-        {/* Footer con navegación */}
-        <div className="px-5 pb-5">
-          {/* Progress dots */}
-          <div className="flex justify-center gap-1.5 mb-4">
-            {tourSteps.map((_, index) => (
-              <button
-                key={index}
-                onClick={() => setCurrentStep(index)}
-                className={cn(
-                  "w-2 h-2 rounded-full transition-all duration-200",
-                  index === currentStep 
-                    ? "bg-indigo-500 w-6" 
-                    : index < currentStep
-                      ? "bg-indigo-300"
-                      : "bg-slate-200"
-                )}
-              />
-            ))}
-          </div>
-
-          {/* Botones */}
-          <div className="flex items-center justify-between">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSkip}
-              className="text-slate-400 hover:text-slate-600"
-            >
-              Saltar tour
-            </Button>
-
-            <div className="flex gap-2">
-              {!isFirstStep && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePrev}
-                  className="gap-1"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Anterior
-                </Button>
-              )}
-              <Button
-                size="sm"
-                onClick={handleNext}
-                className="gap-1 bg-indigo-600 hover:bg-indigo-700"
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="text-white/70 hover:text-white hover:bg-white/20 h-8 w-8"
+                onClick={handleSkip}
               >
-                {isLastStep ? (
-                  <>
-                    ¡Empezar!
-                    <CheckCircle2 className="w-4 h-4" />
-                  </>
-                ) : (
-                  <>
-                    Siguiente
-                    <ChevronRight className="w-4 h-4" />
-                  </>
-                )}
+                <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
-        </div>
-      </Card>
+
+          {/* Content */}
+          <div className="p-5 bg-white">
+            {step.customContent ? (
+              <div className="space-y-4">
+                <p className="text-sm text-slate-600">
+                  Ya conoces lo básico. Ahora, un consejo clave:
+                </p>
+                
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">
+                  <p className="text-sm font-medium text-indigo-900 mb-3">
+                    📊 Registra tus horas <strong>reales</strong> y <strong>computadas</strong> con precisión:
+                  </p>
+                  <ul className="space-y-2 text-xs text-slate-600">
+                    <li className="flex items-start gap-2">
+                      <TrendingUp className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span><strong>Mejora tus estimaciones</strong> con el tiempo</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Users className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                      <span><strong>Demuestra tu aportación</strong> a cada proyecto</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Target className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
+                      <span><strong>Identifica dónde optimizar</strong> tu tiempo</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Zap className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                      <span><strong>Crece como profesional</strong> midiendo tu eficiencia</span>
+                    </li>
+                  </ul>
+                </div>
+                
+                <p className="text-xs text-center text-slate-500 italic">
+                  La diferencia entre "Real" y "Computada" es tu ganancia de eficiencia. ¡Hazla crecer!
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {step.description}
+              </p>
+            )}
+
+            {step.highlight && (
+              <div className="flex items-center gap-2 mt-3 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg">
+                <MousePointerClick className="w-4 h-4" />
+                <span>Elemento resaltado arriba</span>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 pb-5 bg-white">
+            <div className="flex justify-center gap-1.5 mb-4">
+              {tourSteps.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setCurrentStep(index)}
+                  className={cn(
+                    "w-2 h-2 rounded-full transition-all duration-200",
+                    index === currentStep 
+                      ? "bg-indigo-500 w-6" 
+                      : index < currentStep
+                        ? "bg-indigo-300"
+                        : "bg-slate-200"
+                  )}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSkip}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                Saltar tour
+              </Button>
+
+              <div className="flex gap-2">
+                {!isFirstStep && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePrev}
+                    className="gap-1"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Anterior
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  onClick={handleNext}
+                  className="gap-1 bg-indigo-600 hover:bg-indigo-700"
+                >
+                  {isLastStep ? (
+                    <>
+                      ¡Empezar!
+                      <CheckCircle2 className="w-4 h-4" />
+                    </>
+                  ) : (
+                    <>
+                      Siguiente
+                      <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
       )}
-    </>
+
+      {/* Estilos de animación */}
+      <style>{`
+        @keyframes tour-ping {
+          75%, 100% {
+            transform: scale(1.05);
+            opacity: 0;
+          }
+        }
+      `}</style>
+    </div>
   );
+
+  // Usar portal para renderizar fuera del árbol DOM del componente
+  return createPortal(tourContent, document.body);
 }
 
-// Hook para controlar el tour desde fuera
+// Hook para controlar el tour
 export function useWelcomeTour() {
   const [showTour, setShowTour] = useState(false);
 
