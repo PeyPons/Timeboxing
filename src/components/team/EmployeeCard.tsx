@@ -1,170 +1,114 @@
-import { useState, useEffect } from 'react';
-import { Employee, WorkSchedule } from '@/types';
+import { Employee } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Trash2, Trophy, Palmtree, Briefcase, Mail } from 'lucide-react';
+import { ScheduleEditor } from './ScheduleEditor';
+import { MoreHorizontal, Mail, Phone, Building2, Clock, UserCog, UserCheck, UserX } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
-import { toast } from '@/hooks/use-toast';
-import { ProfessionalGoalsSheet } from './ProfessionalGoalsSheet';
-import { AbsencesSheet } from './AbsencesSheet';
-import { ProjectsSheet } from './ProjectsSheet'; 
+import { toast } from 'sonner';
 
 interface EmployeeCardProps {
   employee: Employee;
 }
 
-// Horario por defecto para evitar crashes si viene null
-const DEFAULT_SCHEDULE: WorkSchedule = { monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 0, sunday: 0 };
-
 export function EmployeeCard({ employee }: EmployeeCardProps) {
-  const { updateEmployee, deleteEmployee, toggleEmployeeActive, allocations } = useApp();
-  
-  // FIX: Inicialización segura. Si employee.workSchedule es undefined, usa DEFAULT_SCHEDULE
-  const [schedule, setSchedule] = useState<WorkSchedule>(employee.workSchedule || DEFAULT_SCHEDULE);
-  
-  const [showGoals, setShowGoals] = useState(false);
-  const [showAbsences, setShowAbsences] = useState(false);
-  const [showProjects, setShowProjects] = useState(false); 
+  const { deleteEmployee, toggleEmployeeActive } = useApp();
 
-  const activeProjectsCount = new Set(
-    (allocations || []) // Protección extra contra undefined
-      .filter(a => a.employeeId === employee.id)
-      .map(a => a.projectId)
-  ).size;
-
-  useEffect(() => {
-    // Actualizar estado si cambian las props, con protección
-    setSchedule(employee.workSchedule || DEFAULT_SCHEDULE);
-  }, [employee.workSchedule]);
-
-  const handleScheduleChange = (day: keyof WorkSchedule, value: string) => {
-    const numValue = Number(value);
-    setSchedule(prev => ({
-      ...prev,
-      [day]: isNaN(numValue) ? 0 : numValue
-    }));
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('¿Estás seguro de eliminar este empleado?')) {
+      deleteEmployee(employee.id);
+      toast.success("Empleado eliminado");
+    }
   };
 
-  const saveSchedule = async () => {
-    // Protección al calcular total
-    const safeSchedule = schedule || DEFAULT_SCHEDULE;
-    const newCapacity = Object.values(safeSchedule).reduce((a, b) => a + Number(b || 0), 0);
-    
-    await updateEmployee({
-      ...employee,
-      workSchedule: safeSchedule,
-      defaultWeeklyCapacity: newCapacity
-    });
-    toast({ title: "Horario actualizado" });
+  const handleToggleActive = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleEmployeeActive(employee.id);
+    toast.success(employee.isActive ? "Empleado desactivado" : "Empleado activado");
   };
-
-  const days: { key: keyof WorkSchedule; label: string }[] = [
-    { key: 'monday', label: 'L' },
-    { key: 'tuesday', label: 'M' },
-    { key: 'wednesday', label: 'X' },
-    { key: 'thursday', label: 'J' },
-    { key: 'friday', label: 'V' },
-  ];
-
-  // Calculo seguro para el renderizado
-  const totalWeeklyHours = Object.values(schedule || DEFAULT_SCHEDULE).reduce((a, b) => a + Number(b || 0), 0);
 
   return (
-    <>
-      <Card className={`transition-all hover:shadow-md ${!employee.isActive ? 'opacity-60 bg-muted/50' : ''}`}>
-        <CardHeader className="pb-2">
-          <div className="flex justify-between items-start">
-            <div className="flex gap-3 items-center">
-              <Avatar>
-                <AvatarImage src={employee.avatarUrl} />
-                <AvatarFallback className="bg-primary/10 text-primary">
-                  {employee.name.substring(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="space-y-0.5">
-                <CardTitle className="text-lg font-bold">{employee.name}</CardTitle>
-                <p className="text-sm text-muted-foreground">{employee.role || "Sin cargo"}</p>
-                {/* Visualización del Email si existe */}
-                {employee.email && (
-                    <div className="flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-sm w-fit">
-                        <Mail className="h-3 w-3" />
-                        {employee.email}
-                    </div>
-                )}
-              </div>
-            </div>
-            <Switch 
-              checked={employee.isActive} 
-              onCheckedChange={() => toggleEmployeeActive(employee.id)} 
-            />
+    <Card className={`group relative overflow-hidden transition-all hover:shadow-md ${!employee.isActive ? 'opacity-60 bg-slate-50' : 'bg-white'}`}>
+      <CardHeader className="flex flex-row items-center gap-4 pb-2">
+        <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
+          <AvatarImage src={employee.avatarUrl} alt={employee.name} />
+          <AvatarFallback className="bg-indigo-100 text-indigo-700 font-bold">
+            {employee.name.charAt(0)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex-1 overflow-hidden">
+          <CardTitle className="text-base font-bold truncate text-slate-900">
+            {employee.name}
+          </CardTitle>
+          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+            <Badge variant="secondary" className="font-normal bg-slate-100 text-slate-600 hover:bg-slate-200">
+              {employee.role}
+            </Badge>
+            {employee.department && (
+              <span className="flex items-center gap-1 truncate">
+                <Building2 className="h-3 w-3" /> {employee.department}
+              </span>
+            )}
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Horario Semanal</Label>
-            <div className="grid grid-cols-5 gap-2">
-              {days.map((day) => (
-                <div key={day.key} className="text-center space-y-1">
-                  <span className="text-[10px] font-bold text-muted-foreground">{day.label}</span>
-                  <Input 
-                    type="number" 
-                    min="0" 
-                    max="24"
-                    className="h-8 text-center px-1"
-                    value={schedule?.[day.key] ?? 0}
-                    onChange={(e) => handleScheduleChange(day.key, e.target.value)}
-                    onBlur={saveSchedule}
-                  />
+        </div>
+        
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2 text-slate-400 hover:text-slate-600">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+            <DropdownMenuItem onClick={handleToggleActive}>
+              {employee.isActive ? <><UserX className="mr-2 h-4 w-4" /> Desactivar</> : <><UserCheck className="mr-2 h-4 w-4" /> Activar</>}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={handleDelete}>
+              <UserCog className="mr-2 h-4 w-4" /> Eliminar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </CardHeader>
+      
+      <CardContent className="grid gap-4 text-xs pt-2">
+        {/* Contacto */}
+        <div className="flex flex-col gap-1 text-slate-500">
+            {employee.email && (
+                <div className="flex items-center gap-2">
+                    <Mail className="h-3.5 w-3.5 text-indigo-400" />
+                    <span className="truncate">{employee.email}</span>
                 </div>
-              ))}
+            )}
+        </div>
+
+        {/* Horario - MODO LECTURA (Aquí está el cambio clave) */}
+        {employee.workSchedule && (
+            <div className="pt-2 border-t border-slate-100">
+                <div className="flex items-center gap-2 mb-2 text-slate-900 font-medium">
+                    <Clock className="h-3.5 w-3.5 text-slate-400" /> 
+                    <span>Horario Semanal</span>
+                </div>
+                <div className="pointer-events-none"> {/* Bloqueo extra por seguridad */}
+                    <ScheduleEditor 
+                        schedule={employee.workSchedule} 
+                        readOnly={true} // <--- ESTO LO HACE SOLO LECTURA
+                        onChange={() => {}} 
+                    />
+                </div>
             </div>
-          </div>
-
-          <div className="flex justify-between items-center pt-2 border-t mt-2">
-            <div className="text-xs text-muted-foreground">
-              Total: <span className="font-bold text-foreground">
-                {totalWeeklyHours}h
-              </span> / sem
-            </div>
-          </div>
-
-          <div className="pt-2 border-t">
-            <Button 
-                variant="outline" 
-                className="w-full justify-between h-9 text-xs font-normal border-dashed"
-                onClick={() => setShowProjects(true)}
-            >
-                <span className="flex items-center gap-2 text-muted-foreground">
-                    <Briefcase className="h-3.5 w-3.5" />
-                    {activeProjectsCount} Proyectos Asignados
-                </span>
-                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 rounded">Ver detalles</span>
-            </Button>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-[10px] h-8 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border-yellow-200" onClick={() => setShowGoals(true)}>
-              <Trophy className="h-3 w-3" />
-              Proyección
-            </Button>
-            <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-[10px] h-8 bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200" onClick={() => setShowAbsences(true)}>
-              <Palmtree className="h-3 w-3" />
-              Ausencias
-            </Button>
-            <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8 p-0" onClick={() => deleteEmployee(employee.id)}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {showGoals && <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={employee.id} />}
-      {showAbsences && <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={employee.id} />}
-      {showProjects && <ProjectsSheet open={showProjects} onOpenChange={setShowProjects} employeeId={employee.id} />}
-    </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
