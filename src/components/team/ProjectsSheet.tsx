@@ -3,7 +3,7 @@ import { Project, Allocation, Client } from '@/types';
 import { useApp } from '@/contexts/AppContext';
 import { Badge } from '@/components/ui/badge';
 import { Briefcase, CheckCircle2, TrendingUp, TrendingDown, Zap, PieChart } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatProjectName } from '@/lib/utils';
 
 interface ProjectsSheetProps {
   open: boolean;
@@ -95,7 +95,7 @@ export function ProjectsSheet({ open, onOpenChange, employeeId }: ProjectsSheetP
                             <div className="p-3 border-b border-slate-100 flex justify-between items-start bg-white">
                                 <div className="space-y-1 min-w-0 pr-2">
                                     <h4 className="font-bold text-sm text-slate-900 leading-tight truncate" title={group.project?.name}>
-                                        {group.project?.name}
+                                        {formatProjectName(group.project?.name || '')}
                                     </h4>
                                     <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: client?.color || '#cbd5e1' }}></span>
@@ -106,7 +106,7 @@ export function ProjectsSheet({ open, onOpenChange, employeeId }: ProjectsSheetP
                                 {/* Badge de IMPACTO */}
                                 <div className="flex flex-col items-end gap-1">
                                     <Badge variant="secondary" className="text-[10px] h-5 bg-indigo-50 text-indigo-700 border border-indigo-100 flex gap-1 shadow-none">
-                                        <PieChart className="h-3 w-3" /> Impacto: {impactPercentage}%
+                                        <PieChart className="h-3 w-3" /> Tu impacto: {impactPercentage}%
                                     </Badge>
                                 </div>
                             </div>
