@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Employee, Client, Project, Allocation, LoadStatus, Absence, TeamEvent, ProfessionalGoal } from '@/types';
 import { getWorkingDaysInRange, getMonthlyCapacity, getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
-import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
+import { getTeamEventHoursInRange, getTeamEventDetailsInRange } from '@/utils/teamEventUtils';
 import { addDays } from 'date-fns';
 
 interface AppContextType {
@@ -336,12 +336,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         reducedCapacity -= absenceReductionTotal;
     }
 
-    const relevantEvents = teamEvents.filter(te => !te.affectedEmployeeIds || te.affectedEmployeeIds.includes(employeeId));
+    const relevantEvents = teamEvents.filter(te => 
+      te.affectedEmployeeIds === 'all' || te.affectedEmployeeIds.includes(employeeId)
+    );
     const eventReductionTotal = getTeamEventHoursInRange(rangeStart, rangeEnd, employeeId, teamEvents, employee.workSchedule);
     if (eventReductionTotal > 0) {
-        relevantEvents.forEach(ev => {
-            const evDate = new Date(ev.date);
-            if (evDate >= rangeStart && evDate <= rangeEnd) breakdown.push({ reason: `Evento: ${ev.name}`, hours: Number(ev.hoursReduction), type: 'event' });
+        // Usar getTeamEventDetailsInRange para obtener las horas correctas por empleado
+        const eventDetails = getTeamEventDetailsInRange(rangeStart, rangeEnd, employeeId, teamEvents, employee.workSchedule);
+        eventDetails.forEach(detail => {
+            breakdown.push({ reason: `Evento: ${detail.name}`, hours: detail.hours, type: 'event' });
         });
         reducedCapacity -= eventReductionTotal;
     }
