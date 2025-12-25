@@ -79,18 +79,24 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
     let authMessage = "";
 
     try {
-        // SOLO intentar crear/actualizar usuario si hay email Y password con al menos 6 caracteres
-        // Esto evita el error cuando solo queremos guardar otros campos como crmUserId
-        if (email && password && password.length >= 6) {
-            if (employeeToEdit && employeeToEdit.user_id) {
-                // Actualizar usuario existente
+        // SOLO gestionar autenticación si el usuario proporciona una contraseña nueva
+        // Si no hay contraseña, simplemente guardamos los datos del empleado sin tocar auth
+        if (password && password.length >= 6) {
+            if (!email) {
+                toast.error("Debes proporcionar un email para crear acceso");
+                setIsProcessing(false);
+                return;
+            }
+            
+            if (employeeToEdit?.user_id) {
+                // Ya tiene cuenta de auth -> actualizar credenciales
                 const { error } = await supabase.functions.invoke('update-user', {
                     body: { userId: employeeToEdit.user_id, password, email }
                 });
                 if (error) throw error;
                 authMessage = "Credenciales actualizadas.";
             } else {
-                // Crear nuevo usuario
+                // No tiene cuenta de auth -> crear nueva
                 const { data, error } = await supabase.functions.invoke('create-user', {
                     body: { email, password, name }
                 });
@@ -127,7 +133,12 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
 
     } catch (error: any) {
         console.error("Error:", error);
-        toast.error(error?.message || "Error al guardar");
+        const errorMsg = error?.message || "Error al guardar";
+        if (errorMsg.includes("already been registered")) {
+            toast.error("Este email ya tiene una cuenta. Usa otro email o deja la contraseña vacía.");
+        } else {
+            toast.error(errorMsg);
+        }
     } finally {
         setIsProcessing(false);
     }
