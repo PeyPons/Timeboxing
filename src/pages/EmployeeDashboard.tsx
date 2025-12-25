@@ -2,21 +2,26 @@ import { useEffect, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { MyWeekView } from '@/components/employee/MyWeekView';
-// Importamos los nuevos widgets
 import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/DashboardWidgets'; 
-import { Card, CardContent } from '@/components/ui/card'; // Eliminamos importaciones no usadas si las hubiera
+import { Card } from '@/components/ui/card';
+import { EmployeeRow } from '@/components/planner/EmployeeRow'; // Reutilizamos para el Header S1-S5
+import { AllocationSheet } from '@/components/planner/AllocationSheet';
+import { getWeeksForMonth, getMonthName } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Clock, AlertTriangle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import { startOfMonth, endOfMonth, max, min, format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { Employee } from '@/types';
-import { startOfWeek } from 'date-fns';
 
 export default function EmployeeDashboard() {
-  const { employees, allocations, isLoading: isGlobalLoading, getEmployeeLoadForWeek } = useApp();
+  const { employees, allocations, absences, teamEvents, projects, isLoading: isGlobalLoading, getEmployeeMonthlyLoad } = useApp();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [myEmployeeProfile, setMyEmployeeProfile] = useState<Employee | null>(null);
   
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: Date } | null>(null);
+
   useEffect(() => {
     const checkUserLink = async () => {
         const { data: { user } } = await supabase.auth.getUser();
@@ -31,72 +36,109 @@ export default function EmployeeDashboard() {
             }
         }
     };
-
-    if (!isGlobalLoading) {
-        checkUserLink();
-    }
+    if (!isGlobalLoading) checkUserLink();
   }, [employees, isGlobalLoading]);
 
+  const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  const handleToday = () => setCurrentMonth(new Date());
+
   if (isGlobalLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">Cargando...</div>;
-  if (!myEmployeeProfile && currentUser) return <div className="p-10 text-center">Perfil no vinculado.</div>;
   if (!myEmployeeProfile) return null;
 
-  const today = new Date();
-  const currentWeekStart = startOfWeek(today, { weekStartsOn: 1 });
-  
-  const weeklyLoad = getEmployeeLoadForWeek(myEmployeeProfile.id, currentWeekStart.toISOString());
+  // Configuración Header Resumen
+  const weeks = getWeeksForMonth(currentMonth);
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
+  const gridTemplate = `250px repeat(${weeks.length}, minmax(0, 1fr)) 100px`;
+  const monthlyLoad = getEmployeeMonthlyLoad(myEmployeeProfile.id, currentMonth.getFullYear(), currentMonth.getMonth());
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6 pb-20 animate-in fade-in duration-500">
+    <div className="max-w-7xl mx-auto p-6 space-y-8 pb-20 animate-in fade-in duration-500">
       
-      {/* 1. CABECERA + KPI CARGA (Lo que ya tenías) */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      {/* 1. CABECERA */}
+      <div className="flex justify-between items-center">
           <div>
               <h1 className="text-3xl font-bold text-slate-900">Hola, {myEmployeeProfile.first_name || myEmployeeProfile.name} 👋</h1>
-              <p className="text-slate-500">Panel de Operaciones</p>
+              <p className="text-slate-500">Tu planificación mensual.</p>
           </div>
-          
-          <div className="flex items-center gap-4 bg-white p-4 rounded-xl border shadow-sm w-full md:w-auto">
-              <div className={`p-3 rounded-full ${weeklyLoad.status === 'overload' ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                  {weeklyLoad.status === 'overload' ? <AlertTriangle className="w-6 h-6"/> : <Clock className="w-6 h-6"/>}
-              </div>
-              <div className="space-y-1 min-w-[140px]">
-                  <div className="flex justify-between text-sm font-medium text-slate-600">
-                      <span>Carga Semanal</span>
-                      <span className={weeklyLoad.percentage > 100 ? "text-red-600 font-bold" : "text-slate-900"}>{weeklyLoad.percentage}%</span>
-                  </div>
-                  <Progress value={weeklyLoad.percentage} className={`h-2.5 ${weeklyLoad.status === 'overload' ? '[&>div]:bg-red-500' : '[&>div]:bg-indigo-600'}`} />
-                  <div className="flex justify-between text-xs text-slate-400"><span>{weeklyLoad.hours}h Asignadas</span><span>{weeklyLoad.capacity}h Capacidad</span></div>
-              </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="text-emerald-700 bg-emerald-50 border-emerald-200">Mis Objetivos</Button>
+            <Button variant="outline" className="text-amber-700 bg-amber-50 border-amber-200">Ausencias</Button>
           </div>
       </div>
 
-      {/* 2. SECCIÓN INTELIGENTE: RECOMENDACIONES Y EQUIPO (NUEVO) */}
+      {/* 2. CONTROL MES */}
+      <div className="flex items-center gap-4 bg-white p-2 rounded-lg border shadow-sm w-fit">
+            <h2 className="text-lg font-bold capitalize text-slate-900 flex items-center gap-2 ml-2">
+                {getMonthName(currentMonth)} <Badge variant="outline" className="text-xs font-normal">{currentMonth.getFullYear()}</Badge>
+            </h2>
+            <div className="h-6 w-px bg-slate-200 mx-2" />
+            <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="sm" onClick={handleToday} className="h-7 text-xs px-2"><CalendarDays className="h-3.5 w-3.5 mr-1.5" />Mes Actual</Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNextMonth}><ChevronRight className="h-4 w-4" /></Button>
+            </div>
+      </div>
+
+      {/* 3. RESUMEN TIPO PLANIFICADOR (S1-S5) */}
+      <Card className="overflow-hidden border-slate-200 shadow-sm bg-white">
+          <div className="overflow-x-auto custom-scrollbar">
+            <div style={{ minWidth: '1000px' }}>
+                <div className="grid bg-slate-50 border-b" style={{ gridTemplateColumns: gridTemplate }}>
+                    <div className="px-4 py-3 font-bold text-sm text-slate-700 flex items-center border-r">Mi Calendario</div>
+                    {weeks.map((week, index) => (
+                        <div key={week.weekStart.toISOString()} className="text-center px-1 py-2 border-r flex flex-col justify-center">
+                            <span className="text-xs font-bold uppercase text-slate-500">S{index + 1}</span>
+                            <span className="text-[10px] text-slate-400 font-medium">{format(max([week.weekStart, monthStart]), 'd', { locale: es })}-{format(min([week.weekEnd, monthEnd]), 'd MMM', { locale: es })}</span>
+                        </div>
+                    ))}
+                    <div className="px-2 py-3 font-bold text-xs text-center flex items-center justify-center">TOTAL MES</div>
+                </div>
+
+                <div className="grid bg-white" style={{ gridTemplateColumns: gridTemplate }}>
+                    <EmployeeRow 
+                        employee={myEmployeeProfile} 
+                        weeks={weeks} 
+                        projects={projects}
+                        allocations={allocations}
+                        absences={absences}
+                        teamEvents={teamEvents}
+                        viewDate={currentMonth}
+                        onOpenSheet={(empId, date) => setSelectedCell({ employeeId: empId, weekStart: date })}
+                    />
+                    <div className="flex items-center justify-center border-l p-2 bg-slate-50/30">
+                        <div className="flex flex-col items-center justify-center w-20 h-14 rounded-lg bg-red-50 border border-red-200 text-red-700">
+                            <span className="text-base font-bold leading-none">{monthlyLoad.hours}h</span>
+                            <span className="text-[10px] opacity-70">/ {monthlyLoad.capacity}h</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+          </div>
+      </Card>
+
+      {/* 4. WIDGETS DE INTELIGENCIA Y DEPENDENCIAS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Columna Izquierda: Recomendaciones (Ocupa 1/3) */}
-          <div className="lg:col-span-1 space-y-4">
-              <PriorityInsights employeeId={myEmployeeProfile.id} />
-              
-              {/* Aquí podrías mover los botones de Objetivos/Ausencias si quieres agruparlos */}
-          </div>
-
-          {/* Columna Derecha: Vista de Equipo (Ocupa 2/3) */}
-          <div className="lg:col-span-2">
-              <ProjectTeamPulse employeeId={myEmployeeProfile.id} />
-          </div>
+          <div className="lg:col-span-1"><PriorityInsights employeeId={myEmployeeProfile.id} /></div>
+          <div className="lg:col-span-2"><ProjectTeamPulse employeeId={myEmployeeProfile.id} /></div>
       </div>
 
-      {/* 3. VISTA PRINCIPAL DE TAREAS */}
-      <Tabs defaultValue="week" className="w-full pt-4">
-          <TabsList className="bg-slate-100 p-1 mb-4">
-              <TabsTrigger value="week" className="px-4">Mi Semana</TabsTrigger>
-              <TabsTrigger value="history" className="px-4" disabled>Histórico</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="week" className="mt-0">
-              <MyWeekView employeeId={myEmployeeProfile.id} />
-          </TabsContent>
-      </Tabs>
+      {/* 5. LISTA DE TAREAS (DETALLE) */}
+      <div className="pt-4 border-t">
+          <h3 className="text-lg font-bold text-slate-800 mb-4">Detalle de Tareas (Semana Actual)</h3>
+          <MyWeekView employeeId={myEmployeeProfile.id} />
+      </div>
+
+      {selectedCell && (
+        <AllocationSheet 
+            open={!!selectedCell} 
+            onOpenChange={(open) => !open && setSelectedCell(null)} 
+            employeeId={selectedCell.employeeId} 
+            weekStart={selectedCell.weekStart.toISOString()} 
+            viewDateContext={currentMonth} 
+        />
+      )}
     </div>
   );
 }
