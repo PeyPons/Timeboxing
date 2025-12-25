@@ -701,71 +701,159 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 </div>
                 
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
-                    {newTasks.map((task) => (
-                        <div key={task.id} className="flex gap-2 items-start">
-                            <div className="flex-1 min-w-0">
-                                <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
-                                    <PopoverTrigger asChild>
-                                        <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal", !task.projectId && "text-muted-foreground")}>
-                                            <span className="truncate">{task.projectId ? formatProjectName(activeProjects.find((p) => p.id === task.projectId)?.name || '') : "Buscar..."}</span>
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[300px] p-0" align="start">
-                                        <Command>
-                                            <CommandInput placeholder="Buscar..." />
-                                            <CommandList>
-                                                <CommandEmpty>No hay.</CommandEmpty>
-                                                <CommandGroup className="max-h-[200px] overflow-y-auto">
-                                                    {activeProjects.map((project) => (
-                                                        <CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}>
-                                                            <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
-                                                            {formatProjectName(project.name)}
-                                                        </CommandItem>
-                                                    ))}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
+                    {newTasks.map((task) => {
+                        // Calcular si esta tarea excede el presupuesto
+                        const taskProject = task.projectId ? projects.find(p => p.id === task.projectId) : null;
+                        const taskHours = parseFloat(task.hours) || 0;
+                        
+                        // Horas ya planificadas de este proyecto (del formulario actual)
+                        const otherTasksHours = newTasks
+                            .filter(t => t.id !== task.id && t.projectId === task.projectId)
+                            .reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0);
+                        
+                        // Horas ya existentes del proyecto este mes
+                        const existingStatus = task.projectId ? getProjectBudgetStatus(task.projectId) : null;
+                        const currentUsed = existingStatus ? existingStatus.totalComputed + existingStatus.totalPlanned : 0;
+                        const budgetMax = taskProject?.budgetHours || 0;
+                        
+                        // Total proyectado
+                        const projectedTotal = currentUsed + otherTasksHours + taskHours;
+                        const exceedsBy = budgetMax > 0 ? projectedTotal - budgetMax : 0;
+                        const willExceed = exceedsBy > 0 && taskHours > 0;
+                        
+                        return (
+                        <div key={task.id} className="flex flex-col gap-1">
+                            <div className="flex gap-2 items-start">
+                                <div className="flex-1 min-w-0">
+                                    <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal", !task.projectId && "text-muted-foreground", willExceed && "border-amber-300 bg-amber-50")}>
+                                                <span className="truncate">{task.projectId ? formatProjectName(activeProjects.find((p) => p.id === task.projectId)?.name || '') : "Buscar..."}</span>
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[300px] p-0" align="start">
+                                            <Command>
+                                                <CommandInput placeholder="Buscar..." />
+                                                <CommandList>
+                                                    <CommandEmpty>No hay.</CommandEmpty>
+                                                    <CommandGroup className="max-h-[200px] overflow-y-auto">
+                                                        {activeProjects.map((project) => (
+                                                            <CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}>
+                                                                <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
+                                                                {formatProjectName(project.name)}
+                                                            </CommandItem>
+                                                        ))}
+                                                    </CommandGroup>
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                <Input className="flex-1 h-10" placeholder="Nombre..." value={task.taskName} onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} />
+
+                                <div className="w-40">
+                                    <Select value={task.dependencyId} onValueChange={(v) => updateTaskRow(task.id, 'dependencyId', v)} disabled={!task.projectId}>
+                                        <SelectTrigger className="h-10 text-xs px-2"><SelectValue placeholder="-" /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">Ninguna</SelectItem>
+                                            {getAvailableDependencies(task.projectId).map(dep => {
+                                                const owner = employees.find(e => e.id === dep.employeeId);
+                                                return <SelectItem key={dep.id} value={dep.id} className="text-xs">{dep.taskName} ({owner?.name?.substring(0,6)}..)</SelectItem>;
+                                            })}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <Input type="number" className={cn("w-20 h-10 text-center", willExceed && "border-amber-300 bg-amber-50")} placeholder="0" value={task.hours} onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} step="0.5" />
+
+                                <div className="w-36">
+                                    <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
+                                        <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                                        <SelectContent>{weeks.map((w, i) => (<SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>Sem {i+1}</SelectItem>))}</SelectContent>
+                                    </Select>
+                                </div>
+
+                                <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive" onClick={() => removeTaskRow(task.id)} disabled={newTasks.length === 1}><X className="h-4 w-4" /></Button>
                             </div>
-
-                            <Input className="flex-1 h-10" placeholder="Nombre..." value={task.taskName} onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} />
-
-                            <div className="w-40">
-                                <Select value={task.dependencyId} onValueChange={(v) => updateTaskRow(task.id, 'dependencyId', v)} disabled={!task.projectId}>
-                                    <SelectTrigger className="h-10 text-xs px-2"><SelectValue placeholder="-" /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="none">Ninguna</SelectItem>
-                                        {getAvailableDependencies(task.projectId).map(dep => {
-                                            const owner = employees.find(e => e.id === dep.employeeId);
-                                            return <SelectItem key={dep.id} value={dep.id} className="text-xs">{dep.taskName} ({owner?.name?.substring(0,6)}..)</SelectItem>;
-                                        })}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <Input type="number" className="w-20 h-10 text-center" placeholder="0" value={task.hours} onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} step="0.5" />
-
-                            <div className="w-36">
-                                <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
-                                    <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-                                    <SelectContent>{weeks.map((w, i) => (<SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, viewDate)}>Sem {i+1}</SelectItem>))}</SelectContent>
-                                </Select>
-                            </div>
-
-                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive" onClick={() => removeTaskRow(task.id)} disabled={newTasks.length === 1}><X className="h-4 w-4" /></Button>
+                            {/* Badge de exceso inline */}
+                            {willExceed && (
+                                <div className="flex items-center gap-1 ml-1 text-[10px] text-amber-700">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    <span>+{exceedsBy.toFixed(1)}h exceso ({projectedTotal.toFixed(1)}/{budgetMax}h)</span>
+                                </div>
+                            )}
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
                 <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed"><Plus className="h-4 w-4 mr-2" /> Añadir otra fila</Button>
               </div>
             )}
           </div>
-          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t flex justify-between items-center w-full">
-            {editingAllocation && <Button variant="ghost" size="sm" onClick={handleDeleteAllocation} className="text-red-500"><Trash2 className="w-4 h-4 mr-2" /> Eliminar</Button>}
-            <div className="flex gap-2 ml-auto">
-                <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
-                <Button onClick={handleSave}>Guardar</Button>
+          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t flex flex-col gap-2 w-full">
+            {/* Resumen compacto de excesos (solo en modo creación) */}
+            {!editingAllocation && newTasks.some(t => t.projectId && t.hours) && (() => {
+                const projectSummary: Record<string, { name: string; total: number; budget: number; exceeds: number }> = {};
+                
+                newTasks.forEach(task => {
+                    if (!task.projectId || !task.hours) return;
+                    const proj = projects.find(p => p.id === task.projectId);
+                    if (!proj) return;
+                    
+                    if (!projectSummary[task.projectId]) {
+                        const existingStatus = getProjectBudgetStatus(task.projectId);
+                        projectSummary[task.projectId] = {
+                            name: formatProjectName(proj.name),
+                            total: existingStatus.totalComputed + existingStatus.totalPlanned,
+                            budget: proj.budgetHours || 0,
+                            exceeds: 0
+                        };
+                    }
+                    projectSummary[task.projectId].total += parseFloat(task.hours) || 0;
+                });
+                
+                Object.values(projectSummary).forEach(p => {
+                    if (p.budget > 0 && p.total > p.budget) {
+                        p.exceeds = round2(p.total - p.budget);
+                    }
+                });
+                
+                const projectsWithExcess = Object.values(projectSummary).filter(p => p.exceeds > 0);
+                const projectsOk = Object.values(projectSummary).filter(p => p.exceeds === 0 && p.budget > 0);
+                
+                if (projectsWithExcess.length === 0 && projectsOk.length === 0) return null;
+                
+                return (
+                    <div className="flex items-center gap-3 text-[11px] overflow-x-auto pb-2 w-full">
+                        {projectsWithExcess.map(p => (
+                            <div key={p.name} className="flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200 whitespace-nowrap">
+                                <AlertTriangle className="w-3 h-3" />
+                                <span className="font-medium">{p.name}</span>
+                                <span>+{p.exceeds}h</span>
+                            </div>
+                        ))}
+                        {projectsOk.length > 0 && projectsWithExcess.length > 0 && (
+                            <div className="text-slate-300">|</div>
+                        )}
+                        {projectsOk.slice(0, 3).map(p => (
+                            <div key={p.name} className="flex items-center gap-1 text-emerald-600 whitespace-nowrap">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>{p.name}</span>
+                            </div>
+                        ))}
+                        {projectsOk.length > 3 && (
+                            <span className="text-slate-400 whitespace-nowrap">+{projectsOk.length - 3} OK</span>
+                        )}
+                    </div>
+                );
+            })()}
+            <div className="flex justify-between items-center w-full">
+              {editingAllocation && <Button variant="ghost" size="sm" onClick={handleDeleteAllocation} className="text-red-500"><Trash2 className="w-4 h-4 mr-2" /> Eliminar</Button>}
+              <div className="flex gap-2 ml-auto">
+                  <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
+                  <Button onClick={handleSave}>Guardar</Button>
+              </div>
             </div>
           </DialogFooter>
         </DialogContent>
@@ -847,4 +935,85 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       </div>
     );
   }
+}
+
+// Componente para mostrar el resumen de impacto en proyectos
+function ProjectImpactSummary({ 
+  newTasks, 
+  projects, 
+  allocations, 
+  viewDate,
+  getProjectBudgetStatus
+}: { 
+  newTasks: NewTaskRow[]; 
+  projects: Project[]; 
+  allocations: Allocation[];
+  viewDate: Date;
+  getProjectBudgetStatus: (projectId: string) => ProjectBudgetStatus;
+}) {
+  // Agrupar horas por proyecto
+  const projectImpact = useMemo(() => {
+    const impact: Record<string, { name: string; adding: number; current: ProjectBudgetStatus }> = {};
+    
+    newTasks.forEach(task => {
+      if (task.projectId && task.hours) {
+        const hours = parseFloat(task.hours) || 0;
+        if (hours > 0) {
+          if (!impact[task.projectId]) {
+            const project = projects.find(p => p.id === task.projectId);
+            impact[task.projectId] = {
+              name: project?.name || 'Desconocido',
+              adding: 0,
+              current: getProjectBudgetStatus(task.projectId)
+            };
+          }
+          impact[task.projectId].adding += hours;
+        }
+      }
+    });
+    
+    return Object.entries(impact).map(([id, data]) => ({
+      id,
+      ...data,
+      newTotal: data.current.totalComputed + data.current.totalPlanned + data.adding,
+      exceeds: data.current.budgetMax > 0 && (data.current.totalComputed + data.current.totalPlanned + data.adding) > data.current.budgetMax,
+      excessAmount: data.current.budgetMax > 0 
+        ? round2((data.current.totalComputed + data.current.totalPlanned + data.adding) - data.current.budgetMax)
+        : 0
+    }));
+  }, [newTasks, projects, getProjectBudgetStatus]);
+
+  const hasExcesses = projectImpact.some(p => p.exceeds);
+  const allOk = projectImpact.length > 0 && !hasExcesses;
+
+  if (projectImpact.length === 0) return null;
+
+  return (
+    <div className={cn(
+      "flex items-center gap-3 text-xs px-3 py-2 rounded-lg w-full flex-wrap",
+      hasExcesses ? "bg-amber-50 border border-amber-200" : "bg-emerald-50 border border-emerald-200"
+    )}>
+      {projectImpact.map((p, idx) => (
+        <div key={p.id} className="flex items-center gap-1.5">
+          {idx > 0 && <span className="text-slate-300">│</span>}
+          {p.exceeds ? (
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+          ) : (
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          )}
+          <span className={cn("font-medium truncate max-w-[150px]", p.exceeds ? "text-amber-700" : "text-emerald-700")}>
+            {formatProjectName(p.name)}
+          </span>
+          <span className={cn("tabular-nums", p.exceeds ? "text-amber-600" : "text-emerald-600")}>
+            +{p.adding}h
+          </span>
+          {p.exceeds && p.current.budgetMax > 0 && (
+            <span className="text-amber-600 font-semibold">
+              ({p.newTotal}/{p.current.budgetMax}h)
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
