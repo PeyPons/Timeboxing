@@ -13,6 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { format, addMonths, subMonths, isSameMonth, parseISO, getDaysInMonth, getDate } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
@@ -377,13 +378,13 @@ export default function ProjectsPage() {
       )}
 
       {/* FILTROS */}
-      <div className="flex flex-col lg:flex-row gap-4 bg-white p-4 rounded-xl border shadow-sm">
+      <div className="flex flex-col xl:flex-row gap-4 bg-white p-4 rounded-xl border shadow-sm">
         {/* Búsqueda */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <div className="relative w-full xl:w-64 shrink-0">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
           <Input 
             placeholder="Buscar proyecto..." 
-            className="pl-9 bg-slate-50 border-slate-200" 
+            className="pl-10 bg-slate-50 border-slate-200" 
             value={searchTerm} 
             onChange={(e) => setSearchTerm(e.target.value)} 
           />
@@ -407,131 +408,177 @@ export default function ProjectsPage() {
             </Badge>
           </Button>
 
-          <Button
-            variant={activeFilter === 'no-activity' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveFilter('no-activity')}
-            className={cn(
-              "h-8 text-xs gap-1.5",
-              activeFilter === 'no-activity' 
-                ? "bg-slate-700" 
-                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-            )}
-          >
-            <Ban className="h-3.5 w-3.5" />
-            Sin actividad
-            {filterCounts['no-activity'] > 0 && (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] bg-slate-200">
-                {filterCounts['no-activity']}
-              </Badge>
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeFilter === 'no-activity' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveFilter('no-activity')}
+                  className={cn(
+                    "h-8 text-xs gap-1.5",
+                    activeFilter === 'no-activity' 
+                      ? "bg-slate-700" 
+                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                  )}
+                >
+                  <Ban className="h-3.5 w-3.5" />
+                  Sin actividad
+                  {filterCounts['no-activity'] > 0 && (
+                    <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] bg-slate-200">
+                      {filterCounts['no-activity']}
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[200px] text-center">
+                <p className="text-xs">Proyectos con horas asignadas pero sin ninguna tarea planificada este mes</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
-          <Button
-            variant={activeFilter === 'needs-planning' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveFilter('needs-planning')}
-            className={cn(
-              "h-8 text-xs gap-1.5",
-              activeFilter === 'needs-planning' 
-                ? "bg-amber-600 hover:bg-amber-700" 
-                : "bg-white border-amber-200 text-amber-700 hover:bg-amber-50"
-            )}
-          >
-            <CircleDashed className="h-3.5 w-3.5" />
-            Falta planificar
-            {filterCounts['needs-planning'] > 0 && (
-              <Badge className={cn(
-                "ml-1 h-5 px-1.5 text-[10px]",
-                activeFilter === 'needs-planning' ? "bg-amber-700" : "bg-amber-100 text-amber-700"
-              )}>
-                {filterCounts['needs-planning']}
-              </Badge>
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeFilter === 'needs-planning' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveFilter('needs-planning')}
+                  className={cn(
+                    "h-8 text-xs gap-1.5",
+                    activeFilter === 'needs-planning' 
+                      ? "bg-amber-600 hover:bg-amber-700" 
+                      : "bg-white border-amber-200 text-amber-700 hover:bg-amber-50"
+                  )}
+                >
+                  <CircleDashed className="h-3.5 w-3.5" />
+                  Falta planificar
+                  {filterCounts['needs-planning'] > 0 && (
+                    <Badge className={cn(
+                      "ml-1 h-5 px-1.5 text-[10px]",
+                      activeFilter === 'needs-planning' ? "bg-amber-700" : "bg-amber-100 text-amber-700"
+                    )}>
+                      {filterCounts['needs-planning']}
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[200px] text-center">
+                <p className="text-xs">Proyectos con menos del 50% de sus horas planificadas para este mes</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
-          <Button
-            variant={activeFilter === 'behind-schedule' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveFilter('behind-schedule')}
-            className={cn(
-              "h-8 text-xs gap-1.5",
-              activeFilter === 'behind-schedule' 
-                ? "bg-orange-600 hover:bg-orange-700" 
-                : "bg-white border-orange-200 text-orange-700 hover:bg-orange-50"
-            )}
-          >
-            <Clock className="h-3.5 w-3.5" />
-            Retrasados
-            {filterCounts['behind-schedule'] > 0 && (
-              <Badge className={cn(
-                "ml-1 h-5 px-1.5 text-[10px]",
-                activeFilter === 'behind-schedule' ? "bg-orange-700" : "bg-orange-100 text-orange-700"
-              )}>
-                {filterCounts['behind-schedule']}
-              </Badge>
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeFilter === 'behind-schedule' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveFilter('behind-schedule')}
+                  className={cn(
+                    "h-8 text-xs gap-1.5",
+                    activeFilter === 'behind-schedule' 
+                      ? "bg-orange-600 hover:bg-orange-700" 
+                      : "bg-white border-orange-200 text-orange-700 hover:bg-orange-50"
+                  )}
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  Retrasados
+                  {filterCounts['behind-schedule'] > 0 && (
+                    <Badge className={cn(
+                      "ml-1 h-5 px-1.5 text-[10px]",
+                      activeFilter === 'behind-schedule' ? "bg-orange-700" : "bg-orange-100 text-orange-700"
+                    )}>
+                      {filterCounts['behind-schedule']}
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[220px] text-center">
+                <p className="text-xs">Proyectos cuya ejecución va más de 20 puntos por debajo del progreso del mes</p>
+                <p className="text-[10px] text-slate-400 mt-1">Ej: Si va el 80% del mes, deberían tener al menos 60% ejecutado</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
-          <Button
-            variant={activeFilter === 'over-budget' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveFilter('over-budget')}
-            className={cn(
-              "h-8 text-xs gap-1.5",
-              activeFilter === 'over-budget' 
-                ? "bg-red-600 hover:bg-red-700" 
-                : "bg-white border-red-200 text-red-700 hover:bg-red-50"
-            )}
-          >
-            <AlertOctagon className="h-3.5 w-3.5" />
-            Sobre presupuesto
-            {filterCounts['over-budget'] > 0 && (
-              <Badge className={cn(
-                "ml-1 h-5 px-1.5 text-[10px]",
-                activeFilter === 'over-budget' ? "bg-red-700" : "bg-red-100 text-red-700"
-              )}>
-                {filterCounts['over-budget']}
-              </Badge>
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeFilter === 'over-budget' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveFilter('over-budget')}
+                  className={cn(
+                    "h-8 text-xs gap-1.5",
+                    activeFilter === 'over-budget' 
+                      ? "bg-red-600 hover:bg-red-700" 
+                      : "bg-white border-red-200 text-red-700 hover:bg-red-50"
+                  )}
+                >
+                  <AlertOctagon className="h-3.5 w-3.5" />
+                  Exceso horas
+                  {filterCounts['over-budget'] > 0 && (
+                    <Badge className={cn(
+                      "ml-1 h-5 px-1.5 text-[10px]",
+                      activeFilter === 'over-budget' ? "bg-red-700" : "bg-red-100 text-red-700"
+                    )}>
+                      {filterCounts['over-budget']}
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[200px] text-center">
+                <p className="text-xs">Proyectos donde se han planificado más horas de las asignadas</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
-          <Button
-            variant={activeFilter === 'at-risk' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveFilter('at-risk')}
-            className={cn(
-              "h-8 text-xs gap-1.5",
-              activeFilter === 'at-risk' 
-                ? "bg-rose-600 hover:bg-rose-700" 
-                : "bg-white border-rose-200 text-rose-700 hover:bg-rose-50"
-            )}
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-            En riesgo
-            {filterCounts['at-risk'] > 0 && (
-              <Badge className={cn(
-                "ml-1 h-5 px-1.5 text-[10px]",
-                activeFilter === 'at-risk' ? "bg-rose-700" : "bg-rose-100 text-rose-700"
-              )}>
-                {filterCounts['at-risk']}
-              </Badge>
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeFilter === 'at-risk' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveFilter('at-risk')}
+                  className={cn(
+                    "h-8 text-xs gap-1.5",
+                    activeFilter === 'at-risk' 
+                      ? "bg-rose-600 hover:bg-rose-700" 
+                      : "bg-white border-rose-200 text-rose-700 hover:bg-rose-50"
+                  )}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  En riesgo
+                  {filterCounts['at-risk'] > 0 && (
+                    <Badge className={cn(
+                      "ml-1 h-5 px-1.5 text-[10px]",
+                      activeFilter === 'at-risk' ? "bg-rose-700" : "bg-rose-100 text-rose-700"
+                    )}>
+                      {filterCounts['at-risk']}
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[200px] text-center">
+                <p className="text-xs">Proyectos marcados manualmente como "Necesita atención" o "En peligro"</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         {/* Filtro de empleado */}
         <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
           <PopoverTrigger asChild>
-            <Button variant="outline" role="combobox" className="w-[200px] justify-between bg-white shrink-0">
+            <Button variant="outline" role="combobox" className="w-full xl:w-[220px] justify-between bg-white shrink-0">
               <span className="flex items-center gap-2 truncate">
-                <User className="h-3.5 w-3.5 text-slate-400" /> 
+                <User className="h-3.5 w-3.5 text-slate-400 shrink-0" /> 
                 <span className="truncate">{getSelectedEmployeeName()}</span>
               </span>
               <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50 shrink-0" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[200px] p-0">
+          <PopoverContent className="w-[220px] p-0">
             <Command>
               <CommandInput placeholder="Buscar..." />
               <CommandList>
@@ -595,84 +642,165 @@ export default function ProjectsPage() {
                 )}>
                   {/* HEADER COLAPSABLE */}
                   <CollapsibleTrigger asChild>
-                    <div className="flex items-center gap-4 p-4 cursor-pointer hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-4 p-4 cursor-pointer hover:bg-slate-50/80 transition-colors">
                       {/* Icono expandir */}
                       <ChevronDown className={cn(
                         "h-5 w-5 text-slate-400 transition-transform shrink-0",
                         isExpanded && "rotate-180"
                       )} />
 
-                      {/* Info proyecto */}
+                      {/* Info proyecto + Barra de progreso */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold text-slate-900 truncate">
                             {formatProjectName(data.project.name)}
                           </h3>
-                          {data.noActivity && (
-                            <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-500 border-slate-200">
-                              Sin actividad
-                            </Badge>
-                          )}
-                          {data.needsPlanning && !data.noActivity && (
-                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
-                              Falta planificar
-                            </Badge>
-                          )}
-                          {data.behindSchedule && (
-                            <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-200">
-                              Retrasado
-                            </Badge>
-                          )}
-                          {data.overBudget && (
-                            <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
-                              +{round2(data.totalAssigned - data.budget)}h sobre
-                            </Badge>
+                          
+                          {/* Badges de estado con tooltips */}
+                          <TooltipProvider>
+                            {data.noActivity && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-500 border-slate-200 cursor-help">
+                                    Sin actividad
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">No hay tareas planificadas este mes</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {data.needsPlanning && !data.noActivity && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 cursor-help">
+                                    {round2(data.planningPct)}% planificado
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">Solo {round2(data.totalAssigned)}h de {data.budget}h están planificadas</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {data.behindSchedule && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-200 cursor-help">
+                                    {round2(data.executionPct)}% ejecutado
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">Va el {monthProgress}% del mes pero solo {round2(data.executionPct)}% ejecutado</p>
+                                  <p className="text-[10px] text-slate-400">Debería estar al menos al {monthProgress - 20}%</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {data.overBudget && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 cursor-help">
+                                    +{round2(data.totalAssigned - data.budget)}h exceso
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">Se han planificado {round2(data.totalAssigned)}h de {data.budget}h asignadas</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </TooltipProvider>
+                        </div>
+                        
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <span className="text-xs text-slate-500 shrink-0">
+                            {data.client?.name || 'Sin cliente'}
+                          </span>
+                          
+                          {/* Mini barra de progreso inline */}
+                          {data.budget > 0 && (
+                            <div className="flex items-center gap-2 flex-1 max-w-[200px]">
+                              <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                {/* Barra de ejecución (verde) */}
+                                <div 
+                                  className="h-full bg-emerald-500 rounded-full"
+                                  style={{ width: `${Math.min(100, (data.hoursComputed / data.budget) * 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-slate-500 tabular-nums shrink-0">
+                                {round2((data.hoursComputed / data.budget) * 100)}%
+                              </span>
+                            </div>
                           )}
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {data.client?.name || 'Sin cliente'}
-                          {data.project.monthlyFee && data.project.monthlyFee > 0 && (
-                            <span className="ml-2 text-slate-400">• {data.project.monthlyFee}€/mes</span>
-                          )}
-                        </p>
                       </div>
 
                       {/* Métricas rápidas */}
-                      <div className="hidden md:flex items-center gap-6 text-sm shrink-0">
-                        {/* Planificado */}
-                        <div className="text-center min-w-[70px]">
-                          <p className={cn(
-                            "font-mono font-bold",
-                            data.budget > 0 && data.totalAssigned < data.budget * 0.5 ? "text-amber-600" : "text-slate-700"
-                          )}>
-                            {round2(data.totalAssigned)}h
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            {data.budget > 0 ? `de ${data.budget}h` : 'planif.'}
-                          </p>
-                        </div>
+                      <div className="hidden md:flex items-center gap-4 text-sm shrink-0">
+                        {/* Planificado vs Asignado */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="text-center min-w-[80px] cursor-help">
+                                <p className={cn(
+                                  "font-mono font-bold",
+                                  data.overBudget ? "text-red-600" : 
+                                  data.needsPlanning ? "text-amber-600" : "text-slate-700"
+                                )}>
+                                  {round2(data.totalAssigned)}h
+                                </p>
+                                <p className="text-[10px] text-slate-400">
+                                  {data.budget > 0 ? `de ${data.budget}h` : 'planificado'}
+                                </p>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-xs">Horas planificadas / Horas asignadas al proyecto</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
 
                         {/* Ejecutado */}
-                        <div className="text-center min-w-[70px]">
-                          <p className="font-mono font-bold text-emerald-600">
-                            {round2(data.hoursComputed)}h
-                          </p>
-                          <p className="text-[10px] text-slate-400">ejecutado</p>
-                        </div>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="text-center min-w-[70px] cursor-help">
+                                <p className="font-mono font-bold text-emerald-600">
+                                  {round2(data.hoursComputed)}h
+                                </p>
+                                <p className="text-[10px] text-slate-400">ejecutado</p>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-xs">Horas computadas (trabajo completado)</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
 
                         {/* Balance */}
                         {Math.abs(data.gain) > 0.01 && (
-                          <div className={cn(
-                            "flex items-center gap-1 px-2 py-1 rounded text-xs font-medium",
-                            data.gain > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-                          )}>
-                            {data.gain > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                            {data.gain > 0 ? '+' : ''}{round2(data.gain)}h
-                          </div>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <div className={cn(
+                                  "flex items-center gap-1 px-2 py-1 rounded text-xs font-medium cursor-help",
+                                  data.gain > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                                )}>
+                                  {data.gain > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                                  {data.gain > 0 ? '+' : ''}{round2(data.gain)}h
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">
+                                  {data.gain > 0 
+                                    ? 'Ganancia: Se computó más de lo trabajado realmente' 
+                                    : 'Pérdida: Se trabajó más de lo que se pudo computar'}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         )}
 
                         {/* Tareas */}
-                        <div className="text-center min-w-[60px]">
+                        <div className="text-center min-w-[50px]">
                           <p className="font-mono text-slate-600">
                             <span className="text-emerald-600">{data.completedTasks.length}</span>
                             <span className="text-slate-300">/</span>
@@ -700,26 +828,52 @@ export default function ProjectsPage() {
                       {/* Barra de progreso */}
                       {data.budget > 0 && (
                         <div className="px-4 py-3 border-b bg-white">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span className="text-slate-500">
-                              Planificado: <span className="font-bold text-slate-700">{round2(data.totalAssigned)}h</span>
+                          <div className="flex justify-between text-xs mb-2">
+                            <span className="text-slate-600">
+                              <span className="font-semibold text-slate-800">{round2(data.totalAssigned)}h</span> planificadas
                               {data.totalAssigned < data.budget && (
                                 <span className="text-amber-600 ml-2">(Faltan {round2(data.budget - data.totalAssigned)}h)</span>
                               )}
+                              {data.overBudget && (
+                                <span className="text-red-600 ml-2">(+{round2(data.totalAssigned - data.budget)}h de exceso)</span>
+                              )}
                             </span>
                             <span className="text-slate-500">
-                              Mín: {data.minimum}h • <span className="font-bold">{data.budget}h</span>
+                              Asignadas: <span className="font-semibold text-slate-700">{data.budget}h</span>
                             </span>
                           </div>
-                          <Progress 
-                            value={Math.min(100, data.planningPct)} 
-                            className={cn(
-                              "h-2",
-                              data.overBudget ? "bg-red-100 [&>div]:bg-red-500" : 
-                              data.needsPlanning ? "bg-amber-100 [&>div]:bg-amber-500" : 
-                              "bg-slate-100"
-                            )} 
-                          />
+                          
+                          {/* Barra doble: planificado vs ejecutado */}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-400 w-16">Planificado</span>
+                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div 
+                                  className={cn(
+                                    "h-full rounded-full transition-all",
+                                    data.overBudget ? "bg-red-500" : 
+                                    data.planningPct < 50 ? "bg-amber-500" : "bg-blue-500"
+                                  )}
+                                  style={{ width: `${Math.min(100, data.planningPct)}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] font-medium text-slate-600 w-12 text-right">
+                                {round2(data.planningPct)}%
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-400 w-16">Ejecutado</span>
+                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-emerald-500 rounded-full transition-all"
+                                  style={{ width: `${Math.min(100, (data.hoursComputed / data.budget) * 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] font-medium text-emerald-600 w-12 text-right">
+                                {round2((data.hoursComputed / data.budget) * 100)}%
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       )}
 
@@ -869,7 +1023,7 @@ export default function ProjectsPage() {
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Horas (Presupuesto)</Label>
+                <Label>Horas Asignadas</Label>
                 <Input type="number" value={formData.budgetHours} onChange={e => setFormData({...formData, budgetHours: e.target.value})} />
               </div>
               <div className="space-y-2">
