@@ -122,6 +122,7 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
   const [isVisible, setIsVisible] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
+  const [isScrolling, setIsScrolling] = useState(false);
 
   // Verificar si debe mostrarse
   useEffect(() => {
@@ -139,6 +140,16 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     }
   }, [forceShow]);
 
+  // Bloquear scroll del usuario durante el tour
+  useEffect(() => {
+    if (isVisible) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [isVisible]);
+
   // Actualizar highlight cuando cambia el paso
   useEffect(() => {
     if (!isVisible) return;
@@ -149,16 +160,49 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
       return;
     }
 
+    const updateHighlight = () => {
+      const element = document.querySelector(step.target);
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        setHighlightRect(rect);
+      } else {
+        setHighlightRect(null);
+      }
+    };
+
     const element = document.querySelector(step.target);
     if (element) {
-      const rect = element.getBoundingClientRect();
-      setHighlightRect(rect);
+      setIsScrolling(true);
       
-      // Scroll suave al elemento
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Calcular posición para centrar el elemento en pantalla
+      const rect = element.getBoundingClientRect();
+      const elementTop = rect.top + window.scrollY;
+      const elementHeight = rect.height;
+      const windowHeight = window.innerHeight;
+      const scrollTarget = elementTop - (windowHeight / 2) + (elementHeight / 2);
+      
+      // Scroll suave
+      window.scrollTo({
+        top: Math.max(0, scrollTarget - 100), // 100px de margen arriba
+        behavior: 'smooth'
+      });
+
+      // Esperar a que termine el scroll y actualizar posición
+      setTimeout(() => {
+        updateHighlight();
+        setIsScrolling(false);
+      }, 400);
     } else {
       setHighlightRect(null);
     }
+
+    // Actualizar en resize
+    const handleResize = () => updateHighlight();
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
   }, [currentStep, isVisible]);
 
   const handleNext = useCallback(() => {
@@ -217,9 +261,9 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
       };
     }
 
-    const padding = 16;
+    const padding = 20;
     const tooltipWidth = 380;
-    const tooltipHeight = 250;
+    const tooltipHeight = 280;
 
     let top = 0;
     let left = 0;
@@ -244,42 +288,44 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     }
 
     // Mantener dentro de la pantalla
-    left = Math.max(padding, Math.min(left, window.innerWidth - tooltipWidth - padding));
-    top = Math.max(padding, Math.min(top, window.innerHeight - tooltipHeight - padding));
+    const safeLeft = Math.max(padding, Math.min(left, window.innerWidth - tooltipWidth - padding));
+    const safeTop = Math.max(padding, Math.min(top, window.innerHeight - tooltipHeight - padding));
 
     return {
       position: 'fixed',
-      top: `${top}px`,
-      left: `${left}px`
+      top: `${safeTop}px`,
+      left: `${safeLeft}px`
     };
   };
 
   return (
     <>
-      {/* Overlay oscuro */}
+      {/* Overlay oscuro - NO hace scroll */}
       <div 
-        className="fixed inset-0 bg-black/60 z-[9998] transition-opacity duration-300"
-        onClick={handleSkip}
+        className="fixed inset-0 bg-black/70 z-[9998]"
+        style={{ pointerEvents: 'auto' }}
       />
 
-      {/* Highlight del elemento actual */}
-      {highlightRect && (
-        <div
-          className="fixed z-[9999] pointer-events-none transition-all duration-300 ease-out"
-          style={{
-            top: highlightRect.top - 8,
-            left: highlightRect.left - 8,
-            width: highlightRect.width + 16,
-            height: highlightRect.height + 16,
-            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
-            borderRadius: '12px',
-            border: '2px solid #6366f1',
-            background: 'transparent'
-          }}
-        >
-          {/* Pulso animado */}
-          <div className="absolute inset-0 rounded-xl border-2 border-indigo-400 animate-ping opacity-50" />
-        </div>
+      {/* Highlight del elemento actual usando clip-path */}
+      {highlightRect && !isScrolling && (
+        <>
+          {/* Recorte que muestra solo el elemento */}
+          <div
+            className="fixed z-[9999] pointer-events-none transition-all duration-300 ease-out rounded-xl"
+            style={{
+              top: highlightRect.top - 8,
+              left: highlightRect.left - 8,
+              width: highlightRect.width + 16,
+              height: highlightRect.height + 16,
+              border: '3px solid #6366f1',
+              boxShadow: '0 0 0 4px rgba(99, 102, 241, 0.3), inset 0 0 0 1px rgba(255,255,255,0.5)',
+              background: 'rgba(255, 255, 255, 0.05)'
+            }}
+          >
+            {/* Pulso animado */}
+            <div className="absolute inset-0 rounded-xl border-2 border-indigo-400 animate-ping opacity-30" />
+          </div>
+        </>
       )}
 
       {/* Tooltip/Card del paso actual */}
