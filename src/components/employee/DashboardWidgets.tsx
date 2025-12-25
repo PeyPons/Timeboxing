@@ -158,7 +158,7 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
                             </div>
                             <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-1">
                                 <ArrowRight className="w-3 h-3"/> 
-                                {item.isReady ? 'Desbloqueado por' : 'Necesitas a'}: <strong>{item.depOwner?.name}</strong>
+                                {item.isReady ? 'Desbloqueado por' : 'Esperando por'}: <strong>{item.depOwner?.name}</strong>
                             </div>
                         </div>
                     ))}
