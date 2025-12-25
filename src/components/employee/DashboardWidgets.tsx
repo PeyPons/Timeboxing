@@ -1,14 +1,14 @@
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Lightbulb, Users, ArrowRight, AlertOctagon, Link as LinkIcon, CheckCircle2, Clock, Flag, Zap, PlayCircle } from 'lucide-react';
+import { Users, ArrowRight, AlertOctagon, Link as LinkIcon, CheckCircle2, Clock, Flag, Zap, PlayCircle, AlertTriangle } from 'lucide-react';
 import { isSameMonth, parseISO } from 'date-fns';
 
 interface WidgetProps {
   employeeId: string;
 }
 
-// WIDGET 1: RECOMENDACIONES (V2)
+// WIDGET 1: RECOMENDACIONES MEJORADO
 export function PriorityInsights({ employeeId }: WidgetProps) {
   const { allocations, projects, employees } = useApp();
   const today = new Date();
@@ -38,30 +38,68 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
   let recommendation = null;
 
   if (blockingTask) {
-      const blockedAlloc = allocations.find(other => other.dependencyId === blockingTask.id);
-      const blockedUser = employees.find(e => e.id === blockedAlloc?.employeeId);
+      // Obtener TODAS las tareas que estoy bloqueando
+      const allBlockedTasks = allocations.filter(other => 
+          other.dependencyId === blockingTask.id && other.status !== 'completed'
+      );
+      const blockedUsers = allBlockedTasks.map(bt => {
+          const user = employees.find(e => e.id === bt.employeeId);
+          return { task: bt, user };
+      });
       const proj = projects.find(p => p.id === blockingTask.projectId);
       
       recommendation = {
-          icon: <AlertOctagon className="w-4 h-4 text-red-600" />,
-          title: "Desbloquea al equipo",
-          text: `🔥 <strong>Urgente:</strong> Termina la tarea de <em>${proj?.name}</em>. <strong>${blockedUser?.name}</strong> no puede empezar hasta que acabes.`,
-          style: 'bg-red-50 border-red-200 text-red-900'
+          icon: <AlertOctagon className="w-5 h-5 text-red-600" />,
+          title: "🔥 URGENTE: Estás frenando al equipo",
+          content: (
+              <div className="space-y-3">
+                  <div className="bg-white/60 rounded-lg p-3 border border-red-100">
+                      <p className="text-[10px] uppercase text-red-400 font-semibold mb-1">Tu tarea pendiente</p>
+                      <p className="font-bold text-red-900">{blockingTask.taskName || 'Sin nombre'}</p>
+                      <Badge variant="outline" className="mt-1 text-[9px] bg-white">
+                          {proj?.name}
+                      </Badge>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                      <p className="text-[10px] uppercase text-red-400 font-semibold flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" /> Bloquea a:
+                      </p>
+                      {blockedUsers.map(({ task, user }) => (
+                          <div key={task.id} className="flex items-center justify-between bg-white/80 px-2 py-1.5 rounded border border-red-100">
+                              <span className="text-xs text-red-800">{task.taskName}</span>
+                              <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">
+                                  {user?.name}
+                              </span>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          ),
+          style: 'bg-gradient-to-br from-red-50 to-red-100 border-red-300 text-red-900'
       };
   } else if (quickWinTask) {
       const proj = projects.find(p => p.id === quickWinTask.projectId);
       recommendation = {
-          icon: <Flag className="w-4 h-4 text-emerald-600" />,
+          icon: <Flag className="w-5 h-5 text-emerald-600" />,
           title: "Cierre Rápido",
-          text: `🏁 <strong>A punto:</strong> Te queda muy poco en <em>${proj?.name}</em>. ¡Liquídala hoy mismo!`,
+          content: (
+              <p className="text-sm">
+                  🏁 <strong>A punto:</strong> Te queda muy poco en <em>{proj?.name}</em>. ¡Liquídala hoy mismo!
+              </p>
+          ),
           style: 'bg-emerald-50 border-emerald-200 text-emerald-900'
       };
   } else {
       const proj = projects.find(p => p.id === heavyTask?.projectId);
       recommendation = {
-          icon: <Zap className="w-4 h-4 text-amber-600" />,
-          title: "Recomendación IA",
-          text: `🚀 <strong>Foco:</strong> Empieza por <strong>${proj?.name}</strong>, es tu bloque más grande (${heavyTask?.hoursAssigned}h).`,
+          icon: <Zap className="w-5 h-5 text-amber-600" />,
+          title: "Recomendación",
+          content: (
+              <p className="text-sm">
+                  🚀 <strong>Foco:</strong> Empieza por <strong>{proj?.name}</strong>, es tu bloque más grande ({heavyTask?.hoursAssigned}h).
+              </p>
+          ),
           style: 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 text-amber-900'
       };
   }
@@ -75,15 +113,13 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="text-sm">
-            <p dangerouslySetInnerHTML={{ __html: recommendation.text }} />
-        </div>
+        {recommendation.content}
       </CardContent>
     </Card>
   );
 }
 
-// WIDGET 2: PULSO DEL EQUIPO Y DEPENDENCIAS
+// WIDGET 2: PULSO DEL EQUIPO Y DEPENDENCIAS MEJORADO
 export function ProjectTeamPulse({ employeeId }: WidgetProps) {
   const { allocations, projects, employees } = useApp();
   const today = new Date();
@@ -99,9 +135,10 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
     .map(a => {
         const depTask = allocations.find(d => d.id === a.dependencyId);
         const depOwner = employees.find(e => e.id === depTask?.employeeId);
-        const depProject = projects.find(p => p.id === depTask?.projectId); 
+        const depProject = projects.find(p => p.id === depTask?.projectId);
+        const myProject = projects.find(p => p.id === a.projectId);
         const isReady = depTask?.status === 'completed'; 
-        return { myTask: a, depTask, depOwner, depProject, isReady };
+        return { myTask: a, myProject, depTask, depOwner, depProject, isReady };
     })
     .filter(item => item.depTask !== undefined);
 
@@ -124,41 +161,52 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
           Estado de Dependencias (Mes Actual)
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto max-h-[250px] p-4 space-y-4">
+      <CardContent className="flex-1 overflow-y-auto max-h-[300px] p-4 space-y-4">
         
         {incomingDependencies.length === 0 && outgoingBlocks.length === 0 && (
              <p className="text-xs text-slate-400 text-center py-4">No hay bloqueos activos. ¡Todo fluido!</p>
         )}
 
-        {/* ME BLOQUEAN */}
+        {/* DEPENDENCIAS DE ENTRADA (Espero por otros) */}
         {incomingDependencies.length > 0 && (
             <div>
-                <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase flex items-center gap-1">
+                <h4 className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center gap-1">
                     <LinkIcon className="w-3 h-3"/> Dependencias de entrada
                 </h4>
                 <div className="space-y-2">
                     {incomingDependencies.map((item, i) => (
-                        <div key={i} className={`flex flex-col gap-1 text-xs p-2 rounded border ${item.isReady ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-100'}`}>
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <Badge variant="outline" className="text-[9px] h-4 bg-white border-slate-200 text-slate-500 mb-1">
-                                        {item.depProject?.name}
-                                    </Badge>
-                                    <div className="font-medium text-slate-700">{item.myTask.taskName}</div>
-                                </div>
+                        <div key={i} className={`text-xs rounded-lg border overflow-hidden ${item.isReady ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                            {/* Header con proyecto */}
+                            <div className="px-3 py-1.5 bg-white/50 border-b border-slate-100 flex items-center justify-between">
+                                <Badge variant="outline" className="text-[9px] h-5 bg-white border-slate-200 text-slate-600">
+                                    {item.myProject?.name}
+                                </Badge>
                                 {item.isReady ? (
-                                    <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-white px-2 py-1 rounded shadow-sm border border-emerald-100">
-                                        <PlayCircle className="w-3 h-3"/> ¡Puedes empezar!
+                                    <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
+                                        <CheckCircle2 className="w-3 h-3"/> ¡Lista!
                                     </span>
                                 ) : (
-                                    <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-white px-2 py-1 rounded shadow-sm border border-amber-100">
+                                    <span className="flex items-center gap-1 text-[10px] text-amber-700">
                                         <Clock className="w-3 h-3"/> Espera
                                     </span>
                                 )}
                             </div>
-                            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-1">
-                                <ArrowRight className="w-3 h-3"/> 
-                                {item.isReady ? 'Desbloqueado por' : 'Esperando por'}: <strong>{item.depOwner?.name}</strong>
+                            
+                            {/* Contenido */}
+                            <div className="px-3 py-2">
+                                <p className="font-semibold text-slate-800 mb-2">{item.myTask.taskName}</p>
+                                <div className={`flex items-center gap-2 text-[11px] px-2 py-1.5 rounded ${item.isReady ? 'bg-emerald-100/50' : 'bg-amber-100/50'}`}>
+                                    <ArrowRight className="w-3 h-3 text-slate-400" />
+                                    <span className="text-slate-600">
+                                        {item.isReady ? 'Desbloqueado por' : 'Esperando por'}:
+                                    </span>
+                                    <span className={`font-bold ${item.isReady ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                        {item.depOwner?.name}
+                                    </span>
+                                    <span className="text-slate-400 text-[10px]">
+                                        ({item.depTask?.taskName})
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -166,38 +214,47 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
             </div>
         )}
 
-        {/* YO BLOQUEO */}
+        {/* DEPENDENCIAS DE SALIDA (Yo bloqueo a otros) */}
         {outgoingBlocks.length > 0 && (
             <div>
-                {incomingDependencies.length > 0 && <div className="border-t border-slate-100 my-3"></div>}
-                <h4 className="text-xs font-bold text-red-600 mb-2 uppercase flex items-center gap-1">
+                {incomingDependencies.length > 0 && <div className="border-t border-slate-200 my-4"></div>}
+                <h4 className="text-xs font-bold text-red-600 mb-3 uppercase flex items-center gap-1">
                     <AlertOctagon className="w-3 h-3"/> Estás frenando a...
                 </h4>
-                <div className="space-y-2">
+                <div className="space-y-3">
                     {outgoingBlocks.map((item, i) => (
-                        <div key={i} className="flex flex-col gap-1 text-xs bg-red-50 p-2 rounded border border-red-100">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <Badge variant="outline" className="text-[9px] h-4 bg-white border-red-200 text-red-400 mb-1">
-                                        {item.myProject?.name}
-                                    </Badge>
-                                    <div className="font-medium text-red-900 flex items-center gap-2">
-                                        Tu tarea: {item.myTask.taskName}
-                                    </div>
-                                </div>
-                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse mt-1"></span>
+                        <div key={i} className="text-xs bg-red-50 rounded-lg border border-red-200 overflow-hidden">
+                            {/* Header con proyecto */}
+                            <div className="px-3 py-1.5 bg-white/50 border-b border-red-100 flex items-center justify-between">
+                                <Badge variant="outline" className="text-[9px] h-5 bg-white border-red-200 text-red-500">
+                                    {item.myProject?.name}
+                                </Badge>
+                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                             </div>
                             
-                            <div className="pl-3 border-l-2 border-red-200 ml-1 space-y-1 mt-1">
-                                {item.blockedTasks.map(bt => {
-                                    const blockedUser = employees.find(e => e.id === bt.employeeId);
-                                    return (
-                                        <div key={bt.id} className="text-red-700 flex justify-between items-center">
-                                            <span>{bt.taskName}</span>
-                                            <span className="font-bold bg-white/60 px-1 rounded text-[10px]">{blockedUser?.name}</span>
-                                        </div>
-                                    );
-                                })}
+                            {/* Contenido */}
+                            <div className="px-3 py-2">
+                                <p className="font-semibold text-red-900 mb-2">
+                                    Tu tarea: {item.myTask.taskName}
+                                </p>
+                                
+                                {/* Lista de bloqueados con mejor formato */}
+                                <div className="space-y-1.5 pl-2 border-l-2 border-red-300">
+                                    {item.blockedTasks.map(bt => {
+                                        const blockedUser = employees.find(e => e.id === bt.employeeId);
+                                        return (
+                                            <div key={bt.id} className="flex items-center justify-between bg-white/60 px-2 py-1.5 rounded">
+                                                <div className="flex items-center gap-2">
+                                                    <ArrowRight className="w-3 h-3 text-red-400" />
+                                                    <span className="text-red-800">{bt.taskName}</span>
+                                                </div>
+                                                <span className="font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded text-[10px]">
+                                                    {blockedUser?.name}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
                     ))}
