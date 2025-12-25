@@ -570,9 +570,6 @@ export default function EmployeeDashboard() {
 
       {/* 5. LISTADO DE PROYECTOS (MENSUAL) */}
       <div className="pt-4 border-t" data-tour="projects-summary">
-          <h3 className="text-lg font-bold text-slate-800 mb-4 capitalize">
-              Resumen de Proyectos: {getMonthName(currentMonth)}
-          </h3>
           <MyWeekView employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
       </div>
 
