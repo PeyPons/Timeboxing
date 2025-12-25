@@ -44,7 +44,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
 
   const [editingValues, setEditingValues] = useState<Record<string, string>>({});
 
-  // ESTADOS PARA TAREA EXTRA
+  // --- ESTADOS PARA TAREA EXTRA (NUEVO) ---
   const [isAddingExtra, setIsAddingExtra] = useState(false);
   const [extraProjectId, setExtraProjectId] = useState('');
   const [extraTaskName, setExtraTaskName] = useState('');
@@ -82,7 +82,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       }
   };
 
-  // FUNCIÓN PARA CREAR TAREA IMPREVISTA
+  // --- FUNCIÓN PARA CREAR TAREA IMPREVISTA (NUEVO) ---
   const handleAddExtraTask = async () => {
       if (!extraProjectId || !extraTaskName) {
           toast.error("Rellena proyecto y nombre");
@@ -94,7 +94,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
               projectId: extraProjectId,
               employeeId: employeeId,
               weekStartDate: startOfCurrentWeek.toISOString(),
-              hoursAssigned: 0, // 0 porque no estaba planificada
+              hoursAssigned: 0, // 0 porque no estaba planificada (es Extra)
               hoursActual: Number(extraHours),
               hoursComputed: 0,
               taskName: extraTaskName,
@@ -103,7 +103,8 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
           });
           toast.success("Tarea imprevista registrada");
           setIsAddingExtra(false);
-          // Reset
+          
+          // Resetear formulario
           setExtraProjectId('');
           setExtraTaskName('');
           setExtraHours('1');
@@ -119,7 +120,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       const assigned = Number(task.hoursAssigned);
       const actual = editingValues[task.id] !== undefined ? Number(editingValues[task.id]) : Number(task.hoursActual || 0);
       
-      // Cálculo inteligente del progreso
+      // Cálculo inteligente del progreso:
       // Si assigned es 0 (imprevisto), si hay horas reales es 100%, si no 0%
       const percent = assigned > 0 ? Math.min(100, (actual / assigned) * 100) : (actual > 0 ? 100 : 0);
       const isOverBudget = assigned > 0 && actual > assigned;
@@ -138,6 +139,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                               {client?.name || 'Interno'}
                           </Badge>
                           <span className="font-semibold text-slate-700 text-sm">{project?.name}</span>
+                          
                           {/* ETIQUETA VISUAL PARA TAREAS EXTRA */}
                           {isUnplanned && <Badge variant="secondary" className="text-[9px] h-4 bg-amber-100 text-amber-700 hover:bg-amber-100 border border-amber-200">Extra / Imprevisto</Badge>}
                       </div>
