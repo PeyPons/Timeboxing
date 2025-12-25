@@ -2,19 +2,20 @@ import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { EmployeeRow } from './EmployeeRow';
 import { AllocationSheet } from './AllocationSheet';
-import { getWeeksForMonth, getMonthName, isCurrentWeek, getStorageKey } from '@/utils/dateUtils';
+import { getWeeksForMonth, getMonthName, isCurrentWeek } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, User, Loader2, Briefcase, ChevronsUpDown, Check, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, User, Loader2, ChevronsUpDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
 import { startOfMonth, endOfMonth, parseISO, isSameMonth, max, min, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export function PlannerGrid() {
-  const { employees, getEmployeeMonthlyLoad, projects, allocations, absences, teamEvents } = useApp();
+  // AÑADIDO: currentUser para filtrar correctamente
+  const { employees, getEmployeeMonthlyLoad, projects, allocations, absences, teamEvents, currentUser } = useApp();
   
   const [currentMonth, setCurrentMonth] = useState(() => {
     const saved = localStorage.getItem('planner_date');
@@ -42,8 +43,15 @@ export function PlannerGrid() {
   const filteredEmployees = useMemo(() => {
     return employees.filter(e => {
         if (!e.isActive) return false;
-        if (showOnlyMe && !e.name.toLowerCase().includes("alex")) return false;
+        
+        // CORRECCIÓN: Usar el ID del usuario logueado en lugar de buscar "alex"
+        if (showOnlyMe) {
+            if (!currentUser) return false; // Si no hay sesión, no mostrar nada
+            if (e.id !== currentUser.id) return false;
+        }
+
         if (selectedEmployeeId !== 'all' && e.id !== selectedEmployeeId) return false;
+        
         if (selectedProjectId !== 'all') {
             const hasAllocationInProject = allocations.some(a => {
                 const allocDate = parseISO(a.weekStartDate);
@@ -53,7 +61,7 @@ export function PlannerGrid() {
         }
         return true;
     });
-  }, [employees, showOnlyMe, selectedEmployeeId, selectedProjectId, allocations, currentMonth]);
+  }, [employees, showOnlyMe, selectedEmployeeId, selectedProjectId, allocations, currentMonth, currentUser]); // Añadido currentUser a dependencias
 
   const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
@@ -61,7 +69,7 @@ export function PlannerGrid() {
   
   const handleCellClick = (employeeId: string, weekStart: Date) => setSelectedCell({ employeeId, weekStart });
 
-  // --- LÓGICA MINGUITO OPTIMIZADA ---
+  // --- LÓGICA MINGUITO ---
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setInsights(null);
@@ -74,9 +82,7 @@ export function PlannerGrid() {
     }
 
     try {
-        // 1. PRE-PROCESADO DE DATOS (Filtrado quirúrgico)
         const relevantData = filteredEmployees.map(e => {
-            // Buscamos solo tareas completadas de este mes con desviaciones > 0.5h
             const empAllocations = allocations.filter(a => 
                 a.employeeId === e.id && 
                 a.status === 'completed' &&
@@ -86,16 +92,15 @@ export function PlannerGrid() {
             const problematicTasks = empAllocations.filter(a => {
                 const real = a.hoursActual || 0;
                 const comp = a.hoursComputed || 0;
-                // Desviación: Si trabajó más de lo computado (Pérdida)
                 const loss = real - comp; 
-                return loss > 0.5; // Umbral de "dolor": 30 min perdidos
+                return loss > 0.5;
             }).map(a => `${a.taskName}: Perdió ${Math.round((a.hoursActual! - a.hoursComputed!) * 10) / 10}h`);
 
             const goodTasks = empAllocations.filter(a => {
                 const real = a.hoursActual || 0;
                 const comp = a.hoursComputed || 0;
                 const gain = comp - real;
-                return gain > 0.5; // Umbral de "gloria": 30 min ganados
+                return gain > 0.5;
             }).map(a => `${a.taskName}: Ganó ${Math.round((a.hoursComputed! - a.hoursActual!) * 10) / 10}h`);
 
             if (problematicTasks.length === 0 && goodTasks.length === 0) return null;
@@ -105,7 +110,7 @@ export function PlannerGrid() {
                 Problemas: problematicTasks,
                 Victorias: goodTasks
             };
-        }).filter(item => item !== null); // Quitamos empleados sin novedades
+        }).filter(item => item !== null);
 
         if (relevantData.length === 0) {
             setInsights([{ type: 'info', text: 'Todo parece tranquilo este mes. Sin desviaciones graves > 30min.' }]);
@@ -113,18 +118,14 @@ export function PlannerGrid() {
             return;
         }
 
-        // 2. PROMPT CON PERSONALIDAD (Minguito Mode)
         const prompt = `
             Eres Minguito, un Project Manager veterano, sarcástico y obsesionado con la RENTABILIDAD.
-            No te andas con rodeos. Si alguien pierde dinero, lo dices claro. Si alguien lo hace bien, le das una palmada seca.
-            
-            Analiza estos datos de desviaciones (Rentabilidad = Computado - Real).
-            Datos: ${JSON.stringify(relevantData)}
+            Analiza estos datos de desviaciones: ${JSON.stringify(relevantData)}
             
             Tu misión:
             1. Detecta quién está "tirando el dinero" (Problemas).
-            2. Detecta quién está "facturando aire" (Victorias, eso es bueno).
-            3. Dame 3 frases cortas y directas (tipo bala) en JSON.
+            2. Detecta quién está "facturando aire" (Victorias).
+            3. Dame 3 frases cortas y directas en JSON.
             
             Formato respuesta JSON estrictamente:
             [{"type":"warning"|"success"|"info", "text":"Frase de Minguito aquí"}]
@@ -135,15 +136,12 @@ export function PlannerGrid() {
         const result = await model.generateContent(prompt);
         const text = result.response.text();
         
-        // --- CORRECCIÓN CLAVE: EXTRACCIÓN ROBUSTA DE JSON ---
-        // Buscamos explícitamente el array JSON [...] ignorando texto previo/posterior
         const jsonMatch = text.match(/\[[\s\S]*\]/); 
         
         if (jsonMatch) {
             const jsonString = jsonMatch[0];
             setInsights(JSON.parse(jsonString));
         } else {
-            console.warn("Minguito no devolvió JSON válido:", text);
             setInsights([{ type: 'warning', text: 'Minguito ha soltado un discurso pero no me ha dado los datos en limpio.' }]);
         }
 
@@ -158,9 +156,6 @@ export function PlannerGrid() {
   const gridTemplate = `250px repeat(${weeks.length}, minmax(0, 1fr)) 100px`;
   const sortedProjects = useMemo(() => [...projects].sort((a,b) => a.name.localeCompare(b.name)), [projects]);
   const sortedEmployees = useMemo(() => [...employees].filter(e=>e.isActive).sort((a,b) => a.name.localeCompare(b.name)), [employees]);
-
-  const getSelectedEmployeeName = () => selectedEmployeeId === 'all' ? "Todos los empleados" : employees.find(e => e.id === selectedEmployeeId)?.name || "Seleccionar...";
-  const getSelectedProjectName = () => selectedProjectId === 'all' ? "Todos los proyectos" : projects.find(p => p.id === selectedProjectId)?.name || "Seleccionar...";
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 rounded-lg border shadow-sm overflow-hidden">
