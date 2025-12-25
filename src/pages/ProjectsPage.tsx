@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -13,28 +12,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { format, addMonths, subMonths, isSameMonth, parseISO } from 'date-fns';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { format, addMonths, subMonths, isSameMonth, parseISO, getDaysInMonth, getDate } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
   FolderKanban, ChevronLeft, ChevronRight, Briefcase, Pencil, Search, 
-  ChevronsUpDown, User, Target, Plus, Trash2, 
-  ChevronDown, AlertCircle, PlayCircle, CheckCircle2, TrendingUp, TrendingDown 
+  ChevronsUpDown, User, Target, Plus, Trash2, ChevronDown,
+  AlertTriangle, AlertCircle, Clock, TrendingUp, TrendingDown,
+  CheckCircle2, XCircle, Calendar, Zap, Filter, LayoutGrid, List,
+  AlertOctagon, CircleDashed, Ban
 } from 'lucide-react';
 import { Project, OKR } from '@/types';
-import { cn } from '@/lib/utils';
+import { cn, formatProjectName } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
+type FilterType = 'all' | 'needs-planning' | 'behind-schedule' | 'over-budget' | 'no-activity' | 'at-risk';
+
 export default function ProjectsPage() {
-  const { projects, clients, allocations, employees, deleteProject } = useApp(); // AÑADIDO deleteProject
+  const { projects, clients, allocations, employees, deleteProject } = useApp();
   
-  // ... (Mismo código de estados y fechas que tenías antes) ...
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
   const [openEmployeeCombo, setOpenEmployeeCombo] = useState(false);
-  const [showOnlyUnderPlanned, setShowOnlyUnderPlanned] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -52,28 +56,151 @@ export default function ProjectsPage() {
   const handleNextMonth = () => setCurrentMonth(prev => addMonths(prev, 1));
   const handleToday = () => setCurrentMonth(new Date());
 
-  const filteredProjects = useMemo(() => {
-    return projects.filter(p => {
-        if (p.status !== 'active') return false;
-        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+  // Calcular el progreso del mes (qué % del mes ha pasado)
+  const monthProgress = useMemo(() => {
+    const today = new Date();
+    if (!isSameMonth(today, currentMonth)) {
+      return today > currentMonth ? 100 : 0;
+    }
+    const daysInMonth = getDaysInMonth(currentMonth);
+    const currentDay = getDate(today);
+    return Math.round((currentDay / daysInMonth) * 100);
+  }, [currentMonth]);
+
+  // Análisis de todos los proyectos con métricas
+  const projectsAnalysis = useMemo(() => {
+    return projects
+      .filter(p => p.status === 'active')
+      .map(project => {
+        const client = clients.find(c => c.id === project.clientId);
+        let monthTasks = allocations.filter(a => 
+          a.projectId === project.id && 
+          isSameMonth(parseISO(a.weekStartDate), currentMonth)
+        );
+
+        const totalAssigned = monthTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
+        const completedTasks = monthTasks.filter(t => t.status === 'completed');
+        const pendingTasks = monthTasks.filter(t => t.status !== 'completed');
+
+        const hoursReal = completedTasks.reduce((sum, t) => sum + (t.hoursActual || 0), 0);
+        const hoursComputed = completedTasks.reduce((sum, t) => sum + (t.hoursComputed || 0), 0);
+        const gain = hoursComputed - hoursReal;
+
+        const budget = project.budgetHours || 0;
+        const minimum = project.minimumHours || 0;
         
-        let matchesEmployee = true;
-        let monthTasks = allocations.filter(a => a.projectId === p.id && isSameMonth(parseISO(a.weekStartDate), currentMonth));
-        if (selectedEmployeeId !== 'all') {
-            matchesEmployee = monthTasks.some(a => a.employeeId === selectedEmployeeId);
-        }
+        // Cálculos de estado
+        const planningPct = budget > 0 ? (totalAssigned / budget) * 100 : 0;
+        const executionPct = totalAssigned > 0 ? (hoursComputed / totalAssigned) * 100 : 0;
+        
+        // Detección de problemas
+        const needsPlanning = budget > 0 && totalAssigned < budget * 0.5; // Menos del 50% planificado
+        const behindSchedule = monthProgress > 30 && executionPct < (monthProgress - 20); // 20% por debajo del ritmo
+        const overBudget = budget > 0 && totalAssigned > budget;
+        const noActivity = budget > 0 && totalAssigned === 0;
+        const isAtRisk = project.healthStatus === 'at_risk';
+        const needsAttention = project.healthStatus === 'needs_attention';
 
-        let matchesPlanning = true;
-        if (showOnlyUnderPlanned) {
-            const planned = monthTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
-            const target = p.budgetHours || 0;
-            matchesPlanning = planned < target - 0.1; 
-        }
+        // Empleados involucrados
+        const involvedEmployees = [...new Set(monthTasks.map(t => t.employeeId))];
 
-        return matchesSearch && matchesEmployee && matchesPlanning;
+        return {
+          project,
+          client,
+          monthTasks,
+          completedTasks,
+          pendingTasks,
+          totalAssigned,
+          hoursReal,
+          hoursComputed,
+          gain,
+          budget,
+          minimum,
+          planningPct,
+          executionPct,
+          involvedEmployees,
+          // Flags de problemas
+          needsPlanning,
+          behindSchedule,
+          overBudget,
+          noActivity,
+          isAtRisk,
+          needsAttention,
+          hasIssue: needsPlanning || behindSchedule || overBudget || noActivity || isAtRisk
+        };
+      });
+  }, [projects, clients, allocations, currentMonth, monthProgress]);
+
+  // Contadores para filtros
+  const filterCounts = useMemo(() => ({
+    all: projectsAnalysis.length,
+    'needs-planning': projectsAnalysis.filter(p => p.needsPlanning && !p.noActivity).length,
+    'behind-schedule': projectsAnalysis.filter(p => p.behindSchedule).length,
+    'over-budget': projectsAnalysis.filter(p => p.overBudget).length,
+    'no-activity': projectsAnalysis.filter(p => p.noActivity).length,
+    'at-risk': projectsAnalysis.filter(p => p.isAtRisk || p.needsAttention).length,
+  }), [projectsAnalysis]);
+
+  // Resumen del mes
+  const monthSummary = useMemo(() => {
+    const totalPlanned = projectsAnalysis.reduce((sum, p) => sum + p.totalAssigned, 0);
+    const totalExecuted = projectsAnalysis.reduce((sum, p) => sum + p.hoursComputed, 0);
+    const totalGain = projectsAnalysis.reduce((sum, p) => sum + p.gain, 0);
+    const healthy = projectsAnalysis.filter(p => !p.hasIssue).length;
+    const withIssues = projectsAnalysis.filter(p => p.hasIssue).length;
+
+    return { totalPlanned, totalExecuted, totalGain, healthy, withIssues };
+  }, [projectsAnalysis]);
+
+  // Filtrar proyectos
+  const filteredProjects = useMemo(() => {
+    return projectsAnalysis.filter(p => {
+      // Búsqueda
+      if (searchTerm && !p.project.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+        return false;
+      }
+
+      // Filtro de empleado
+      if (selectedEmployeeId !== 'all' && !p.involvedEmployees.includes(selectedEmployeeId)) {
+        return false;
+      }
+
+      // Filtro activo
+      switch (activeFilter) {
+        case 'needs-planning':
+          return p.needsPlanning && !p.noActivity;
+        case 'behind-schedule':
+          return p.behindSchedule;
+        case 'over-budget':
+          return p.overBudget;
+        case 'no-activity':
+          return p.noActivity;
+        case 'at-risk':
+          return p.isAtRisk || p.needsAttention;
+        default:
+          return true;
+      }
+    }).sort((a, b) => {
+      // Ordenar: problemas primero, luego por nombre
+      if (a.hasIssue && !b.hasIssue) return -1;
+      if (!a.hasIssue && b.hasIssue) return 1;
+      return a.project.name.localeCompare(b.project.name);
     });
-  }, [projects, searchTerm, selectedEmployeeId, allocations, currentMonth, showOnlyUnderPlanned]);
+  }, [projectsAnalysis, searchTerm, selectedEmployeeId, activeFilter]);
 
+  const toggleProject = (id: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const expandAll = () => setExpandedProjects(new Set(filteredProjects.map(p => p.project.id)));
+  const collapseAll = () => setExpandedProjects(new Set());
+
+  // Dialog handlers
   const openNewProject = () => {
       setIsCreating(true);
       setEditingId(null);
@@ -108,7 +235,6 @@ export default function ProjectsPage() {
       setIsDialogOpen(false);
   };
 
-  // NUEVA FUNCIÓN DE BORRADO
   const handleDelete = async () => {
       if (!editingId) return;
       if (confirm("¿Estás seguro de eliminar este proyecto? Se borrarán sus asignaciones.")) {
@@ -123,277 +249,701 @@ export default function ProjectsPage() {
   const updateOkrProgress = (id: string, val: number) => { setFormData({ ...formData, okrs: formData.okrs.map(o => o.id === id ? { ...o, progress: val } : o) }); };
   const removeOkr = (id: string) => { setFormData({ ...formData, okrs: formData.okrs.filter(o => o.id !== id) }); };
 
-  const getHealthColor = (status?: string) => {
-      switch(status) {
-          case 'at_risk': return 'text-red-600 bg-red-50 border-red-100';
-          case 'needs_attention': return 'text-amber-600 bg-amber-50 border-amber-100';
-          default: return 'text-emerald-600 bg-emerald-50 border-emerald-100';
-      }
-  };
-
-  const getSelectedEmployeeName = () => selectedEmployeeId === 'all' ? "Todos" : employees.find(e => e.id === selectedEmployeeId)?.name || "Seleccionar...";
+  const getSelectedEmployeeName = () => selectedEmployeeId === 'all' ? "Todos los empleados" : employees.find(e => e.id === selectedEmployeeId)?.name || "Seleccionar...";
 
   return (
     <div className="flex flex-col h-full space-y-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
-      {/* ... (Cabecera y Filtros IDÉNTICOS al código anterior) ... */}
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
-                    <FolderKanban className="h-8 w-8 text-indigo-600" /> Proyectos
-                </h1>
-                <p className="text-muted-foreground">Gestión estratégica y operativa.</p>
-            </div>
-            <div className="flex items-center gap-3">
-                <Button onClick={openNewProject} className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"><Plus className="h-4 w-4" /> Nuevo</Button>
-                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-lg border shadow-sm">
-                    <Button variant="ghost" size="icon" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-                    <div className="px-2 min-w-[120px] text-center font-medium capitalize">{format(currentMonth, 'MMMM yyyy', { locale: es })}</div>
-                    <Button variant="ghost" size="icon" onClick={handleNextMonth}><ChevronRight className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">Hoy</Button>
-                </div>
-            </div>
+      
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
+            <FolderKanban className="h-8 w-8 text-indigo-600" /> Proyectos
+          </h1>
+          <p className="text-muted-foreground">Panel de control y seguimiento operativo</p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-4 bg-slate-50/50 p-4 rounded-xl border">
-            <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar proyecto..." className="pl-9 bg-white" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-            </div>
-            <Button variant={showOnlyUnderPlanned ? "default" : "outline"} onClick={() => setShowOnlyUnderPlanned(!showOnlyUnderPlanned)} className={cn("gap-2", showOnlyUnderPlanned ? "bg-amber-100 text-amber-900 border-amber-200" : "bg-white")}>
-                <AlertCircle className="h-4 w-4" /> {showOnlyUnderPlanned ? "Falta Planificar" : "Todos"}
+        <div className="flex items-center gap-3">
+          <Button onClick={openNewProject} className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2">
+            <Plus className="h-4 w-4" /> Nuevo Proyecto
+          </Button>
+          <div className="flex items-center gap-1 bg-white p-1 rounded-lg border shadow-sm">
+            <Button variant="ghost" size="icon" onClick={handlePrevMonth} className="h-8 w-8">
+              <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
-                <PopoverTrigger asChild>
-                    <Button variant="outline" role="combobox" className="w-[200px] justify-between bg-white">
-                        <span className="flex items-center gap-2 truncate"><User className="h-3.5 w-3.5 text-muted-foreground" /> {getSelectedEmployeeName()}</span>
-                        <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                    </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[200px] p-0">
-                    <Command>
-                        <CommandInput placeholder="Empleado..." />
-                        <CommandList>
-                            <CommandGroup>
-                                <CommandItem onSelect={() => setSelectedEmployeeId('all')}>Todos</CommandItem>
-                                {employees.filter(e => e.isActive).map(e => (<CommandItem key={e.id} onSelect={() => setSelectedEmployeeId(e.id)}>{e.name}</CommandItem>))}
-                            </CommandGroup>
-                        </CommandList>
-                    </Command>
-                </PopoverContent>
-            </Popover>
+            <div className="px-3 min-w-[130px] text-center font-medium capitalize text-sm">
+              {format(currentMonth, 'MMMM yyyy', { locale: es })}
+            </div>
+            <Button variant="ghost" size="icon" onClick={handleNextMonth} className="h-8 w-8">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs h-8">
+              Hoy
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Grid de Proyectos (Idéntico, solo cambia el onClick del lápiz que ya está bien) */}
-      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
-        {filteredProjects.map((project) => {
-          const client = clients.find(c => c.id === project.clientId);
-          
-          let monthTasks = allocations.filter(a => a.projectId === project.id && isSameMonth(parseISO(a.weekStartDate), currentMonth));
-          if (selectedEmployeeId !== 'all') monthTasks = monthTasks.filter(t => t.employeeId === selectedEmployeeId);
+      {/* RESUMEN DEL MES */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <Card className="bg-gradient-to-br from-slate-50 to-white">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 rounded-lg">
+                <FolderKanban className="h-5 w-5 text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{projectsAnalysis.length}</p>
+                <p className="text-xs text-slate-500">Proyectos activos</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-          const totalAssigned = monthTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
-          const completedTasks = monthTasks.filter(t => t.status === 'completed');
-          const pendingTasks = monthTasks.filter(t => t.status !== 'completed');
+        <Card className="bg-gradient-to-br from-blue-50 to-white">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Clock className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{round2(monthSummary.totalPlanned)}h</p>
+                <p className="text-xs text-slate-500">Planificadas</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-          const projectReal = completedTasks.reduce((sum, t) => sum + (t.hoursActual || 0), 0);
-          const projectComputed = completedTasks.reduce((sum, t) => sum + (t.hoursComputed || 0), 0);
-          const projectGain = projectComputed - projectReal;
+        <Card className="bg-gradient-to-br from-emerald-50 to-white">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-100 rounded-lg">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{round2(monthSummary.totalExecuted)}h</p>
+                <p className="text-xs text-slate-500">Ejecutadas</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-          const budget = project.budgetHours || 0;
-          const minimum = project.minimumHours || 0;
-          const assignedPct = budget > 0 ? (totalAssigned / budget) * 100 : 0;
-          const belowMinimum = totalAssigned < minimum;
+        <Card className={cn("bg-gradient-to-br", monthSummary.totalGain >= 0 ? "from-emerald-50 to-white" : "from-red-50 to-white")}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className={cn("p-2 rounded-lg", monthSummary.totalGain >= 0 ? "bg-emerald-100" : "bg-red-100")}>
+                {monthSummary.totalGain >= 0 ? (
+                  <TrendingUp className="h-5 w-5 text-emerald-600" />
+                ) : (
+                  <TrendingDown className="h-5 w-5 text-red-600" />
+                )}
+              </div>
+              <div>
+                <p className={cn("text-2xl font-bold", monthSummary.totalGain >= 0 ? "text-emerald-600" : "text-red-600")}>
+                  {monthSummary.totalGain >= 0 ? '+' : ''}{round2(monthSummary.totalGain)}h
+                </p>
+                <p className="text-xs text-slate-500">Balance</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-          return (
-            <Card key={project.id} className={cn("overflow-hidden border-l-4 shadow-sm hover:shadow-md transition-all", 
-                project.healthStatus === 'at_risk' ? 'border-l-red-500' : project.healthStatus === 'needs_attention' ? 'border-l-amber-500' : 'border-l-emerald-500'
-            )}>
-              <CardHeader className="bg-slate-50/50 pb-3 border-b">
-                <div className="flex justify-between items-start gap-4">
-                    <div className="flex gap-3 min-w-0 flex-1">
-                        <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shadow-sm shrink-0"><Briefcase className="h-5 w-5 text-slate-500" /></div>
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <CardTitle className="text-base truncate">{project.name}</CardTitle>
-                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getHealthColor(project.healthStatus))}>
-                                    {project.healthStatus === 'at_risk' ? 'En Peligro' : project.healthStatus === 'needs_attention' ? 'Atención' : 'Sano'}
-                                </Badge>
-                                {Math.abs(projectGain) > 0.01 && (
-                                    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 border-0 flex items-center gap-1", projectGain > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800")}>
-                                        {projectGain > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                                        {projectGain > 0 ? 'Ganado: ' : 'Perdido: '}{parseFloat(Math.abs(projectGain).toFixed(1))}h
-                                    </Badge>
-                                )}
-                            </div>
-                            <div className="text-xs text-muted-foreground flex gap-2 items-center mt-1">
-                                <span className="font-medium text-slate-700">{client?.name || "Sin Cliente"}</span>
-                                {project.monthlyFee && project.monthlyFee > 0 && <span className="font-mono text-slate-500">• {project.monthlyFee}€</span>}
-                            </div>
-                        </div>
-                    </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400" onClick={() => openEditProject(project)}><Pencil className="h-4 w-4" /></Button>
-                </div>
-                <div className="mt-3 space-y-2">
-                    <div className="flex justify-between text-xs">
-                        <span className="text-slate-500 font-medium">Planificado: <span className={cn("font-bold", belowMinimum ? "text-red-600" : "text-slate-900")}>{round2(totalAssigned)}h</span> {totalAssigned < budget && <span className="text-amber-600 ml-2 font-normal">(Faltan {round2(budget - totalAssigned)}h)</span>}</span>
-                        <div className="text-right"><span className="text-slate-400 mr-2">Mín: {minimum}h</span><span className="font-mono font-bold text-slate-700">{budget}h</span></div>
-                    </div>
-                    <Progress value={assignedPct} className={cn("h-2", belowMinimum ? "bg-red-100 [&>div]:bg-red-500" : "bg-slate-100")} />
-                </div>
-              </CardHeader>
-
-              <CardContent className="p-0">
-                <Tabs defaultValue="operativa" className="w-full">
-                    <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-4 h-9">
-                        <TabsTrigger value="operativa" className="text-xs h-9 px-3 data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none">Operativa</TabsTrigger>
-                        <TabsTrigger value="estrategia" className="text-xs h-9 px-3 data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none">Estrategia OKR</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="operativa" className="p-0">
-                        <div className="px-4 py-2 bg-slate-50/30">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-2">Pendientes ({pendingTasks.length})</div>
-                            {pendingTasks.length > 0 ? (
-                                <div className="space-y-2 pb-2">
-                                    {pendingTasks.map(task => {
-                                        const emp = employees.find(e => e.id === task.employeeId);
-                                        return (
-                                            <div key={task.id} className="flex items-center justify-between p-3 border rounded-lg bg-white shadow-sm hover:shadow-md transition-all">
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <Avatar className="h-8 w-8 border border-indigo-100 shrink-0">
-                                                        <AvatarImage src={emp?.avatarUrl} />
-                                                        <AvatarFallback className="bg-indigo-100 text-indigo-700 text-[10px] font-bold">{emp?.name.substring(0, 2).toUpperCase() || "??"}</AvatarFallback>
-                                                    </Avatar>
-                                                    <div className="min-w-0">
-                                                        <div className="text-sm font-medium truncate leading-tight">{task.taskName}</div>
-                                                        <div className="text-[10px] text-muted-foreground mt-0.5">{emp?.name || 'Sin asignar'} • Sem {format(parseISO(task.weekStartDate), 'w')}</div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-3 text-xs shrink-0 pl-2">
-                                                    <div className="text-right">
-                                                        <div className="text-[9px] text-muted-foreground font-bold tracking-wider">EST</div>
-                                                        <div className="font-mono font-bold">{task.hoursAssigned}h</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            ) : (<p className="text-xs text-slate-400 italic py-2 text-center">¡Todo al día! No hay tareas pendientes.</p>)}
-                        </div>
-
-                        {completedTasks.length > 0 && (
-                            <details className="group border-t bg-slate-50">
-                                <summary className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-slate-100 transition-colors list-none select-none">
-                                    <span className="text-xs font-medium text-emerald-700 flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5" /> Ver {completedTasks.length} tareas completadas</span>
-                                    <ChevronDown className="h-3.5 w-3.5 text-slate-400 group-open:rotate-180 transition-transform" />
-                                </summary>
-                                <div className="px-4 pb-3 space-y-2 pt-2">
-                                    {completedTasks.map(task => {
-                                        const emp = employees.find(e => e.id === task.employeeId);
-                                        const real = task.hoursActual || 0;
-                                        const computed = task.hoursComputed || 0;
-                                        const gain = computed - real;
-                                        return (
-                                        <div key={task.id} className="flex items-center justify-between p-2 pl-3 border rounded-lg bg-slate-50/50 border-l-4 border-l-emerald-500">
-                                            <div className="flex items-center gap-3 min-w-0 opacity-75">
-                                                <Avatar className="h-7 w-7 border border-emerald-100 shrink-0">
-                                                    <AvatarImage src={emp?.avatarUrl} />
-                                                    <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[9px] font-bold">{emp?.name.substring(0, 2).toUpperCase() || "??"}</AvatarFallback>
-                                                </Avatar>
-                                                <div className="min-w-0">
-                                                    <span className="text-xs font-medium text-slate-600 line-through truncate block">{task.taskName}</span>
-                                                    <div className="text-[9px] text-slate-400">{emp?.name} • Completada</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3 text-xs shrink-0">
-                                                 <div className="text-right hidden sm:block">
-                                                    <div className="text-[9px] text-slate-400 font-bold tracking-wider">EST</div>
-                                                    <div className="font-mono text-slate-500">{task.hoursAssigned}h</div>
-                                                </div>
-                                                 <div className="text-right">
-                                                    <div className="text-[9px] text-blue-500 font-bold tracking-wider">REAL</div>
-                                                    <div className="font-mono text-blue-700">{real}h</div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <div className="text-[9px] text-emerald-500 font-bold tracking-wider">COMP</div>
-                                                    <div className="font-mono text-emerald-700 font-bold">{computed}h</div>
-                                                </div>
-                                                {Math.abs(gain) > 0.01 && (
-                                                    <Badge variant="outline" className={cn("text-[9px] h-5 px-1 ml-1 border-0", gain > 0 ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50")}>
-                                                        {gain > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
-                                                        {Math.abs(parseFloat(gain.toFixed(1)))}
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )})}
-                                </div>
-                            </details>
-                        )}
-                    </TabsContent>
-
-                    <TabsContent value="estrategia" className="p-4 space-y-4">
-                        {(project.okrs || []).length > 0 ? (
-                            <div className="space-y-4">
-                                {(project.okrs || []).map((okr, idx) => (
-                                    <div key={idx} className="space-y-1">
-                                        <div className="flex justify-between text-xs">
-                                            <span className="font-medium text-slate-700 flex items-center gap-2"><Target className="h-3 w-3 text-indigo-500" /> {okr.title}</span>
-                                            <span className="font-bold text-indigo-600">{okr.progress}%</span>
-                                        </div>
-                                        <Progress value={okr.progress} className="h-1.5" />
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (<div className="text-center py-6 border-2 border-dashed rounded-lg"><Target className="h-8 w-8 text-slate-200 mx-auto mb-2" /><p className="text-xs text-slate-400">Sin objetivos definidos. Edita el proyecto para añadir OKRs.</p></div>)}
-                    </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          );
-        })}
+        <Card className="bg-gradient-to-br from-amber-50 to-white">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{monthSummary.withIssues}</p>
+                <p className="text-xs text-slate-500">Requieren atención</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
+      {/* PROGRESO DEL MES */}
+      {isSameMonth(new Date(), currentMonth) && (
+        <div className="bg-slate-100 rounded-lg p-3">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-slate-600 flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5" />
+              Progreso del mes
+            </span>
+            <span className="font-bold text-slate-700">{monthProgress}% transcurrido</span>
+          </div>
+          <Progress value={monthProgress} className="h-2" />
+        </div>
+      )}
+
+      {/* FILTROS */}
+      <div className="flex flex-col lg:flex-row gap-4 bg-white p-4 rounded-xl border shadow-sm">
+        {/* Búsqueda */}
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Input 
+            placeholder="Buscar proyecto..." 
+            className="pl-9 bg-slate-50 border-slate-200" 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+          />
+        </div>
+
+        {/* Filtros de estado - Chips */}
+        <div className="flex flex-wrap gap-2 flex-1">
+          <Button
+            variant={activeFilter === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setActiveFilter('all')}
+            className={cn(
+              "h-8 text-xs gap-1.5",
+              activeFilter === 'all' ? "bg-slate-900" : "bg-white"
+            )}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            Todos
+            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+              {filterCounts.all}
+            </Badge>
+          </Button>
+
+          <Button
+            variant={activeFilter === 'no-activity' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setActiveFilter('no-activity')}
+            className={cn(
+              "h-8 text-xs gap-1.5",
+              activeFilter === 'no-activity' 
+                ? "bg-slate-700" 
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+            )}
+          >
+            <Ban className="h-3.5 w-3.5" />
+            Sin actividad
+            {filterCounts['no-activity'] > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] bg-slate-200">
+                {filterCounts['no-activity']}
+              </Badge>
+            )}
+          </Button>
+
+          <Button
+            variant={activeFilter === 'needs-planning' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setActiveFilter('needs-planning')}
+            className={cn(
+              "h-8 text-xs gap-1.5",
+              activeFilter === 'needs-planning' 
+                ? "bg-amber-600 hover:bg-amber-700" 
+                : "bg-white border-amber-200 text-amber-700 hover:bg-amber-50"
+            )}
+          >
+            <CircleDashed className="h-3.5 w-3.5" />
+            Falta planificar
+            {filterCounts['needs-planning'] > 0 && (
+              <Badge className={cn(
+                "ml-1 h-5 px-1.5 text-[10px]",
+                activeFilter === 'needs-planning' ? "bg-amber-700" : "bg-amber-100 text-amber-700"
+              )}>
+                {filterCounts['needs-planning']}
+              </Badge>
+            )}
+          </Button>
+
+          <Button
+            variant={activeFilter === 'behind-schedule' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setActiveFilter('behind-schedule')}
+            className={cn(
+              "h-8 text-xs gap-1.5",
+              activeFilter === 'behind-schedule' 
+                ? "bg-orange-600 hover:bg-orange-700" 
+                : "bg-white border-orange-200 text-orange-700 hover:bg-orange-50"
+            )}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            Retrasados
+            {filterCounts['behind-schedule'] > 0 && (
+              <Badge className={cn(
+                "ml-1 h-5 px-1.5 text-[10px]",
+                activeFilter === 'behind-schedule' ? "bg-orange-700" : "bg-orange-100 text-orange-700"
+              )}>
+                {filterCounts['behind-schedule']}
+              </Badge>
+            )}
+          </Button>
+
+          <Button
+            variant={activeFilter === 'over-budget' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setActiveFilter('over-budget')}
+            className={cn(
+              "h-8 text-xs gap-1.5",
+              activeFilter === 'over-budget' 
+                ? "bg-red-600 hover:bg-red-700" 
+                : "bg-white border-red-200 text-red-700 hover:bg-red-50"
+            )}
+          >
+            <AlertOctagon className="h-3.5 w-3.5" />
+            Sobre presupuesto
+            {filterCounts['over-budget'] > 0 && (
+              <Badge className={cn(
+                "ml-1 h-5 px-1.5 text-[10px]",
+                activeFilter === 'over-budget' ? "bg-red-700" : "bg-red-100 text-red-700"
+              )}>
+                {filterCounts['over-budget']}
+              </Badge>
+            )}
+          </Button>
+
+          <Button
+            variant={activeFilter === 'at-risk' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setActiveFilter('at-risk')}
+            className={cn(
+              "h-8 text-xs gap-1.5",
+              activeFilter === 'at-risk' 
+                ? "bg-rose-600 hover:bg-rose-700" 
+                : "bg-white border-rose-200 text-rose-700 hover:bg-rose-50"
+            )}
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            En riesgo
+            {filterCounts['at-risk'] > 0 && (
+              <Badge className={cn(
+                "ml-1 h-5 px-1.5 text-[10px]",
+                activeFilter === 'at-risk' ? "bg-rose-700" : "bg-rose-100 text-rose-700"
+              )}>
+                {filterCounts['at-risk']}
+              </Badge>
+            )}
+          </Button>
+        </div>
+
+        {/* Filtro de empleado */}
+        <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" role="combobox" className="w-[200px] justify-between bg-white shrink-0">
+              <span className="flex items-center gap-2 truncate">
+                <User className="h-3.5 w-3.5 text-slate-400" /> 
+                <span className="truncate">{getSelectedEmployeeName()}</span>
+              </span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50 shrink-0" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[200px] p-0">
+            <Command>
+              <CommandInput placeholder="Buscar..." />
+              <CommandList>
+                <CommandGroup>
+                  <CommandItem onSelect={() => { setSelectedEmployeeId('all'); setOpenEmployeeCombo(false); }}>
+                    Todos los empleados
+                  </CommandItem>
+                  {employees.filter(e => e.isActive).map(e => (
+                    <CommandItem key={e.id} onSelect={() => { setSelectedEmployeeId(e.id); setOpenEmployeeCombo(false); }}>
+                      {e.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* ACCIONES DE LISTA */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-500">
+          {filteredProjects.length} proyecto{filteredProjects.length !== 1 ? 's' : ''}
+          {activeFilter !== 'all' && ' con este filtro'}
+        </p>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={expandAll} className="text-xs h-7">
+            Expandir todos
+          </Button>
+          <Button variant="ghost" size="sm" onClick={collapseAll} className="text-xs h-7">
+            Colapsar todos
+          </Button>
+        </div>
+      </div>
+
+      {/* LISTA DE PROYECTOS */}
+      <div className="space-y-3">
+        {filteredProjects.length === 0 ? (
+          <Card className="p-12">
+            <div className="text-center">
+              <FolderKanban className="h-12 w-12 text-slate-200 mx-auto mb-3" />
+              <p className="text-slate-500 font-medium">No hay proyectos con este filtro</p>
+              <p className="text-sm text-slate-400 mt-1">Prueba con otros criterios de búsqueda</p>
+            </div>
+          </Card>
+        ) : (
+          filteredProjects.map((data) => {
+            const isExpanded = expandedProjects.has(data.project.id);
+            
+            return (
+              <Collapsible 
+                key={data.project.id} 
+                open={isExpanded} 
+                onOpenChange={() => toggleProject(data.project.id)}
+              >
+                <Card className={cn(
+                  "overflow-hidden transition-all",
+                  data.isAtRisk && "border-l-4 border-l-red-500",
+                  data.needsAttention && !data.isAtRisk && "border-l-4 border-l-amber-500",
+                  !data.isAtRisk && !data.needsAttention && "border-l-4 border-l-emerald-500"
+                )}>
+                  {/* HEADER COLAPSABLE */}
+                  <CollapsibleTrigger asChild>
+                    <div className="flex items-center gap-4 p-4 cursor-pointer hover:bg-slate-50 transition-colors">
+                      {/* Icono expandir */}
+                      <ChevronDown className={cn(
+                        "h-5 w-5 text-slate-400 transition-transform shrink-0",
+                        isExpanded && "rotate-180"
+                      )} />
+
+                      {/* Info proyecto */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold text-slate-900 truncate">
+                            {formatProjectName(data.project.name)}
+                          </h3>
+                          {data.noActivity && (
+                            <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-500 border-slate-200">
+                              Sin actividad
+                            </Badge>
+                          )}
+                          {data.needsPlanning && !data.noActivity && (
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                              Falta planificar
+                            </Badge>
+                          )}
+                          {data.behindSchedule && (
+                            <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-200">
+                              Retrasado
+                            </Badge>
+                          )}
+                          {data.overBudget && (
+                            <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
+                              +{round2(data.totalAssigned - data.budget)}h sobre
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {data.client?.name || 'Sin cliente'}
+                          {data.project.monthlyFee && data.project.monthlyFee > 0 && (
+                            <span className="ml-2 text-slate-400">• {data.project.monthlyFee}€/mes</span>
+                          )}
+                        </p>
+                      </div>
+
+                      {/* Métricas rápidas */}
+                      <div className="hidden md:flex items-center gap-6 text-sm shrink-0">
+                        {/* Planificado */}
+                        <div className="text-center min-w-[70px]">
+                          <p className={cn(
+                            "font-mono font-bold",
+                            data.budget > 0 && data.totalAssigned < data.budget * 0.5 ? "text-amber-600" : "text-slate-700"
+                          )}>
+                            {round2(data.totalAssigned)}h
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {data.budget > 0 ? `de ${data.budget}h` : 'planif.'}
+                          </p>
+                        </div>
+
+                        {/* Ejecutado */}
+                        <div className="text-center min-w-[70px]">
+                          <p className="font-mono font-bold text-emerald-600">
+                            {round2(data.hoursComputed)}h
+                          </p>
+                          <p className="text-[10px] text-slate-400">ejecutado</p>
+                        </div>
+
+                        {/* Balance */}
+                        {Math.abs(data.gain) > 0.01 && (
+                          <div className={cn(
+                            "flex items-center gap-1 px-2 py-1 rounded text-xs font-medium",
+                            data.gain > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                          )}>
+                            {data.gain > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                            {data.gain > 0 ? '+' : ''}{round2(data.gain)}h
+                          </div>
+                        )}
+
+                        {/* Tareas */}
+                        <div className="text-center min-w-[60px]">
+                          <p className="font-mono text-slate-600">
+                            <span className="text-emerald-600">{data.completedTasks.length}</span>
+                            <span className="text-slate-300">/</span>
+                            <span>{data.monthTasks.length}</span>
+                          </p>
+                          <p className="text-[10px] text-slate-400">tareas</p>
+                        </div>
+                      </div>
+
+                      {/* Botón editar */}
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-slate-400 hover:text-slate-600 shrink-0"
+                        onClick={(e) => { e.stopPropagation(); openEditProject(data.project); }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CollapsibleTrigger>
+
+                  {/* CONTENIDO EXPANDIDO */}
+                  <CollapsibleContent>
+                    <div className="border-t bg-slate-50/50">
+                      {/* Barra de progreso */}
+                      {data.budget > 0 && (
+                        <div className="px-4 py-3 border-b bg-white">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-slate-500">
+                              Planificado: <span className="font-bold text-slate-700">{round2(data.totalAssigned)}h</span>
+                              {data.totalAssigned < data.budget && (
+                                <span className="text-amber-600 ml-2">(Faltan {round2(data.budget - data.totalAssigned)}h)</span>
+                              )}
+                            </span>
+                            <span className="text-slate-500">
+                              Mín: {data.minimum}h • <span className="font-bold">{data.budget}h</span>
+                            </span>
+                          </div>
+                          <Progress 
+                            value={Math.min(100, data.planningPct)} 
+                            className={cn(
+                              "h-2",
+                              data.overBudget ? "bg-red-100 [&>div]:bg-red-500" : 
+                              data.needsPlanning ? "bg-amber-100 [&>div]:bg-amber-500" : 
+                              "bg-slate-100"
+                            )} 
+                          />
+                        </div>
+                      )}
+
+                      {/* Tareas pendientes */}
+                      <div className="p-4">
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                          Tareas pendientes ({data.pendingTasks.length})
+                        </h4>
+                        
+                        {data.pendingTasks.length > 0 ? (
+                          <div className="space-y-2">
+                            {data.pendingTasks.map(task => {
+                              const emp = employees.find(e => e.id === task.employeeId);
+                              return (
+                                <div key={task.id} className="flex items-center justify-between p-3 bg-white border rounded-lg shadow-sm">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <Avatar className="h-7 w-7 border shrink-0">
+                                      <AvatarImage src={emp?.avatarUrl} />
+                                      <AvatarFallback className="bg-indigo-100 text-indigo-700 text-[9px] font-bold">
+                                        {emp?.name.substring(0, 2).toUpperCase() || "??"}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-medium truncate">{task.taskName}</p>
+                                      <p className="text-[10px] text-slate-400">
+                                        {emp?.name} • Sem {format(parseISO(task.weekStartDate), 'w')}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="font-mono font-bold text-sm">{task.hoursAssigned}h</p>
+                                    <p className="text-[10px] text-slate-400">estimado</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-400 text-center py-4 bg-white rounded-lg border border-dashed">
+                            Sin tareas pendientes este mes
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Tareas completadas (colapsable) */}
+                      {data.completedTasks.length > 0 && (
+                        <details className="border-t">
+                          <summary className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-slate-100 transition-colors list-none select-none bg-white">
+                            <span className="text-xs font-medium text-emerald-700 flex items-center gap-2">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> 
+                              {data.completedTasks.length} tareas completadas
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                          </summary>
+                          <div className="px-4 pb-4 pt-2 space-y-2 bg-slate-50">
+                            {data.completedTasks.map(task => {
+                              const emp = employees.find(e => e.id === task.employeeId);
+                              const real = task.hoursActual || 0;
+                              const computed = task.hoursComputed || 0;
+                              const taskGain = computed - real;
+                              return (
+                                <div key={task.id} className="flex items-center justify-between p-2 bg-white border rounded-lg border-l-4 border-l-emerald-500 opacity-75">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <Avatar className="h-6 w-6 border shrink-0">
+                                      <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[8px] font-bold">
+                                        {emp?.name.substring(0, 2).toUpperCase() || "??"}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-medium truncate line-through text-slate-500">{task.taskName}</p>
+                                      <p className="text-[9px] text-slate-400">{emp?.name}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-xs shrink-0">
+                                    <div className="text-right">
+                                      <span className="text-slate-400">{task.hoursAssigned}h</span>
+                                      <span className="mx-1 text-slate-300">→</span>
+                                      <span className="text-blue-600">{real}h</span>
+                                      <span className="mx-1 text-slate-300">→</span>
+                                      <span className="text-emerald-600 font-bold">{computed}h</span>
+                                    </div>
+                                    {Math.abs(taskGain) > 0.01 && (
+                                      <Badge variant="outline" className={cn(
+                                        "text-[9px] h-5 px-1 border-0",
+                                        taskGain > 0 ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50"
+                                      )}>
+                                        {taskGain > 0 ? '+' : ''}{round2(taskGain)}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      )}
+
+                      {/* OKRs si existen */}
+                      {(data.project.okrs || []).length > 0 && (
+                        <div className="border-t p-4 bg-white">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <Target className="h-3.5 w-3.5 text-indigo-500" />
+                            Objetivos (OKRs)
+                          </h4>
+                          <div className="space-y-2">
+                            {(data.project.okrs || []).map((okr, idx) => (
+                              <div key={idx} className="space-y-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-slate-600">{okr.title}</span>
+                                  <span className="font-bold text-indigo-600">{okr.progress}%</span>
+                                </div>
+                                <Progress value={okr.progress} className="h-1.5" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            );
+          })
+        )}
+      </div>
+
+      {/* DIALOG EDITAR/CREAR */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>{isCreating ? 'Nuevo Proyecto' : 'Editar Proyecto'}</DialogTitle><DialogDescription>Configura los parámetros operativos y estratégicos.</DialogDescription></DialogHeader>
-            <div className="grid gap-6 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Nombre del Proyecto</Label><Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-                    <div className="space-y-2"><Label>Cliente Asociado</Label><Select value={formData.clientId} onValueChange={(val) => setFormData({...formData, clientId: val})}><SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger><SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2"><Label>Horas (Presupuesto)</Label><Input type="number" value={formData.budgetHours} onChange={e => setFormData({...formData, budgetHours: e.target.value})} /></div>
-                    <div className="space-y-2"><Label>Horas Mínimas</Label><Input type="number" value={formData.minimumHours} onChange={e => setFormData({...formData, minimumHours: e.target.value})} /></div>
-                    <div className="space-y-2"><Label>Fee Mensual (€)</Label><Input type="number" value={formData.monthlyFee} onChange={e => setFormData({...formData, monthlyFee: e.target.value})} /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Estado</Label><Select value={formData.status} onValueChange={(val: any) => setFormData({...formData, status: val})}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Activo</SelectItem><SelectItem value="archived">Archivado</SelectItem><SelectItem value="completed">Completado</SelectItem></SelectContent></Select></div>
-                    <div className="space-y-2"><Label>Salud del Proyecto</Label><Select value={formData.healthStatus} onValueChange={(val: any) => setFormData({...formData, healthStatus: val})}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="healthy">🟢 Sano</SelectItem><SelectItem value="needs_attention">🟠 Atención</SelectItem><SelectItem value="at_risk">🔴 En Peligro</SelectItem></SelectContent></Select></div>
-                </div>
-                <div className="border-t pt-4 space-y-4">
-                    <Label className="text-base font-semibold">Estrategia y OKRs</Label>
-                    <div className="flex gap-2"><Input placeholder="Nuevo objetivo (ej: +20% Tráfico Orgánico)" value={newOkrTitle} onChange={e => setNewOkrTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && addOkrToForm()} /><Button type="button" onClick={addOkrToForm} size="sm"><Plus className="h-4 w-4" /></Button></div>
-                    <div className="space-y-3 bg-slate-50 p-3 rounded-lg max-h-40 overflow-y-auto">
-                        {formData.okrs.length === 0 && <p className="text-xs text-slate-400 text-center">Sin objetivos.</p>}
-                        {formData.okrs.map((okr) => (
-                            <div key={okr.id} className="bg-white p-2 rounded border shadow-sm space-y-2">
-                                <div className="flex justify-between items-center text-sm"><span className="font-medium">{okr.title}</span><button onClick={() => removeOkr(okr.id)} className="text-red-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button></div>
-                                <div className="flex items-center gap-3"><Slider value={[okr.progress]} max={100} step={5} onValueChange={(val) => updateOkrProgress(okr.id, val[0])} className="flex-1" /><span className="text-xs font-bold w-8 text-right">{okr.progress}%</span></div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+          <DialogHeader>
+            <DialogTitle>{isCreating ? 'Nuevo Proyecto' : 'Editar Proyecto'}</DialogTitle>
+            <DialogDescription>Configura los parámetros operativos y estratégicos.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-6 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Nombre del Proyecto</Label>
+                <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Cliente Asociado</Label>
+                <Select value={formData.clientId} onValueChange={(val) => setFormData({...formData, clientId: val})}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
+                  <SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
             </div>
-            <DialogFooter>
-                {/* BOTÓN ELIMINAR PROYECTO */}
-                {!isCreating && (
-                    <Button variant="destructive" onClick={handleDelete} className="mr-auto"><Trash2 className="h-4 w-4 mr-2" /> Eliminar</Button>
-                )}
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-                <Button onClick={handleSave}>Guardar Cambios</Button>
-            </DialogFooter>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Horas (Presupuesto)</Label>
+                <Input type="number" value={formData.budgetHours} onChange={e => setFormData({...formData, budgetHours: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Horas Mínimas</Label>
+                <Input type="number" value={formData.minimumHours} onChange={e => setFormData({...formData, minimumHours: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Fee Mensual (€)</Label>
+                <Input type="number" value={formData.monthlyFee} onChange={e => setFormData({...formData, monthlyFee: e.target.value})} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Estado</Label>
+                <Select value={formData.status} onValueChange={(val: any) => setFormData({...formData, status: val})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Activo</SelectItem>
+                    <SelectItem value="archived">Archivado</SelectItem>
+                    <SelectItem value="completed">Completado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Salud del Proyecto</Label>
+                <Select value={formData.healthStatus} onValueChange={(val: any) => setFormData({...formData, healthStatus: val})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="healthy">🟢 Sano</SelectItem>
+                    <SelectItem value="needs_attention">🟠 Atención</SelectItem>
+                    <SelectItem value="at_risk">🔴 En Peligro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="border-t pt-4 space-y-4">
+              <Label className="text-base font-semibold">Estrategia y OKRs</Label>
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="Nuevo objetivo (ej: +20% Tráfico Orgánico)" 
+                  value={newOkrTitle} 
+                  onChange={e => setNewOkrTitle(e.target.value)} 
+                  onKeyDown={e => e.key === 'Enter' && addOkrToForm()} 
+                />
+                <Button type="button" onClick={addOkrToForm} size="sm"><Plus className="h-4 w-4" /></Button>
+              </div>
+              <div className="space-y-3 bg-slate-50 p-3 rounded-lg max-h-40 overflow-y-auto">
+                {formData.okrs.length === 0 && <p className="text-xs text-slate-400 text-center">Sin objetivos.</p>}
+                {formData.okrs.map((okr) => (
+                  <div key={okr.id} className="bg-white p-2 rounded border shadow-sm space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="font-medium">{okr.title}</span>
+                      <button onClick={() => removeOkr(okr.id)} className="text-red-400 hover:text-red-600">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Slider value={[okr.progress]} max={100} step={5} onValueChange={(val) => updateOkrProgress(okr.id, val[0])} className="flex-1" />
+                      <span className="text-xs font-bold w-8 text-right">{okr.progress}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            {!isCreating && (
+              <Button variant="destructive" onClick={handleDelete} className="mr-auto">
+                <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSave}>Guardar Cambios</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
