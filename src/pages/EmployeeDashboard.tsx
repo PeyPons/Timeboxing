@@ -62,18 +62,17 @@ export default function EmployeeDashboard() {
 
   if (!myEmployeeProfile) return null;
 
-  // --- LÓGICA CENTRALIZADA ---
-  // Usamos exactamente la misma función que el Planificador para calcular la carga
+  // --- LÓGICA CENTRALIZADA (IGUAL QUE PLANNER) ---
   const today = new Date();
   const currentWeekStart = startOfWeek(today, { weekStartsOn: 1 }); // Lunes
   
-  // Obtenemos la carga real usando el Helper del contexto (incluye festivos, ausencias, etc.)
+  // Usamos el Helper del contexto para que coincida con el Planner (festivos, bajas, etc.)
   const weeklyLoad = getEmployeeLoadForWeek(
       myEmployeeProfile.id, 
       currentWeekStart.toISOString()
   );
 
-  // Filtramos tareas activas para contadores rápidos
+  // Filtramos tareas activas para contadores
   const myActiveAllocations = allocations.filter(a => 
       a.employeeId === myEmployeeProfile.id && 
       (a.status === 'planned' || a.status === 'active')
@@ -90,7 +89,7 @@ export default function EmployeeDashboard() {
               <p className="text-slate-500">Panel de Operaciones</p>
           </div>
           
-          {/* Tarjeta de Estado de Capacidad */}
+          {/* Tarjeta de Estado de Capacidad (Sincronizada con Planner) */}
           <div className="flex items-center gap-4 bg-white p-4 rounded-xl border shadow-sm w-full md:w-auto">
               <div className={`p-3 rounded-full ${weeklyLoad.status === 'overload' ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`}>
                   {weeklyLoad.status === 'overload' ? <AlertTriangle className="w-6 h-6"/> : <Clock className="w-6 h-6"/>}
@@ -167,7 +166,7 @@ export default function EmployeeDashboard() {
       <Tabs defaultValue="week" className="w-full">
           <TabsList className="bg-slate-100 p-1 mb-4">
               <TabsTrigger value="week" className="px-4">Mi Semana</TabsTrigger>
-              <TabsTrigger value="history" className="px-4" disabled>Histórico (Próximamente)</TabsTrigger>
+              <TabsTrigger value="history" className="px-4" disabled>Histórico</TabsTrigger>
           </TabsList>
           
           <TabsContent value="week" className="mt-0">
