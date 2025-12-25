@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { format, startOfWeek, addDays, isSameWeek, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Clock, CheckCircle2, Briefcase, AlertCircle, PlusCircle } from 'lucide-react';
+import { CheckCircle2, AlertCircle, PlusCircle, Link as LinkIcon, AlertOctagon } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -29,11 +29,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
   
   const today = new Date();
   const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
-  const weekLabel = `Semana del ${format(startOfCurrentWeek, 'd MMM', { locale: es })} al ${format(addDays(startOfCurrentWeek, 4), 'd MMM', { locale: es })}`;
   
-  const me = employees.find(e => e.id === employeeId);
-  const weeklyCapacity = me?.defaultWeeklyCapacity || 40;
-
   const myAllocations = allocations.filter(a => 
     a.employeeId === employeeId && 
     (a.status === 'planned' || a.status === 'active' || a.status === 'completed') &&
@@ -89,9 +85,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       }
 
       try {
-          // CORRECCIÓN CLAVE: Formato de fecha exacto para la DB (YYYY-MM-DD)
           const formattedDate = format(startOfCurrentWeek, 'yyyy-MM-dd');
-
           await addAllocation({
               projectId: internalProject.id,
               employeeId: employeeId,
@@ -114,84 +108,42 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       }
   };
 
-  const totalAssigned = myAllocations.reduce((acc, curr) => acc + Number(curr.hoursAssigned), 0);
-  const totalDone = myAllocations.reduce((acc, curr) => acc + Number(curr.hoursActual || 0), 0);
-  const totalProgress = totalAssigned > 0 ? Math.min(100, (totalDone / totalAssigned) * 100) : 0;
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       
-      {/* 1. HEADER RESUMEN */}
-      <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b pb-6">
-        <div>
-            <h2 className="text-2xl font-bold text-slate-900">Mis Tareas</h2>
-            <p className="text-slate-500 flex items-center gap-2 mt-1">
-                <Clock className="w-4 h-4"/> {weekLabel}
-            </p>
-        </div>
-        
-        <div className="flex items-center gap-6 bg-white p-4 rounded-xl border shadow-sm w-full md:w-auto">
-            <div className="text-center">
-                <div className="text-xs text-slate-400 uppercase font-semibold">Capacidad</div>
-                <div className="font-mono text-lg font-bold text-slate-700">{weeklyCapacity}h</div>
-            </div>
-            <div className="h-8 w-px bg-slate-200"></div>
-            <div className="text-center">
-                <div className="text-xs text-slate-400 uppercase font-semibold">Asignado</div>
-                <div className={`font-mono text-lg font-bold ${totalAssigned > weeklyCapacity ? 'text-red-500' : 'text-indigo-600'}`}>
-                    {totalAssigned.toFixed(1)}h
-                </div>
-            </div>
-            <div className="h-8 w-px bg-slate-200"></div>
-            <div className="flex-1 min-w-[120px]">
-                <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-500">Completado</span>
-                    <span className="font-bold text-emerald-600">{totalProgress.toFixed(0)}%</span>
-                </div>
-                <Progress value={totalProgress} className="h-2" />
-            </div>
-
-            <div className="border-l pl-4 ml-2">
-                <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
-                    <DialogTrigger asChild>
-                        <Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 shadow-sm">
-                            <PlusCircle className="w-4 h-4 mr-2" /> Tarea Extra
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                        <DialogHeader>
-                            <DialogTitle>Fichar Tarea Interna</DialogTitle>
-                            <DialogDescription>
-                                Se asignará a <strong>{internalProject?.name}</strong> en la semana actual.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="space-y-2">
-                                <Label>Nombre de la Tarea</Label>
-                                <Input value={extraTaskName} onChange={e => setExtraTaskName(e.target.value)} autoFocus />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Horas Estimadas</Label>
-                                    <Input type="number" step="0.5" value={extraEstimated} onChange={e => setExtraEstimated(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Horas Reales</Label>
-                                    <Input type="number" step="0.5" value={extraReal} onChange={e => setExtraReal(e.target.value)} />
-                                </div>
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsAddingExtra(false)}>Cancelar</Button>
-                            <Button onClick={handleAddExtraTask} className="bg-indigo-600 hover:bg-indigo-700">Guardar</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            </div>
-        </div>
+      {/* HEADER SIMPLE CON BOTÓN TAREA EXTRA */}
+      <div className="flex justify-end mb-4">
+          <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
+              <DialogTrigger asChild>
+                  <Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 shadow-sm">
+                      <PlusCircle className="w-4 h-4 mr-2" /> Tarea Extra
+                  </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                      <DialogTitle>Fichar Tarea Interna</DialogTitle>
+                      <DialogDescription>
+                          Se asignará a <strong>{internalProject?.name}</strong>.
+                      </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                      <div className="space-y-2">
+                          <Label>Nombre de la Tarea</Label>
+                          <Input value={extraTaskName} onChange={e => setExtraTaskName(e.target.value)} autoFocus />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2"><Label>Horas Estimadas</Label><Input type="number" step="0.5" value={extraEstimated} onChange={e => setExtraEstimated(e.target.value)} /></div>
+                          <div className="space-y-2"><Label>Horas Reales</Label><Input type="number" step="0.5" value={extraReal} onChange={e => setExtraReal(e.target.value)} /></div>
+                      </div>
+                  </div>
+                  <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsAddingExtra(false)}>Cancelar</Button>
+                      <Button onClick={handleAddExtraTask} className="bg-indigo-600 hover:bg-indigo-700">Guardar</Button>
+                  </DialogFooter>
+              </DialogContent>
+          </Dialog>
       </div>
 
-      {/* 2. TARJETAS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {myAllocations.length === 0 ? (
             <div className="col-span-full py-16 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
@@ -208,6 +160,11 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                 const isOverBudget = (task.hoursActual || 0) > task.hoursAssigned;
                 const isExtra = task.description?.includes('manualmente');
 
+                // Lógica de Dependencias para la Tarjeta
+                const depTask = task.dependencyId ? allocations.find(a => a.id === task.dependencyId) : null;
+                const depOwner = depTask ? employees.find(e => e.id === depTask.employeeId) : null;
+                const blockingTasks = allocations.filter(a => a.dependencyId === task.id && a.status !== 'completed');
+
                 return (
                     <Card key={task.id} className={`flex flex-col hover:border-indigo-300 transition-all shadow-sm ${isExtra ? 'border-amber-200 bg-amber-50/20' : ''}`}>
                         <CardHeader className="pb-3">
@@ -223,8 +180,30 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                         </CardHeader>
                         <CardContent className="flex-1 flex flex-col gap-4">
                             <div className="flex-1 bg-slate-50 p-3 rounded-lg text-sm text-slate-600 border border-slate-100 min-h-[60px]">
-                                {task.taskName || "Asignación general."}
+                                <div className="font-medium mb-1">{task.taskName || "Asignación general."}</div>
+                                
+                                {/* VISUALIZACIÓN DE DEPENDENCIAS EN LA TARJETA */}
+                                {depTask && (
+                                    <div className="flex items-center gap-1 mt-2 text-[10px] text-amber-700 bg-amber-50 px-2 py-1 rounded w-fit border border-amber-200">
+                                        <LinkIcon className="w-3 h-3" />
+                                        <span>Esperando por: <strong>{depOwner?.name}</strong></span>
+                                    </div>
+                                )}
+                                {blockingTasks.length > 0 && (
+                                    <div className="flex flex-col gap-1 mt-2">
+                                        {blockingTasks.map(bt => {
+                                            const blockedUser = employees.find(e => e.id === bt.employeeId);
+                                            return (
+                                                <div key={bt.id} className="flex items-center gap-1 text-[10px] text-red-700 bg-red-50 px-2 py-1 rounded w-fit border border-red-200">
+                                                    <AlertOctagon className="w-3 h-3" />
+                                                    <span>Estás bloqueando a: <strong>{blockedUser?.name}</strong></span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
+
                             <div className="space-y-3 pt-2 border-t border-slate-100">
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="font-medium text-slate-700">Horas Reales</span>
@@ -243,6 +222,11 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                                     </div>
                                 </div>
                                 <Progress value={percent} className={`h-2.5 ${isOverBudget ? '[&>div]:bg-red-500' : '[&>div]:bg-indigo-600'}`} />
+                                {percent >= 100 && !isOverBudget && (
+                                    <div className="flex items-center justify-center gap-1 text-xs text-emerald-600 font-medium bg-emerald-50 py-1 rounded">
+                                        <CheckCircle2 className="w-3 h-3"/> Completado
+                                    </div>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
