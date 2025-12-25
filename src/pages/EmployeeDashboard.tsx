@@ -22,13 +22,14 @@ import { es } from 'date-fns/locale';
 import { Employee } from '@/types';
 import { toast } from 'sonner';
 
-// Nombre fijo del proyecto interno (sin cliente)
+// Nombres fijos para el cliente y proyecto interno
+const INTERNAL_CLIENT_NAME = 'Interno';
 const INTERNAL_PROJECT_NAME = 'Gestiones internas';
 
 export default function EmployeeDashboard() {
   const { 
-    employees, allocations, absences, teamEvents, projects, 
-    addAllocation, addProject, isLoading: isGlobalLoading, getEmployeeMonthlyLoad 
+    employees, allocations, absences, teamEvents, projects, clients,
+    addAllocation, isLoading: isGlobalLoading, getEmployeeMonthlyLoad 
   } = useApp();
   
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -64,43 +65,61 @@ export default function EmployeeDashboard() {
     if (!isGlobalLoading) checkUserLink();
   }, [employees, isGlobalLoading]);
 
-  // Buscar o preparar para crear el proyecto interno
+  // Buscar el proyecto interno existente
   const internalProject = useMemo(() => {
       return projects.find(p => p.name === INTERNAL_PROJECT_NAME);
   }, [projects]);
 
-  // Función para obtener o crear el proyecto interno
+  // Buscar el cliente interno existente
+  const internalClient = useMemo(() => {
+      return clients.find(c => c.name === INTERNAL_CLIENT_NAME);
+  }, [clients]);
+
+  // Función para obtener o crear el cliente y proyecto interno
   const getOrCreateInternalProject = async (): Promise<string | null> => {
-      // Si ya existe, retornamos su ID
+      // Si ya existe el proyecto, retornamos su ID
       if (internalProject) {
           return internalProject.id;
       }
 
-      // Si no existe, lo creamos
       setIsCreatingProject(true);
       try {
-          const { data, error } = await supabase
+          let clientId = internalClient?.id;
+
+          // PASO 1: Crear cliente interno si no existe
+          if (!clientId) {
+              const { data: clientData, error: clientError } = await supabase
+                  .from('clients')
+                  .insert({
+                      name: INTERNAL_CLIENT_NAME,
+                      color: '#6b7280' // Gris neutro
+                  })
+                  .select()
+                  .single();
+
+              if (clientError) throw clientError;
+              clientId = clientData.id;
+              toast.success(`Cliente "${INTERNAL_CLIENT_NAME}" creado`);
+          }
+
+          // PASO 2: Crear proyecto interno
+          const { data: projectData, error: projectError } = await supabase
               .from('projects')
               .insert({
                   name: INTERNAL_PROJECT_NAME,
-                  client_id: null, // Sin cliente asociado
+                  client_id: clientId,
                   status: 'active',
-                  budget_hours: 9999, // Sin límite práctico
+                  budget_hours: 9999,
                   minimum_hours: 0
               })
               .select()
               .single();
 
-          if (error) throw error;
+          if (projectError) throw projectError;
 
-          // Actualizamos el estado local via refetch o añadimos manualmente
-          if (data) {
-              // Forzar recarga para que el contexto se actualice
-              // Alternativa: llamar addProject pero ya lo hemos insertado directamente
-              toast.success('Proyecto "Gestiones internas" creado');
-              return data.id;
-          }
-          return null;
+          toast.success(`Proyecto "${INTERNAL_PROJECT_NAME}" creado`);
+          return projectData.id;
+
       } catch (error) {
           console.error('Error creando proyecto interno:', error);
           toast.error('Error al crear proyecto interno');
@@ -142,11 +161,11 @@ export default function EmployeeDashboard() {
               projectId: projectId,
               employeeId: myEmployeeProfile.id,
               weekStartDate: formattedDate,
-              hoursAssigned: hours,    // Estimado
-              hoursActual: hours,      // Real
-              hoursComputed: hours,    // Computado
+              hoursAssigned: hours,
+              hoursActual: hours,
+              hoursComputed: hours,
               taskName: extraTaskName.trim(),
-              status: 'completed',     // Directamente completada
+              status: 'completed',
               description: 'Gestión interna'
           });
           
