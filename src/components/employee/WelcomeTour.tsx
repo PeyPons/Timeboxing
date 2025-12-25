@@ -318,18 +318,47 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
 
   return (
     <>
-      {/* Overlay oscuro */}
-      <div className="fixed inset-0 bg-black/70 z-[9998]" />
+      {/* Overlay con agujero usando SVG */}
+      <svg 
+        className="fixed inset-0 z-[9998] pointer-events-none"
+        style={{ width: '100%', height: '100%' }}
+      >
+        <defs>
+          <mask id="spotlight-mask">
+            {/* Fondo blanco = visible (oscuro) */}
+            <rect x="0" y="0" width="100%" height="100%" fill="white" />
+            {/* Agujero negro = transparente (claro) */}
+            {highlightStyle && isReady && (
+              <rect 
+                x={(highlightStyle.left as number) - 4}
+                y={(highlightStyle.top as number) - 4}
+                width={(highlightStyle.width as number) + 8}
+                height={(highlightStyle.height as number) + 8}
+                rx="12"
+                fill="black"
+              />
+            )}
+          </mask>
+        </defs>
+        <rect 
+          x="0" y="0" 
+          width="100%" height="100%" 
+          fill="rgba(0,0,0,0.75)" 
+          mask="url(#spotlight-mask)"
+        />
+      </svg>
 
-      {/* Highlight del elemento actual */}
+      {/* Borde del highlight (separado del overlay) */}
       {highlightStyle && isReady && (
         <div
-          className="pointer-events-none rounded-xl transition-all duration-300 ease-out"
+          className="fixed pointer-events-none rounded-xl z-[9999]"
           style={{
-            ...highlightStyle,
-            border: '3px solid #6366f1',
-            boxShadow: '0 0 0 4px rgba(99, 102, 241, 0.3), 0 0 20px rgba(99, 102, 241, 0.4)',
-            background: 'rgba(255, 255, 255, 0.1)'
+            top: (highlightStyle.top as number) - 4,
+            left: (highlightStyle.left as number) - 4,
+            width: (highlightStyle.width as number) + 8,
+            height: (highlightStyle.height as number) + 8,
+            border: '3px solid #818cf8',
+            boxShadow: '0 0 0 4px rgba(129, 140, 248, 0.3), 0 0 30px rgba(129, 140, 248, 0.5)',
           }}
         >
           {/* Pulso animado */}
