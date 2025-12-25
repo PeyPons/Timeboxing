@@ -41,13 +41,13 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const { 
     employees, 
     projects, 
-    allocations, // Necesitamos TODAS las allocations para buscar dependencias
+    allocations, // Necesario para buscar dependencias
     getEmployeeAllocationsForWeek, 
     getEmployeeLoadForWeek,
     getProjectById,
     addAllocation,
     updateAllocation,
-    deleteAllocation // Necesitamos la función de borrar del contexto
+    deleteAllocation // Necesario para borrar
   } = useApp();
 
   const [viewDate, setViewDate] = useState(() => viewDateContext || new Date(weekStart));
@@ -72,7 +72,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
   const [editHours, setEditHours] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editWeek, setEditWeek] = useState('');
-  const [editDependencyId, setEditDependencyId] = useState<string>('none'); // Nuevo estado para dependencia
+  const [editDependencyId, setEditDependencyId] = useState<string>('none'); // Estado dependencia
   
   const [openComboboxId, setOpenComboboxId] = useState<string | null>(null);
   const [editComboboxOpen, setEditComboboxOpen] = useState(false);
@@ -87,12 +87,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     projects.filter(p => p.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
   [projects]);
 
-  // Lista de tareas candidatas para ser dependencia (mismo proyecto, no completadas)
+  // Lista de tareas candidatas para dependencia (mismo proyecto, no completadas)
   const availableDependencies = useMemo(() => {
       if (!editProjectId) return [];
       return allocations.filter(a => 
           a.projectId === editProjectId && 
-          a.id !== editingAllocation?.id && // No depender de sí misma
+          a.id !== editingAllocation?.id && 
           a.status !== 'completed'
       );
   }, [editProjectId, allocations, editingAllocation]);
@@ -145,7 +145,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
         weekStartDate: editWeek,
         hoursAssigned: parseFloat(editHours),
         description: editDescription,
-        dependencyId: editDependencyId === 'none' ? undefined : editDependencyId // Guardar dependencia
+        dependencyId: editDependencyId === 'none' ? undefined : editDependencyId // Guardar
       });
     } else {
       newTasks.forEach(task => {
@@ -197,7 +197,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
     setEditHours(allocation.hoursAssigned.toString());
     setEditDescription(allocation.description || '');
     setEditWeek(allocation.weekStartDate);
-    setEditDependencyId(allocation.dependencyId || 'none'); // Cargar dependencia existente
+    setEditDependencyId(allocation.dependencyId || 'none'); // Cargar
     setIsFormOpen(true);
   };
 
@@ -232,7 +232,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full sm:max-w-[95vw] overflow-y-auto px-6 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-xl border-l shadow-2xl pt-10">
           <SheetHeader className="pb-6 border-b mb-6 space-y-4">
-            {/* ... Header (sin cambios) ... */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                     <div className="h-14 w-14 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-2xl shadow-sm border border-indigo-200">
@@ -293,6 +292,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
 
                 return (
                     <div key={weekStr} className={cn("flex flex-col gap-3 p-3 rounded-xl border bg-card transition-all h-full min-h-[300px]", isCurrent ? "ring-2 ring-indigo-500 ring-offset-2 shadow-lg scale-[1.01]" : "hover:border-indigo-200 hover:shadow-md")}>
+                        {/* HEADER SEMANA */}
                         <div className="flex flex-col gap-2 pb-2 border-b">
                             <div className="flex items-center justify-between">
                                 <span className="font-bold text-sm text-foreground/80 uppercase tracking-wider">Semana {index + 1}</span>
@@ -336,6 +336,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                             </div>
                         </div>
 
+                        {/* LISTA TAREAS */}
                         <div className="flex-1 overflow-y-auto max-h-[60vh] space-y-3 pr-1 custom-scrollbar">
                             {weekAllocations.length === 0 ? (
                                 <div className="h-24 flex flex-col items-center justify-center text-muted-foreground/30 text-sm italic border-2 border-dashed rounded-lg bg-slate-50/50">
@@ -363,6 +364,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                 const real = alloc.hoursActual || 0;
                                                 const computed = alloc.hoursComputed || 0;
                                                 const gain = computed - real;
+                                                // Mostrar si depende de algo
                                                 const depTask = alloc.dependencyId ? allocations.find(a => a.id === alloc.dependencyId) : null;
 
                                                 return (
@@ -391,11 +393,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                             {alloc.taskName || 'Tarea'}
                                                                         </span>
                                                                         
-                                                                        {/* MOSTRAR DEPENDENCIA EN LA TARJETA */}
                                                                         {depTask && (
                                                                             <div className="flex items-center gap-1 mt-0.5 text-[9px] text-amber-600 bg-amber-50 px-1 rounded w-fit border border-amber-100">
                                                                                 <LinkIcon className="w-2.5 h-2.5" />
-                                                                                <span>Dep: {depTask.taskName}</span>
+                                                                                <span className="truncate max-w-[100px]">Dep: {depTask.taskName}</span>
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -524,25 +525,25 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                     <Input placeholder="Ej: Maquetación, Diseño..." value={editTaskName} onChange={(e) => setEditTaskName(e.target.value)} />
                 </div>
                 
-                {/* SECCIÓN DE DEPENDENCIAS (NUEVO) */}
+                {/* SELECTOR DEPENDENCIA */}
                 <div className="space-y-2">
                     <Label className="flex items-center gap-2">
                         <LinkIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                        Depende de... (Bloqueante)
+                        Bloqueado por / Depende de (Opcional)
                     </Label>
                     <Select value={editDependencyId} onValueChange={setEditDependencyId} disabled={!editProjectId}>
-                        <SelectTrigger>
-                            <SelectValue placeholder={!editProjectId ? "Elige proyecto primero" : "Selecciona tarea previa..."} />
+                        <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Sin dependencia" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="none">-- Sin dependencia --</SelectItem>
+                            <SelectItem value="none">-- Ninguna --</SelectItem>
                             {availableDependencies.map(dep => {
                                 const owner = employees.find(e => e.id === dep.employeeId);
                                 return (
-                                    <SelectItem key={dep.id} value={dep.id}>
+                                    <SelectItem key={dep.id} value={dep.id} className="text-xs">
                                         {dep.taskName} <span className="text-muted-foreground">({owner?.name})</span>
                                     </SelectItem>
-                                );
+                                )
                             })}
                         </SelectContent>
                     </Select>
@@ -573,7 +574,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 </div>
               </div>
             ) : (
-              // Vista de creación múltiple (Sin cambios mayores, no suele tener dependencias complejas)
               <div className="space-y-3 mt-4">
                 <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
                     <div className="flex-1 pl-1">Proyecto</div>
@@ -586,7 +586,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
                     {newTasks.map((task) => (
                         <div key={task.id} className="flex gap-2 items-start animate-in fade-in slide-in-from-top-1 duration-200">
-                            {/* ... (código existente de filas) ... */}
+                            {/* ... (Filas de creación múltiple sin cambios) ... */}
                             <div className="flex-1 min-w-0">
                                 <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
                                     <PopoverTrigger asChild>
@@ -657,10 +657,10 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
               </div>
             )}
           </div>
-          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t flex justify-between items-center w-full sm:justify-between">
-            {/* BOTÓN ELIMINAR (Solo en edición) */}
+          <DialogFooter className="p-6 pt-2 bg-muted/10 border-t flex justify-between sm:justify-between items-center w-full">
+            {/* BOTÓN ELIMINAR */}
             {editingAllocation && (
-                <Button variant="destructive" size="sm" onClick={handleDeleteAllocation} className="bg-red-100 text-red-600 hover:bg-red-200 border-red-200 hover:border-red-300">
+                <Button variant="ghost" size="sm" onClick={handleDeleteAllocation} className="text-red-500 hover:text-red-700 hover:bg-red-50">
                     <Trash2 className="w-4 h-4 mr-2" /> Eliminar
                 </Button>
             )}
