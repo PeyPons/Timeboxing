@@ -16,14 +16,21 @@ import { Label } from '@/components/ui/label';
 import { 
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter 
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, PlusCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, PlusCircle, Clock } from 'lucide-react';
 import { startOfMonth, endOfMonth, max, min, format, startOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Employee } from '@/types';
 import { toast } from 'sonner';
 
+// Nombre fijo del proyecto interno (sin cliente)
+const INTERNAL_PROJECT_NAME = 'Gestiones internas';
+
 export default function EmployeeDashboard() {
-  const { employees, allocations, absences, teamEvents, projects, addAllocation, isLoading: isGlobalLoading, getEmployeeMonthlyLoad } = useApp();
+  const { 
+    employees, allocations, absences, teamEvents, projects, 
+    addAllocation, addProject, isLoading: isGlobalLoading, getEmployeeMonthlyLoad 
+  } = useApp();
+  
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [myEmployeeProfile, setMyEmployeeProfile] = useState<Employee | null>(null);
   
@@ -35,10 +42,10 @@ export default function EmployeeDashboard() {
   const [showAbsences, setShowAbsences] = useState(false);
   const [isAddingExtra, setIsAddingExtra] = useState(false);
 
-  // Estados Formulario Tarea Extra
+  // Estados Formulario Tarea Extra (SIMPLIFICADO)
   const [extraTaskName, setExtraTaskName] = useState('');
-  const [extraEstimated, setExtraEstimated] = useState('1'); 
-  const [extraReal, setExtraReal] = useState('0');
+  const [extraHours, setExtraHours] = useState('1');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   useEffect(() => {
     const checkUserLink = async () => {
@@ -57,41 +64,98 @@ export default function EmployeeDashboard() {
     if (!isGlobalLoading) checkUserLink();
   }, [employees, isGlobalLoading]);
 
-  // Lógica para Tarea Extra (Interna)
+  // Buscar o preparar para crear el proyecto interno
   const internalProject = useMemo(() => {
-      return projects.find(p => 
-          p.name.toLowerCase().includes('interno') || 
-          p.name.toLowerCase().includes('gestión')
-      ) || projects[0]; 
+      return projects.find(p => p.name === INTERNAL_PROJECT_NAME);
   }, [projects]);
+
+  // Función para obtener o crear el proyecto interno
+  const getOrCreateInternalProject = async (): Promise<string | null> => {
+      // Si ya existe, retornamos su ID
+      if (internalProject) {
+          return internalProject.id;
+      }
+
+      // Si no existe, lo creamos
+      setIsCreatingProject(true);
+      try {
+          const { data, error } = await supabase
+              .from('projects')
+              .insert({
+                  name: INTERNAL_PROJECT_NAME,
+                  client_id: null, // Sin cliente asociado
+                  status: 'active',
+                  budget_hours: 9999, // Sin límite práctico
+                  minimum_hours: 0
+              })
+              .select()
+              .single();
+
+          if (error) throw error;
+
+          // Actualizamos el estado local via refetch o añadimos manualmente
+          if (data) {
+              // Forzar recarga para que el contexto se actualice
+              // Alternativa: llamar addProject pero ya lo hemos insertado directamente
+              toast.success('Proyecto "Gestiones internas" creado');
+              return data.id;
+          }
+          return null;
+      } catch (error) {
+          console.error('Error creando proyecto interno:', error);
+          toast.error('Error al crear proyecto interno');
+          return null;
+      } finally {
+          setIsCreatingProject(false);
+      }
+  };
 
   const handleAddExtraTask = async () => {
       if (!myEmployeeProfile) return;
-      if (!extraTaskName) { toast.error("Pon un nombre a la tarea"); return; }
-      if (!internalProject) { toast.error("No hay proyectos disponibles."); return; }
+      if (!extraTaskName.trim()) { 
+          toast.error("Escribe un nombre para la tarea"); 
+          return; 
+      }
+      
+      const hours = Number(extraHours);
+      if (isNaN(hours) || hours <= 0) {
+          toast.error("Las horas deben ser mayores a 0");
+          return;
+      }
 
       try {
-          // CORRECCIÓN CLAVE: Calcular el Lunes de la semana actual para que salga en el planificador
+          // Obtener o crear el proyecto interno
+          const projectId = await getOrCreateInternalProject();
+          
+          if (!projectId) {
+              toast.error("No se pudo obtener el proyecto interno");
+              return;
+          }
+
+          // Calcular el Lunes de la semana actual
           const today = new Date();
           const mondayOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
           const formattedDate = format(mondayOfCurrentWeek, 'yyyy-MM-dd');
 
+          // Crear la asignación con el mismo valor en los 3 campos de horas
           await addAllocation({
-              projectId: internalProject.id,
+              projectId: projectId,
               employeeId: myEmployeeProfile.id,
-              weekStartDate: formattedDate, // Guardamos con fecha lunes
-              hoursAssigned: Number(extraEstimated), 
-              hoursActual: Number(extraReal),       
-              hoursComputed: 0,
-              taskName: extraTaskName,
-              status: 'active', // Directamente activa
-              description: 'Tarea rápida añadida desde Dashboard'
+              weekStartDate: formattedDate,
+              hoursAssigned: hours,    // Estimado
+              hoursActual: hours,      // Real
+              hoursComputed: hours,    // Computado
+              taskName: extraTaskName.trim(),
+              status: 'completed',     // Directamente completada
+              description: 'Gestión interna'
           });
           
-          toast.success("Tarea añadida al planificador");
+          toast.success("Tarea registrada correctamente");
           setIsAddingExtra(false);
-          // Reset
-          setExtraTaskName(''); setExtraEstimated('1'); setExtraReal('0');
+          
+          // Reset del formulario
+          setExtraTaskName('');
+          setExtraHours('1');
       } catch (error) {
           console.error(error);
           toast.error("Error al crear tarea");
@@ -121,7 +185,7 @@ export default function EmployeeDashboard() {
               <p className="text-slate-500">Panel de Control Operativo</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {/* BOTÓN TAREA EXTRA (MOVIDO AQUÍ) */}
+            {/* BOTÓN TAREA EXTRA (SIMPLIFICADO) */}
             <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
                 <DialogTrigger asChild>
                     <Button className="gap-2 bg-slate-900 text-white hover:bg-slate-800 shadow-sm">
@@ -129,15 +193,61 @@ export default function EmployeeDashboard() {
                     </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
-                    <DialogHeader><DialogTitle>Añadir Tarea Rápida</DialogTitle><DialogDescription>Se asignará a <strong>{internalProject?.name}</strong> en la semana actual.</DialogDescription></DialogHeader>
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Clock className="h-5 w-5 text-indigo-600" />
+                            Registrar Gestión Interna
+                        </DialogTitle>
+                        <DialogDescription>
+                            Se guardará en <strong className="text-slate-700">{INTERNAL_PROJECT_NAME}</strong> con las horas indicadas.
+                        </DialogDescription>
+                    </DialogHeader>
                     <div className="grid gap-4 py-4">
-                        <div className="space-y-2"><Label>Tarea</Label><Input value={extraTaskName} onChange={e => setExtraTaskName(e.target.value)} autoFocus placeholder="Ej: Llamada cliente urgente..." /></div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2"><Label>Estimado (h)</Label><Input type="number" step="0.5" value={extraEstimated} onChange={e => setExtraEstimated(e.target.value)} /></div>
-                            <div className="space-y-2"><Label>Real (h)</Label><Input type="number" step="0.5" value={extraReal} onChange={e => setExtraReal(e.target.value)} /></div>
+                        <div className="space-y-2">
+                            <Label htmlFor="taskName">¿Qué hiciste?</Label>
+                            <Input 
+                                id="taskName"
+                                value={extraTaskName} 
+                                onChange={e => setExtraTaskName(e.target.value)} 
+                                autoFocus 
+                                placeholder="Ej: Llamada cliente, Reunión interna, Formación..." 
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="hours">Tiempo dedicado (horas)</Label>
+                            <div className="relative">
+                                <Input 
+                                    id="hours"
+                                    type="number" 
+                                    step="0.5" 
+                                    min="0.5"
+                                    value={extraHours} 
+                                    onChange={e => setExtraHours(e.target.value)} 
+                                    className="pr-8"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">h</span>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                                Este tiempo se registrará como estimado, real y computado.
+                            </p>
                         </div>
                     </div>
-                    <DialogFooter><Button variant="outline" onClick={() => setIsAddingExtra(false)}>Cancelar</Button><Button onClick={handleAddExtraTask}>Añadir al Planificador</Button></DialogFooter>
+                    <DialogFooter>
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setIsAddingExtra(false)}
+                            disabled={isCreatingProject}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button 
+                            onClick={handleAddExtraTask}
+                            disabled={isCreatingProject || !extraTaskName.trim()}
+                            className="bg-indigo-600 hover:bg-indigo-700"
+                        >
+                            {isCreatingProject ? 'Creando...' : 'Registrar'}
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 
