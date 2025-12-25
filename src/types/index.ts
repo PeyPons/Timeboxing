@@ -11,7 +11,7 @@ export interface WorkSchedule {
 export interface Employee {
   id: string;
   name: string;
-  email?: string; // Campo añadido para el Login
+  email?: string;
   role: string;
   avatarUrl?: string;
   defaultWeeklyCapacity: number;
@@ -24,7 +24,7 @@ export interface Employee {
 export interface TeamEvent {
   id: string;
   name: string;
-  date: string; // ISO date
+  date: string;
   hoursReduction: number;
   affectedEmployeeIds: string[] | 'all';
   description?: string;
@@ -67,7 +67,7 @@ export interface Allocation {
   status: 'planned' | 'completed' | 'active';
   description?: string;
   taskName?: string;
-  dependencyId?: string;
+  dependencyId?: string; // <--- NUEVO CAMPO
 }
 
 export type LoadStatus = 'empty' | 'healthy' | 'warning' | 'overload';
