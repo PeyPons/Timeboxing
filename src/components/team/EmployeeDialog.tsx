@@ -9,7 +9,7 @@ import { Employee, WorkSchedule } from '@/types';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Briefcase, CalendarClock, Target, Mail, Lock, Clock, ShieldCheck } from 'lucide-react';
+import { Briefcase, CalendarClock, Target, Mail, Lock, Clock, ShieldCheck, Hash } from 'lucide-react';
 
 import { ScheduleEditor } from './ScheduleEditor';
 import { ProjectsSheet } from './ProjectsSheet';
@@ -36,6 +36,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
   const [department, setDepartment] = useState('Development');
   const [capacity, setCapacity] = useState(40);
   const [hourlyRate, setHourlyRate] = useState(0);
+  const [crmUserId, setCrmUserId] = useState<number | ''>('');  // NUEVO: Estado para CRM User ID
   
   // ESTADO CRÍTICO: Aquí guardamos los cambios del horario
   const [workSchedule, setWorkSchedule] = useState<WorkSchedule>(defaultSchedule);
@@ -55,6 +56,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setDepartment(employeeToEdit.department || 'Development');
         setCapacity(employeeToEdit.defaultWeeklyCapacity);
         setHourlyRate(employeeToEdit.hourlyRate || 0);
+        setCrmUserId(employeeToEdit.crmUserId || '');  // NUEVO: Cargar CRM User ID
         // Cargamos el horario del empleado o el default
         setWorkSchedule(employeeToEdit.workSchedule || defaultSchedule);
       } else {
@@ -65,6 +67,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setDepartment('Development');
         setCapacity(40);
         setHourlyRate(0);
+        setCrmUserId('');  // NUEVO: Reset CRM User ID
         setWorkSchedule(defaultSchedule);
       }
     }
@@ -105,6 +108,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
             department,
             defaultWeeklyCapacity: Number(capacity),
             hourlyRate: Number(hourlyRate),
+            crmUserId: crmUserId !== '' ? Number(crmUserId) : undefined,  // NUEVO: Enviar CRM User ID
             // IMPORTANTE: Enviamos el estado local 'workSchedule' que tiene los cambios
             workSchedule: workSchedule, 
             isActive: true,
@@ -175,6 +179,28 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label htmlFor="capacity">Capacidad (h/sem)</Label><Input id="capacity" type="number" value={capacity} onChange={e => setCapacity(Number(e.target.value))} /></div>
                   <div className="grid gap-2"><Label htmlFor="rate">Coste/Hora (€)</Label><Input id="rate" type="number" value={hourlyRate} onChange={e => setHourlyRate(Number(e.target.value))} /></div>
+                </div>
+
+                {/* NUEVO: Campo CRM User ID */}
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Hash className="w-4 h-4 text-blue-600"/>
+                        <span className="text-sm font-semibold text-blue-800">Integración CRM</span>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="crmUserId" className="text-blue-700">ID Usuario CRM</Label>
+                        <Input 
+                            id="crmUserId" 
+                            type="number" 
+                            value={crmUserId} 
+                            onChange={e => setCrmUserId(e.target.value ? Number(e.target.value) : '')} 
+                            placeholder="Ej: 33"
+                            className="bg-white"
+                        />
+                        <p className="text-xs text-blue-600">
+                            Este ID se usa para exportar tareas al CRM. Déjalo vacío si no aplica.
+                        </p>
+                    </div>
                 </div>
 
                 <div className="flex justify-end pt-4">
