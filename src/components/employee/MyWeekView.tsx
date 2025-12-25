@@ -29,7 +29,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
   
   const today = new Date();
   const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
-  
+  const [dependencyId, setDependencyId] = useState<string>('none');
   const mondayDate = startOfCurrentWeek;
   const fridayDate = addDays(startOfCurrentWeek, 4);
   const weekLabel = `Semana del ${format(mondayDate, 'd', { locale: es })} al ${format(fridayDate, 'd ' + (mondayDate.getMonth() !== fridayDate.getMonth() ? 'MMM' : ''), { locale: es })} de ${format(fridayDate, 'MMMM', { locale: es })}`;
