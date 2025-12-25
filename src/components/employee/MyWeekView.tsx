@@ -5,36 +5,50 @@ import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { format, startOfWeek, addDays, isSameWeek, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar, Briefcase, AlertCircle, CheckCircle2, Circle } from 'lucide-react';
+import { Calendar, Briefcase, AlertCircle, CheckCircle2, Circle, PlusCircle, Save } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter
+} from "@/components/ui/dialog";
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface MyWeekViewProps {
   employeeId: string;
 }
 
 export function MyWeekView({ employeeId }: MyWeekViewProps) {
-  const { allocations, projects, clients, updateAllocation } = useApp();
+  const { allocations, projects, clients, updateAllocation, addAllocation } = useApp();
   
   const today = new Date();
   const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
   
-  // RANGO DE FECHAS: Mostramos Lunes a Viernes (Como solicitaste, ignoramos Finde)
   const mondayDate = startOfCurrentWeek;
   const fridayDate = addDays(startOfCurrentWeek, 4);
   const weekLabel = `Semana del ${format(mondayDate, 'd', { locale: es })} al ${format(fridayDate, 'd ' + (mondayDate.getMonth() !== fridayDate.getMonth() ? 'MMM' : ''), { locale: es })} de ${format(fridayDate, 'MMMM', { locale: es })}`;
 
-  // FILTRADO DE TAREAS
   const myAllocations = allocations.filter(a => {
     const allocDate = parseISO(a.weekStartDate);
     return a.employeeId === employeeId && isSameWeek(allocDate, today, { weekStartsOn: 1 });
   });
 
-  // Clasificamos en Pendientes y Completadas
   const pendingAllocations = myAllocations.filter(a => a.status !== 'completed');
   const completedAllocations = myAllocations.filter(a => a.status === 'completed');
 
-  // Estados locales para edición
   const [editingValues, setEditingValues] = useState<Record<string, string>>({});
+
+  // ESTADOS PARA TAREA EXTRA
+  const [isAddingExtra, setIsAddingExtra] = useState(false);
+  const [extraProjectId, setExtraProjectId] = useState('');
+  const [extraTaskName, setExtraTaskName] = useState('');
+  const [extraHours, setExtraHours] = useState('1');
 
   const handleUpdateHours = async (allocation: any, newValue: string) => {
       const numValue = parseFloat(newValue);
@@ -45,7 +59,6 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
               await updateAllocation({
                   ...allocation,
                   hoursActual: numValue,
-                  // Reactivamos si pone horas y estaba solo planeada
                   status: allocation.status === 'planned' && numValue > 0 ? 'active' : allocation.status
               });
               toast.success("Horas registradas");
@@ -68,42 +81,66 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
       }
   };
 
-  // Componente Fila de Tarea (Reutilizable)
+  const handleAddExtraTask = async () => {
+      if (!extraProjectId || !extraTaskName) {
+          toast.error("Rellena proyecto y nombre");
+          return;
+      }
+
+      try {
+          await addAllocation({
+              projectId: extraProjectId,
+              employeeId: employeeId,
+              weekStartDate: startOfCurrentWeek.toISOString(),
+              hoursAssigned: 0, // No estaba planeada
+              hoursActual: Number(extraHours),
+              hoursComputed: 0, // No se computó
+              taskName: extraTaskName,
+              status: 'active', // Entra directa como activa
+              description: 'Tarea añadida manualmente por el empleado'
+          });
+          toast.success("Tarea imprevista registrada");
+          setIsAddingExtra(false);
+          setExtraProjectId('');
+          setExtraTaskName('');
+          setExtraHours('1');
+      } catch (error) {
+          console.error(error);
+          toast.error("Error al crear tarea");
+      }
+  };
+
   const TaskRow = ({ task, isCompleted = false }: { task: any, isCompleted?: boolean }) => {
       const project = projects.find(p => p.id === task.projectId);
       const client = clients.find(c => c.id === project?.clientId);
       const assigned = Number(task.hoursAssigned);
       const actual = editingValues[task.id] !== undefined ? Number(editingValues[task.id]) : Number(task.hoursActual || 0);
       
-      // Cálculo de % basado en horas asignadas vs reales
-      const percent = assigned > 0 ? Math.min(100, (actual / assigned) * 100) : 0;
-      const isOverBudget = actual > assigned;
+      const percent = assigned > 0 ? Math.min(100, (actual / assigned) * 100) : (actual > 0 ? 100 : 0);
+      const isOverBudget = assigned > 0 && actual > assigned;
+      const isUnplanned = assigned === 0;
 
       return (
-          <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white border rounded-lg shadow-sm transition-all ${isCompleted ? 'opacity-60 bg-slate-50' : 'hover:border-indigo-300'}`}>
+          <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white border rounded-lg shadow-sm transition-all ${isCompleted ? 'opacity-60 bg-slate-50' : 'hover:border-indigo-300'} ${isUnplanned ? 'border-amber-200 bg-amber-50/30' : ''}`}>
               
-              {/* IZQUIERDA: Check + Info */}
               <div className="flex items-start gap-3 flex-1 mb-3 sm:mb-0">
                   <button onClick={() => toggleComplete(task)} className="mt-1 text-slate-400 hover:text-emerald-500 transition-colors" title={isCompleted ? "Marcar como pendiente" : "Marcar como completada"}>
                       {isCompleted ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Circle className="w-5 h-5" />}
                   </button>
                   <div>
                       <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="outline" className="text-[10px] h-5 bg-slate-50 text-slate-500 border-slate-200">
+                          <Badge variant="outline" className="text-[10px] h-5 bg-white text-slate-500 border-slate-200">
                               {client?.name || 'Interno'}
                           </Badge>
                           <span className="font-semibold text-slate-700 text-sm">{project?.name}</span>
+                          {isUnplanned && <Badge variant="secondary" className="text-[9px] h-4 bg-amber-100 text-amber-700 hover:bg-amber-100">Extra</Badge>}
                       </div>
                       <p className="text-sm text-slate-600 font-medium">
                           {task.taskName || "Asignación general"}
                       </p>
-                      {task.description && (
-                          <p className="text-xs text-slate-400 mt-1 line-clamp-1">{task.description}</p>
-                      )}
                   </div>
               </div>
 
-              {/* DERECHA: Input de Horas y Barra */}
               <div className="flex items-center gap-4 sm:border-l sm:pl-4 border-slate-100">
                   <div className="flex flex-col items-end min-w-[100px]">
                       <div className="flex items-center gap-2 mb-1">
@@ -127,7 +164,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
                   <div className="hidden sm:block w-24">
                       <Progress 
                           value={percent} 
-                          className={`h-2 ${isOverBudget ? '[&>div]:bg-red-500' : isCompleted ? '[&>div]:bg-emerald-500' : '[&>div]:bg-indigo-600'}`} 
+                          className={`h-2 ${isOverBudget ? '[&>div]:bg-red-500' : isCompleted ? '[&>div]:bg-emerald-500' : isUnplanned ? '[&>div]:bg-amber-500' : '[&>div]:bg-indigo-600'}`} 
                       />
                   </div>
               </div>
@@ -138,13 +175,62 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
   return (
     <div className="space-y-8">
       
-      {/* CABECERA SEMANA LUNES-VIERNES */}
-      <div className="flex items-center gap-2 pb-4 border-b border-slate-100">
-          <Calendar className="w-5 h-5 text-indigo-600" />
-          <h2 className="text-lg font-bold text-slate-900 capitalize">{weekLabel}</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-indigo-600" />
+            <h2 className="text-lg font-bold text-slate-900 capitalize">{weekLabel}</h2>
+          </div>
+
+          <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant="secondary" className="text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200">
+                    <PlusCircle className="w-4 h-4 mr-2" /> Fichar Tarea Extra
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Añadir Tarea Imprevista</DialogTitle>
+                    <DialogDescription>
+                        Registra una tarea que no estaba planificada en tu agenda semanal.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="space-y-2">
+                        <Label>Proyecto</Label>
+                        <Select onValueChange={setExtraProjectId} value={extraProjectId}>
+                            <SelectTrigger><SelectValue placeholder="Selecciona proyecto..." /></SelectTrigger>
+                            <SelectContent>
+                                {projects.filter(p => p.status === 'active').map(p => (
+                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Nombre de la Tarea</Label>
+                        <Input 
+                            placeholder="Ej: Hotfix urgente, Reunión imprevista..." 
+                            value={extraTaskName} 
+                            onChange={e => setExtraTaskName(e.target.value)} 
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Horas Dedicadas (Aprox)</Label>
+                        <Input 
+                            type="number" 
+                            step="0.5" 
+                            value={extraHours} 
+                            onChange={e => setExtraHours(e.target.value)} 
+                        />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button onClick={handleAddExtraTask} className="bg-indigo-600 hover:bg-indigo-700">Guardar</Button>
+                </DialogFooter>
+            </DialogContent>
+          </Dialog>
       </div>
 
-      {/* 1. TAREAS PENDIENTES */}
       <div className="space-y-4">
           <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
               <Briefcase className="w-4 h-4" /> En Curso / Pendientes ({pendingAllocations.length})
@@ -152,7 +238,7 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
           
           {pendingAllocations.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <p className="text-slate-500 text-sm">¡Todo limpio! No tienes tareas pendientes para esta semana.</p>
+                  <p className="text-slate-500 text-sm">¡Todo limpio! No tienes tareas pendientes.</p>
               </div>
           ) : (
               <div className="grid gap-3">
@@ -163,7 +249,6 @@ export function MyWeekView({ employeeId }: MyWeekViewProps) {
           )}
       </div>
 
-      {/* 2. TAREAS COMPLETADAS */}
       {completedAllocations.length > 0 && (
           <div className="space-y-4 pt-4">
               <h3 className="text-sm font-semibold text-emerald-600 uppercase tracking-wider flex items-center gap-2 opacity-80">
