@@ -159,7 +159,7 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
       <CardHeader className="pb-3 border-b bg-slate-50/50">
         <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
           <Users className="w-4 h-4 text-indigo-500" />
-          Estado de Dependencias (Mes Actual)
+          Dependencias
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto max-h-[300px] p-4 space-y-4">
@@ -172,7 +172,7 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
         {incomingDependencies.length > 0 && (
             <div>
                 <h4 className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center gap-1">
-                    <LinkIcon className="w-3 h-3"/> Dependencias de entrada
+                    <LinkIcon className="w-3 h-3"/> DEPENDENCIAS
                 </h4>
                 <div className="space-y-2">
                     {incomingDependencies.map((item, i) => (
