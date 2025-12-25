@@ -3,6 +3,7 @@ import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { MyWeekView } from '@/components/employee/MyWeekView';
 import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/DashboardWidgets'; 
+import { WelcomeTour, useWelcomeTour } from '@/components/employee/WelcomeTour';
 import { Card } from '@/components/ui/card';
 import { EmployeeRow } from '@/components/planner/EmployeeRow'; 
 import { AllocationSheet } from '@/components/planner/AllocationSheet';
@@ -19,7 +20,10 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { 
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter 
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, Clock, Plus, X, Check, ListPlus, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { 
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator 
+} from "@/components/ui/dropdown-menu";
+import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, Clock, Plus, X, Check, ListPlus, AlertTriangle, CheckCircle2, HelpCircle, RotateCcw } from 'lucide-react';
 import { startOfMonth, endOfMonth, max, min, format, startOfWeek, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Employee, Project } from '@/types';
@@ -75,6 +79,9 @@ export default function EmployeeDashboard() {
   // Estados Formulario Añadir Tareas
   const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
   const [openComboboxId, setOpenComboboxId] = useState<string | null>(null);
+
+  // Hook del Welcome Tour
+  const { showTour, startTour, resetTour, isTourCompleted } = useWelcomeTour();
 
   useEffect(() => {
     const checkUserLink = async () => {
@@ -395,6 +402,7 @@ export default function EmployeeDashboard() {
             <Button 
               onClick={openAddTasksDialog}
               className="gap-2 bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+              data-tour="add-tasks"
             >
               <ListPlus className="h-4 w-4" /> Añadir Tareas
             </Button>
@@ -402,7 +410,7 @@ export default function EmployeeDashboard() {
             {/* BOTÓN GESTIÓN INTERNA */}
             <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
                 <DialogTrigger asChild>
-                    <Button variant="outline" className="gap-2 border-slate-300 hover:bg-slate-50">
+                    <Button variant="outline" className="gap-2 border-slate-300 hover:bg-slate-50" data-tour="internal-tasks">
                         <Clock className="h-4 w-4" /> Gestión Interna
                     </Button>
                 </DialogTrigger>
@@ -466,12 +474,27 @@ export default function EmployeeDashboard() {
 
             <div className="h-9 w-px bg-slate-200 mx-1 hidden md:block"></div>
 
-            <Button variant="outline" onClick={() => setShowGoals(true)} className="gap-2 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100">
+            <Button variant="outline" onClick={() => setShowGoals(true)} className="gap-2 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" data-tour="goals">
                 <TrendingUp className="h-4 w-4" /> Objetivos
             </Button>
-            <Button variant="outline" onClick={() => setShowAbsences(true)} className="gap-2 text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100">
+            <Button variant="outline" onClick={() => setShowAbsences(true)} className="gap-2 text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" data-tour="absences">
                 <Calendar className="h-4 w-4" /> Ausencias
             </Button>
+
+            {/* MENÚ DE AYUDA */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-400 hover:text-slate-600">
+                  <HelpCircle className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={resetTour} className="gap-2">
+                  <RotateCcw className="h-4 w-4" />
+                  Ver tour de nuevo
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
       </div>
 
@@ -489,7 +512,7 @@ export default function EmployeeDashboard() {
       </div>
 
       {/* 3. RESUMEN TIPO PLANIFICADOR */}
-      <Card className="overflow-hidden border-slate-200 shadow-sm bg-white">
+      <Card className="overflow-hidden border-slate-200 shadow-sm bg-white" data-tour="calendar">
           <div className="overflow-x-auto custom-scrollbar">
             <div style={{ minWidth: '1000px' }}>
                 <div className="grid bg-slate-50 border-b" style={{ gridTemplateColumns: gridTemplate }}>
@@ -532,12 +555,12 @@ export default function EmployeeDashboard() {
 
       {/* 4. WIDGETS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1"><PriorityInsights employeeId={myEmployeeProfile.id} /></div>
-          <div className="lg:col-span-2"><ProjectTeamPulse employeeId={myEmployeeProfile.id} /></div>
+          <div className="lg:col-span-1" data-tour="priority-widget"><PriorityInsights employeeId={myEmployeeProfile.id} /></div>
+          <div className="lg:col-span-2" data-tour="dependencies-widget"><ProjectTeamPulse employeeId={myEmployeeProfile.id} /></div>
       </div>
 
       {/* 5. LISTADO DE PROYECTOS (MENSUAL) */}
-      <div className="pt-4 border-t">
+      <div className="pt-4 border-t" data-tour="projects-summary">
           <h3 className="text-lg font-bold text-slate-800 mb-4 capitalize">
               Resumen de Proyectos: {getMonthName(currentMonth)}
           </h3>
@@ -727,6 +750,9 @@ export default function EmployeeDashboard() {
 
       {showGoals && <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={myEmployeeProfile.id} />}
       {showAbsences && <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={myEmployeeProfile.id} />}
+      
+      {/* WELCOME TOUR */}
+      <WelcomeTour forceShow={showTour} />
     </div>
   );
 }
