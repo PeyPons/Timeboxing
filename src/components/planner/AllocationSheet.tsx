@@ -177,9 +177,12 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       setTimeout(() => { setRecentlyToggled(prev => { const newSet = new Set(prev); newSet.delete(allocation.id); return newSet; }); }, 30000);
   };
 
+  // FUNCIÓN PARA ACTUALIZAR HORAS INLINE (Real y Computado)
   const updateInlineHours = (allocation: Allocation, field: 'hoursActual' | 'hoursComputed', value: string) => {
       const numValue = parseFloat(value) || 0;
-      if (allocation[field] !== numValue) { updateAllocation({ ...allocation, [field]: numValue }); }
+      if (allocation[field] !== numValue) { 
+          updateAllocation({ ...allocation, [field]: numValue }); 
+      }
   };
 
   const startEditFull = (allocation: Allocation) => {
@@ -335,8 +338,44 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <div className="flex items-center gap-1 mt-1.5">
-                                                                <Badge variant="secondary" className="text-[9px] h-4 px-1">EST {alloc.hoursAssigned}h</Badge>
+                                                            
+                                                            {/* BADGES DE HORAS: EST + REAL + COMP */}
+                                                            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                                                {/* Badge Estimado (siempre visible) */}
+                                                                <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                                                                    EST {alloc.hoursAssigned}h
+                                                                </Badge>
+                                                                
+                                                                {/* Inputs Real y Computado (solo si está completada) */}
+                                                                {isCompleted && (
+                                                                    <>
+                                                                        {/* Input REAL (azul) */}
+                                                                        <div className="flex items-center gap-0.5 bg-blue-100 text-blue-700 rounded px-1 h-4">
+                                                                            <span className="text-[9px] font-medium">Real:</span>
+                                                                            <Input
+                                                                                type="number"
+                                                                                step="0.5"
+                                                                                min="0"
+                                                                                defaultValue={alloc.hoursActual || 0}
+                                                                                onBlur={(e) => updateInlineHours(alloc, 'hoursActual', e.target.value)}
+                                                                                className="w-10 h-4 px-0.5 text-[9px] text-center border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-300 rounded"
+                                                                            />
+                                                                        </div>
+                                                                        
+                                                                        {/* Input COMPUTADO (verde) */}
+                                                                        <div className="flex items-center gap-0.5 bg-emerald-100 text-emerald-700 rounded px-1 h-4">
+                                                                            <span className="text-[9px] font-medium">Comp:</span>
+                                                                            <Input
+                                                                                type="number"
+                                                                                step="0.5"
+                                                                                min="0"
+                                                                                defaultValue={alloc.hoursComputed || 0}
+                                                                                onBlur={(e) => updateInlineHours(alloc, 'hoursComputed', e.target.value)}
+                                                                                className="w-10 h-4 px-0.5 text-[9px] text-center border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-emerald-300 rounded"
+                                                                            />
+                                                                        </div>
+                                                                    </>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
