@@ -1,139 +1,93 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { format, isSameMonth, parseISO, startOfMonth } from 'date-fns';
+import { format, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { CheckCircle2, PlusCircle, Link as LinkIcon, AlertOctagon, CheckCircle, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
-import { toast } from 'sonner';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter
-} from "@/components/ui/dialog";
-import { Label } from '@/components/ui/label';
+import { CheckCircle, TrendingUp, TrendingDown, Calendar, PieChart, Briefcase, AlertTriangle } from 'lucide-react';
 import { getWeeksForMonth } from '@/utils/dateUtils';
 
 interface MyWeekViewProps {
   employeeId: string;
-  viewDate: Date; // AHORA RECIBE LA FECHA DEL DASHBOARD
+  viewDate: Date;
 }
 
 export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
-  const { allocations, projects, clients, updateAllocation, addAllocation, employees } = useApp();
+  const { allocations, projects, clients, employees } = useApp();
   
-  // ETIQUETA DE MES
   const monthLabel = format(viewDate, 'MMMM yyyy', { locale: es });
   
-  // OBTENER ALLOCATIONS DEL MES ENTERO
-  const myAllocations = allocations.filter(a => 
+  // 1. Filtrar Allocations del Mes
+  const monthlyAllocations = allocations.filter(a => 
     a.employeeId === employeeId && 
     (a.status === 'planned' || a.status === 'active' || a.status === 'completed') &&
-    isSameMonth(parseISO(a.weekStartDate), viewDate) // FILTRO POR MES
+    isSameMonth(parseISO(a.weekStartDate), viewDate)
   );
 
-  // Ordenar: Primero pendientes, luego completadas. Dentro de eso, por fecha.
-  const sortedAllocations = [...myAllocations].sort((a, b) => {
-      if (a.status === 'completed' && b.status !== 'completed') return 1;
-      if (a.status !== 'completed' && b.status === 'completed') return -1;
-      return a.weekStartDate.localeCompare(b.weekStartDate);
-  });
+  // 2. AGRUPAR POR PROYECTO (Lógica nueva)
+  const projectGroups = useMemo(() => {
+      const groups: Record<string, {
+          projectId: string;
+          projectName: string;
+          clientName: string;
+          totalEst: number;
+          totalReal: number;
+          totalComp: number;
+          taskCount: number;
+          completedCount: number;
+          blockingCount: number; // Tareas que este proyecto bloquea a otros
+      }> = {};
 
-  const [editingValues, setEditingValues] = useState<Record<string, string>>({});
+      monthlyAllocations.forEach(alloc => {
+          if (!groups[alloc.projectId]) {
+              const proj = projects.find(p => p.id === alloc.projectId);
+              const cli = clients.find(c => c.id === proj?.clientId);
+              groups[alloc.projectId] = {
+                  projectId: alloc.projectId,
+                  projectName: proj?.name || 'Sin Proyecto',
+                  clientName: cli?.name || 'Interno',
+                  totalEst: 0,
+                  totalReal: 0,
+                  totalComp: 0,
+                  taskCount: 0,
+                  completedCount: 0,
+                  blockingCount: 0
+              };
+          }
+          const g = groups[alloc.projectId];
+          g.totalEst += Number(alloc.hoursAssigned);
+          g.totalReal += Number(alloc.hoursActual || 0);
+          g.totalComp += Number(alloc.hoursComputed || 0);
+          g.taskCount += 1;
+          if (alloc.status === 'completed') g.completedCount += 1;
+          
+          // Verificar si esta tarea bloquea a alguien
+          const isBlocking = allocations.some(other => other.dependencyId === alloc.id && other.status !== 'completed');
+          if (isBlocking && alloc.status !== 'completed') g.blockingCount += 1;
+      });
 
-  const [isAddingExtra, setIsAddingExtra] = useState(false);
-  const [extraTaskName, setExtraTaskName] = useState('');
-  const [extraEstimated, setExtraEstimated] = useState('1'); 
-  const [extraReal, setExtraReal] = useState('0');
+      return Object.values(groups).sort((a, b) => b.totalEst - a.totalEst); // Ordenar por carga
+  }, [monthlyAllocations, projects, clients, allocations]);
 
-  const internalProject = useMemo(() => {
-      return projects.find(p => 
-          p.name.toLowerCase().includes('interno') || 
-          p.name.toLowerCase().includes('gestión')
-      ) || projects[0]; 
-  }, [projects]);
-
-  const handleUpdateHours = async (allocation: any, field: 'hoursActual' | 'hoursComputed', newValue: string) => {
-      const numValue = parseFloat(newValue);
-      if (isNaN(numValue) || numValue < 0) return;
-
-      if (numValue !== allocation[field]) {
-        try {
-            await updateAllocation({
-                ...allocation,
-                [field]: numValue,
-                status: allocation.status === 'planned' && numValue > 0 ? 'active' : allocation.status
-            });
-            toast.success("Horas actualizadas");
-            setEditingValues(prev => {
-                const newState = { ...prev };
-                delete newState[`${allocation.id}-${field}`];
-                return newState;
-            });
-        } catch (error) {
-            console.error(error);
-            toast.error("Error al guardar horas");
-        }
-      }
-  };
-
-  const handleAddExtraTask = async () => {
-      if (!extraTaskName) { toast.error("Debes poner un nombre a la tarea"); return; }
-      if (!internalProject) { toast.error("No hay proyectos disponibles."); return; }
-
-      try {
-          // Si estamos en el mes actual, usar hoy. Si no, usar el día 1 del mes seleccionado.
-          const today = new Date();
-          const targetDate = isSameMonth(today, viewDate) ? today : startOfMonth(viewDate);
-          const formattedDate = format(targetDate, 'yyyy-MM-dd');
-
-          await addAllocation({
-              projectId: internalProject.id,
-              employeeId: employeeId,
-              weekStartDate: formattedDate,
-              hoursAssigned: Number(extraEstimated), 
-              hoursActual: Number(extraReal),       
-              hoursComputed: 0,
-              taskName: extraTaskName,
-              status: 'active',
-              description: 'Tarea interna añadida manualmente'
-          });
-          toast.success("Tarea interna registrada");
-          setIsAddingExtra(false);
-          setExtraTaskName(''); setExtraEstimated('1'); setExtraReal('0');
-      } catch (error) {
-          console.error(error);
-          toast.error("Error al crear tarea");
-      }
-  };
-
-  // CÁLCULOS DE TOTALES MENSUALES
-  const totalAssigned = myAllocations.reduce((acc, curr) => acc + Number(curr.hoursAssigned), 0);
-  const totalDone = myAllocations.reduce((acc, curr) => acc + Number(curr.hoursActual || 0), 0);
+  // CÁLCULOS TOTALES (Header)
+  const totalAssigned = projectGroups.reduce((acc, g) => acc + g.totalEst, 0);
+  const totalDone = projectGroups.reduce((acc, g) => acc + g.totalReal, 0);
   
-  // Capacidad mensual aproximada (semanas * capacidad semanal)
   const me = employees.find(e => e.id === employeeId);
   const weeksCount = getWeeksForMonth(viewDate).length;
   const monthlyCapacity = (me?.defaultWeeklyCapacity || 40) * weeksCount;
-  
   const totalProgress = totalAssigned > 0 ? Math.min(100, (totalDone / totalAssigned) * 100) : 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       
       {/* 1. HEADER RESUMEN MENSUAL */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b pb-6">
         <div>
             <h2 className="text-2xl font-bold text-slate-900 capitalize">{monthLabel}</h2>
             <p className="text-slate-500 flex items-center gap-2 mt-1">
-                <Calendar className="w-4 h-4"/> Vista completa de tareas
+                <Calendar className="w-4 h-4"/> Rendimiento por Proyecto
             </p>
         </div>
         
@@ -157,123 +111,83 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                 </div>
                 <Progress value={totalProgress} className="h-2" />
             </div>
-
-            <div className="border-l pl-4 ml-2">
-                <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
-                    <DialogTrigger asChild><Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 shadow-sm"><PlusCircle className="w-4 h-4 mr-2" /> Tarea Extra</Button></DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                        <DialogHeader><DialogTitle>Fichar Tarea Interna</DialogTitle><DialogDescription>Se añadirá al mes de <strong>{monthLabel}</strong>.</DialogDescription></DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="space-y-2"><Label>Nombre de la Tarea</Label><Input value={extraTaskName} onChange={e => setExtraTaskName(e.target.value)} autoFocus /></div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2"><Label>Horas Estimadas</Label><Input type="number" step="0.5" value={extraEstimated} onChange={e => setExtraEstimated(e.target.value)} /></div>
-                                <div className="space-y-2"><Label>Horas Reales</Label><Input type="number" step="0.5" value={extraReal} onChange={e => setExtraReal(e.target.value)} /></div>
-                            </div>
-                        </div>
-                        <DialogFooter><Button variant="outline" onClick={() => setIsAddingExtra(false)}>Cancelar</Button><Button onClick={handleAddExtraTask} className="bg-indigo-600 hover:bg-indigo-700">Guardar</Button></DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            </div>
         </div>
       </div>
 
-      {/* 2. TARJETAS GRID (MENSUAL) */}
+      {/* 2. GRID DE PROYECTOS (AGRUPADOS) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {sortedAllocations.length === 0 ? (
-            <div className="col-span-full py-16 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200"><div className="text-slate-400">No hay tareas planificadas para este mes.</div></div>
+        {projectGroups.length === 0 ? (
+            <div className="col-span-full py-16 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                <Briefcase className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                <div className="text-slate-500 font-medium">Sin actividad</div>
+                <div className="text-slate-400 text-sm">No hay proyectos asignados este mes.</div>
+            </div>
         ) : (
-            sortedAllocations.map(task => {
-                const project = projects.find(p => p.id === task.projectId);
-                const client = clients.find(c => c.id === project?.clientId);
-                
-                const est = task.hoursAssigned;
-                const real = task.hoursActual || 0;
-                const comp = task.hoursComputed || 0;
-                const balance = comp - real;
+            projectGroups.map(group => {
+                const balance = group.totalComp - group.totalReal;
                 const isPositive = balance >= 0;
-
-                // Dependencias
-                const depTask = task.dependencyId ? allocations.find(a => a.id === task.dependencyId) : null;
-                const depOwner = depTask ? employees.find(e => e.id === depTask.employeeId) : null;
-                const isDepReady = depTask?.status === 'completed';
-                const blockingTasks = allocations.filter(a => a.dependencyId === task.id && a.status !== 'completed');
+                // Calculo impacto % sobre el total del mes
+                const impact = totalAssigned > 0 ? (group.totalEst / totalAssigned) * 100 : 0;
 
                 return (
-                    <Card key={task.id} className="flex flex-col shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+                    <Card key={group.projectId} className="flex flex-col shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow group">
+                        
+                        {/* CABECERA PROYECTO */}
                         <div className="p-4 pb-3 border-b border-slate-100 bg-white">
                             <div className="flex justify-between items-start mb-1">
-                                <h3 className="text-lg font-bold text-slate-900 leading-tight truncate pr-2" title={task.taskName || 'Tarea'}>
-                                    {task.taskName || 'Asignación'}
+                                <h3 className="text-lg font-bold text-slate-900 leading-tight truncate pr-2" title={group.projectName}>
+                                    {group.projectName}
                                 </h3>
-                                {/* ETIQUETA ESTADO / DEPENDENCIA */}
-                                {depTask && !isDepReady ? (
-                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] whitespace-nowrap gap-1">
-                                        <LinkIcon className="w-3 h-3"/> Esperando a {depOwner?.name}
-                                    </Badge>
-                                ) : blockingTasks.length > 0 ? (
-                                    <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] whitespace-nowrap gap-1 animate-pulse">
-                                        <AlertOctagon className="w-3 h-3"/> Estás bloqueando
-                                    </Badge>
-                                ) : (
-                                    <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[10px] font-normal">
-                                        {task.status === 'completed' ? 'Completado' : 'En curso'}
-                                    </Badge>
+                                <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-100 text-[10px]">
+                                    <PieChart className="w-3 h-3 mr-1"/> Impacto: {impact.toFixed(0)}%
+                                </Badge>
+                            </div>
+                            
+                            <div className="flex items-center justify-between mt-2">
+                                <div className="flex items-center gap-2 text-xs text-slate-500">
+                                    <span className="w-2 h-2 rounded-full bg-slate-300"></span>
+                                    <span className="truncate max-w-[150px]">{group.clientName}</span>
+                                </div>
+                                {group.blockingCount > 0 && (
+                                    <span className="text-[10px] text-red-600 flex items-center gap-1 font-bold animate-pulse">
+                                        <AlertTriangle className="w-3 h-3"/> Bloqueando {group.blockingCount} tareas
+                                    </span>
                                 )}
-                            </div>
-                            
-                            <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
-                                <span className={`w-2 h-2 rounded-full ${task.status==='completed' ? 'bg-emerald-400' : 'bg-indigo-400'}`}></span>
-                                <span className="font-medium truncate">{project?.name}</span>
-                                <span className="text-slate-300">|</span>
-                                <span className="truncate opacity-70">{client?.name}</span>
-                            </div>
-                            
-                            {/* Fecha de la semana para dar contexto en la vista mensual */}
-                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                                <Calendar className="w-3 h-3"/> Semana del {format(parseISO(task.weekStartDate), 'd MMM', { locale: es })}
                             </div>
                         </div>
                         
-                        <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50/30">
+                        {/* CUERPO DE DATOS (SOLO LECTURA) */}
+                        <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50/50">
                             <div className="p-3 text-center">
                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">EST.</div>
-                                <div className="text-lg font-mono font-medium text-slate-700">{est}h</div>
+                                <div className="text-xl font-mono font-medium text-slate-700">{group.totalEst.toFixed(1)}h</div>
                             </div>
                             <div className="p-3 text-center bg-white">
                                 <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1 flex items-center justify-center gap-1"><TrendingUp className="w-3 h-3"/> REAL</div>
-                                <div className="flex justify-center">
-                                    <input 
-                                        type="number" 
-                                        className="w-16 text-center font-mono text-lg font-bold text-blue-700 bg-transparent outline-none p-0"
-                                        value={editingValues[`${task.id}-hoursActual`] ?? real}
-                                        onChange={(e) => setEditingValues({...editingValues, [`${task.id}-hoursActual`]: e.target.value})}
-                                        onBlur={(e) => handleUpdateHours(task, 'hoursActual', e.target.value)}
-                                        step="0.5"
-                                    />
-                                </div>
+                                <div className="text-xl font-mono font-bold text-blue-700">{group.totalReal.toFixed(1)}h</div>
                             </div>
                             <div className="p-3 text-center">
                                 <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1 flex items-center justify-center gap-1"><CheckCircle className="w-3 h-3"/> COMP</div>
-                                <div className="flex justify-center">
-                                    <input 
-                                        type="number" 
-                                        className="w-16 text-center font-mono text-lg font-bold text-emerald-700 bg-transparent outline-none p-0"
-                                        value={editingValues[`${task.id}-hoursComputed`] ?? comp}
-                                        onChange={(e) => setEditingValues({...editingValues, [`${task.id}-hoursComputed`]: e.target.value})}
-                                        onBlur={(e) => handleUpdateHours(task, 'hoursComputed', e.target.value)}
-                                        step="0.5"
-                                    />
-                                </div>
+                                <div className="text-xl font-mono font-bold text-emerald-700">{group.totalComp.toFixed(1)}h</div>
                             </div>
                         </div>
 
-                        {/* BALANCE FOOTER */}
+                        {/* FOOTER BALANCE */}
                         <div className={`px-4 py-2 flex justify-between items-center text-xs font-bold border-t border-slate-100 ${isPositive ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
                             <span className="opacity-70 uppercase tracking-wide">BALANCE</span>
                             <span className="font-mono text-sm flex items-center gap-1">
                                 {isPositive ? <TrendingUp className="w-3 h-3"/> : <TrendingDown className="w-3 h-3"/>}
                                 {isPositive ? '+' : ''}{balance.toFixed(2)}h
                             </span>
+                        </div>
+                        
+                        {/* BARRA DE PROGRESO INTERNA (TAREAS COMPLETADAS) */}
+                        <div className="bg-slate-100 h-1.5 w-full">
+                            <div 
+                                className="h-full bg-slate-400 transition-all" 
+                                style={{ width: `${(group.completedCount / group.taskCount) * 100}%` }}
+                                title={`${group.completedCount}/${group.taskCount} tareas completadas`}
+                            />
                         </div>
                     </Card>
                 );
