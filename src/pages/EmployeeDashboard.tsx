@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { MyWeekView } from '@/components/employee/MyWeekView';
@@ -11,21 +11,34 @@ import { ProfessionalGoalsSheet } from '@/components/team/ProfessionalGoalsSheet
 import { getWeeksForMonth, getMonthName } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar } from 'lucide-react';
-import { startOfMonth, endOfMonth, max, min, format } from 'date-fns';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { 
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter 
+} from "@/components/ui/dialog";
+import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, PlusCircle } from 'lucide-react';
+import { startOfMonth, endOfMonth, max, min, format, startOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Employee } from '@/types';
+import { toast } from 'sonner';
 
 export default function EmployeeDashboard() {
-  const { employees, allocations, absences, teamEvents, projects, isLoading: isGlobalLoading, getEmployeeMonthlyLoad } = useApp();
+  const { employees, allocations, absences, teamEvents, projects, addAllocation, isLoading: isGlobalLoading, getEmployeeMonthlyLoad } = useApp();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [myEmployeeProfile, setMyEmployeeProfile] = useState<Employee | null>(null);
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: Date } | null>(null);
   
+  // Estados Modales
   const [showGoals, setShowGoals] = useState(false);
   const [showAbsences, setShowAbsences] = useState(false);
+  const [isAddingExtra, setIsAddingExtra] = useState(false);
+
+  // Estados Formulario Tarea Extra
+  const [extraTaskName, setExtraTaskName] = useState('');
+  const [extraEstimated, setExtraEstimated] = useState('1'); 
+  const [extraReal, setExtraReal] = useState('0');
 
   useEffect(() => {
     const checkUserLink = async () => {
@@ -44,6 +57,47 @@ export default function EmployeeDashboard() {
     if (!isGlobalLoading) checkUserLink();
   }, [employees, isGlobalLoading]);
 
+  // Lógica para Tarea Extra (Interna)
+  const internalProject = useMemo(() => {
+      return projects.find(p => 
+          p.name.toLowerCase().includes('interno') || 
+          p.name.toLowerCase().includes('gestión')
+      ) || projects[0]; 
+  }, [projects]);
+
+  const handleAddExtraTask = async () => {
+      if (!myEmployeeProfile) return;
+      if (!extraTaskName) { toast.error("Pon un nombre a la tarea"); return; }
+      if (!internalProject) { toast.error("No hay proyectos disponibles."); return; }
+
+      try {
+          // CORRECCIÓN CLAVE: Calcular el Lunes de la semana actual para que salga en el planificador
+          const today = new Date();
+          const mondayOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
+          const formattedDate = format(mondayOfCurrentWeek, 'yyyy-MM-dd');
+
+          await addAllocation({
+              projectId: internalProject.id,
+              employeeId: myEmployeeProfile.id,
+              weekStartDate: formattedDate, // Guardamos con fecha lunes
+              hoursAssigned: Number(extraEstimated), 
+              hoursActual: Number(extraReal),       
+              hoursComputed: 0,
+              taskName: extraTaskName,
+              status: 'active', // Directamente activa
+              description: 'Tarea rápida añadida desde Dashboard'
+          });
+          
+          toast.success("Tarea añadida al planificador");
+          setIsAddingExtra(false);
+          // Reset
+          setExtraTaskName(''); setExtraEstimated('1'); setExtraReal('0');
+      } catch (error) {
+          console.error(error);
+          toast.error("Error al crear tarea");
+      }
+  };
+
   const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   const handleToday = () => setCurrentMonth(new Date());
@@ -60,15 +114,37 @@ export default function EmployeeDashboard() {
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8 pb-20 animate-in fade-in duration-500">
       
-      {/* 1. CABECERA */}
-      <div className="flex justify-between items-center">
+      {/* 1. CABECERA + ACCIONES */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
               <h1 className="text-3xl font-bold text-slate-900">Hola, {myEmployeeProfile.first_name || myEmployeeProfile.name} 👋</h1>
-              <p className="text-slate-500">Tu planificación mensual.</p>
+              <p className="text-slate-500">Panel de Control Operativo</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {/* BOTÓN TAREA EXTRA (MOVIDO AQUÍ) */}
+            <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
+                <DialogTrigger asChild>
+                    <Button className="gap-2 bg-slate-900 text-white hover:bg-slate-800 shadow-sm">
+                        <PlusCircle className="h-4 w-4" /> Tarea Extra
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader><DialogTitle>Añadir Tarea Rápida</DialogTitle><DialogDescription>Se asignará a <strong>{internalProject?.name}</strong> en la semana actual.</DialogDescription></DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="space-y-2"><Label>Tarea</Label><Input value={extraTaskName} onChange={e => setExtraTaskName(e.target.value)} autoFocus placeholder="Ej: Llamada cliente urgente..." /></div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2"><Label>Estimado (h)</Label><Input type="number" step="0.5" value={extraEstimated} onChange={e => setExtraEstimated(e.target.value)} /></div>
+                            <div className="space-y-2"><Label>Real (h)</Label><Input type="number" step="0.5" value={extraReal} onChange={e => setExtraReal(e.target.value)} /></div>
+                        </div>
+                    </div>
+                    <DialogFooter><Button variant="outline" onClick={() => setIsAddingExtra(false)}>Cancelar</Button><Button onClick={handleAddExtraTask}>Añadir al Planificador</Button></DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <div className="h-9 w-px bg-slate-200 mx-1 hidden md:block"></div>
+
             <Button variant="outline" onClick={() => setShowGoals(true)} className="gap-2 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100">
-                <TrendingUp className="h-4 w-4" /> Mis Objetivos
+                <TrendingUp className="h-4 w-4" /> Objetivos
             </Button>
             <Button variant="outline" onClick={() => setShowAbsences(true)} className="gap-2 text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100">
                 <Calendar className="h-4 w-4" /> Ausencias
@@ -132,13 +208,11 @@ export default function EmployeeDashboard() {
           <div className="lg:col-span-2"><ProjectTeamPulse employeeId={myEmployeeProfile.id} /></div>
       </div>
 
-      {/* 5. LISTA DE TAREAS (MENSUAL) */}
+      {/* 5. LISTADO DE PROYECTOS (MENSUAL) */}
       <div className="pt-4 border-t">
-          {/* CAMBIADO TÍTULO PARA REFLEJAR EL MES */}
           <h3 className="text-lg font-bold text-slate-800 mb-4 capitalize">
-              Detalle de Tareas: {getMonthName(currentMonth)}
+              Resumen de Proyectos: {getMonthName(currentMonth)}
           </h3>
-          {/* PASAMOS LA FECHA SELECCIONADA A MYWEEKVIEW */}
           <MyWeekView employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
       </div>
 
