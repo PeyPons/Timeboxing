@@ -27,7 +27,7 @@ async function processSyncJob(jobId) {
 
     try {
         await supabase.from('meta_sync_logs').update({ status: 'running' }).eq('id', jobId);
-        await log("🚀 Iniciando Meta Sync...");
+        await log("🚀 Sincronizando Meta ...");
 
         // 1. Leer cuentas de DB
         const { data: dbAccounts } = await supabase.from('ad_accounts_config').select('account_id').eq('platform', 'meta').eq('is_active', true);
