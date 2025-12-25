@@ -192,6 +192,7 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                     : 0;
 
                   const isOverBudget = group.projectBudget > 0 && group.projectTotalEst > group.projectBudget;
+                  const hasBudget = group.projectBudget > 0;
 
                   return (
                       <Card key={group.projectId} className={cn(
@@ -210,24 +211,30 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                                       <Badge 
                                         variant="secondary" 
                                         className={cn(
-                                          "text-[10px] cursor-help",
-                                          myContribution >= 50 
+                                          "text-[10px] cursor-help shrink-0",
+                                          hasBudget && myBudgetImpact >= 50 
                                             ? "bg-purple-100 text-purple-700 border-purple-200"
-                                            : myContribution >= 25 
+                                            : hasBudget && myBudgetImpact >= 25 
                                               ? "bg-indigo-50 text-indigo-700 border-indigo-100"
                                               : "bg-slate-100 text-slate-600 border-slate-200"
                                         )}
                                       >
-                                          <PieChart className="w-3 h-3 mr-1"/> Impacto: {myBudgetImpact.toFixed(0)}%
+                                          <PieChart className="w-3 h-3 mr-1"/> Tu impacto: {hasBudget ? `${myBudgetImpact.toFixed(0)}%` : '—'}
                                       </Badge>
                                     </TooltipTrigger>
                                     <TooltipContent side="top" className="max-w-[220px]">
-                                      <p className="text-xs">
-                                        <strong>Tu aportación:</strong> {group.myEst.toFixed(1)}h de {group.projectBudget > 0 ? `${group.projectBudget}h presupuestadas` : 'sin presupuesto definido'}
-                                      </p>
-                                      {group.projectBudget > 0 && (
-                                        <p className="text-xs text-slate-500 mt-1">
-                                          Aportas el {myContribution.toFixed(0)}% del trabajo total del equipo en este proyecto
+                                      {hasBudget ? (
+                                        <>
+                                          <p className="text-xs">
+                                            <strong>Tu aportación:</strong> {group.myEst.toFixed(1)}h de {group.projectBudget}h presupuestadas
+                                          </p>
+                                          <p className="text-xs text-slate-500 mt-1">
+                                            Aportas el {myContribution.toFixed(0)}% del trabajo total del equipo
+                                          </p>
+                                        </>
+                                      ) : (
+                                        <p className="text-xs text-slate-500">
+                                          Este proyecto no tiene presupuesto definido
                                         </p>
                                       )}
                                     </TooltipContent>
@@ -268,51 +275,58 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                               </div>
                           </div>
                           
-                          {/* BARRA DE PRESUPUESTO DEL PROYECTO */}
-                          {group.projectBudget > 0 && (
-                            <div className="px-4 py-2 bg-slate-50 border-b border-slate-100">
-                              <div className="flex justify-between items-center text-[10px] mb-1">
-                                <span className="text-slate-500 flex items-center gap-1">
-                                  <Target className="w-3 h-3" />
-                                  Presupuesto proyecto
-                                </span>
-                                <span className={cn(
-                                  "font-bold",
-                                  isOverBudget ? "text-red-600" : "text-slate-600"
-                                )}>
-                                  {group.projectTotalEst.toFixed(0)}h / {group.projectBudget}h
-                                </span>
-                              </div>
-                              <div className="relative h-2 bg-slate-200 rounded-full overflow-hidden">
-                                {/* Barra de mi contribución */}
-                                <div 
-                                  className="absolute h-full bg-indigo-500 rounded-l-full"
-                                  style={{ width: `${Math.min(100, myBudgetImpact)}%` }}
-                                />
-                                {/* Barra del resto del equipo */}
-                                <div 
-                                  className={cn(
-                                    "absolute h-full rounded-r-full",
-                                    isOverBudget ? "bg-red-400" : "bg-slate-400"
-                                  )}
-                                  style={{ 
-                                    left: `${Math.min(100, myBudgetImpact)}%`,
-                                    width: `${Math.min(100 - myBudgetImpact, (group.projectTotalEst - group.myEst) / group.projectBudget * 100)}%`
-                                  }}
-                                />
-                              </div>
-                              <div className="flex justify-between mt-1">
-                                <span className="text-[9px] text-indigo-600 font-medium">
-                                  Tú: {group.myEst.toFixed(1)}h ({myBudgetImpact.toFixed(0)}%)
-                                </span>
-                                {group.teamMembers.length > 0 && (
-                                  <span className="text-[9px] text-slate-500">
-                                    Equipo: {(group.projectTotalEst - group.myEst).toFixed(1)}h
+                          {/* BARRA DE PRESUPUESTO DEL PROYECTO - SIEMPRE VISIBLE */}
+                          <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 min-h-[60px]">
+                            {hasBudget ? (
+                              <>
+                                <div className="flex justify-between items-center text-[10px] mb-1">
+                                  <span className="text-slate-500 flex items-center gap-1">
+                                    <Target className="w-3 h-3" />
+                                    Presupuesto proyecto
                                   </span>
-                                )}
+                                  <span className={cn(
+                                    "font-bold",
+                                    isOverBudget ? "text-red-600" : "text-slate-600"
+                                  )}>
+                                    {group.projectTotalEst.toFixed(0)}h / {group.projectBudget}h
+                                  </span>
+                                </div>
+                                <div className="relative h-2 bg-slate-200 rounded-full overflow-hidden">
+                                  {/* Barra de mi contribución */}
+                                  <div 
+                                    className="absolute h-full bg-indigo-500 rounded-l-full"
+                                    style={{ width: `${Math.min(100, myBudgetImpact)}%` }}
+                                  />
+                                  {/* Barra del resto del equipo */}
+                                  <div 
+                                    className={cn(
+                                      "absolute h-full rounded-r-full",
+                                      isOverBudget ? "bg-red-400" : "bg-slate-400"
+                                    )}
+                                    style={{ 
+                                      left: `${Math.min(100, myBudgetImpact)}%`,
+                                      width: `${Math.min(100 - myBudgetImpact, (group.projectTotalEst - group.myEst) / group.projectBudget * 100)}%`
+                                    }}
+                                  />
+                                </div>
+                                <div className="flex justify-between mt-1">
+                                  <span className="text-[9px] text-indigo-600 font-medium">
+                                    Tú: {group.myEst.toFixed(1)}h ({myBudgetImpact.toFixed(0)}%)
+                                  </span>
+                                  {group.teamMembers.length > 0 && (
+                                    <span className="text-[9px] text-slate-500">
+                                      Equipo: {(group.projectTotalEst - group.myEst).toFixed(1)}h
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-[10px] text-slate-400">
+                                <Target className="w-3 h-3 mr-1.5 opacity-50" />
+                                Sin presupuesto definido
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                           
                           {/* CUERPO DE DATOS (MIS HORAS) */}
                           <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50/50">
