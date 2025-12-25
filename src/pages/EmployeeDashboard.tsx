@@ -8,28 +8,51 @@ import { EmployeeRow } from '@/components/planner/EmployeeRow';
 import { AllocationSheet } from '@/components/planner/AllocationSheet';
 import { AbsencesSheet } from '@/components/team/AbsencesSheet';
 import { ProfessionalGoalsSheet } from '@/components/team/ProfessionalGoalsSheet';
-import { getWeeksForMonth, getMonthName } from '@/utils/dateUtils';
+import { getWeeksForMonth, getMonthName, getStorageKey } from '@/utils/dateUtils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { 
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter 
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, PlusCircle, Clock } from 'lucide-react';
-import { startOfMonth, endOfMonth, max, min, format, startOfWeek } from 'date-fns';
+import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, Clock, Plus, X, Check, ListPlus, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { startOfMonth, endOfMonth, max, min, format, startOfWeek, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Employee } from '@/types';
+import { Employee, Project } from '@/types';
 import { toast } from 'sonner';
+import { cn, formatProjectName } from '@/lib/utils';
 
 // Nombres fijos para el cliente y proyecto interno
 const INTERNAL_CLIENT_NAME = 'Interno';
 const INTERNAL_PROJECT_NAME = 'Gestiones internas';
 
+const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+// Tipo para filas de tareas nuevas
+interface NewTaskRow {
+  id: string;
+  projectId: string;
+  taskName: string; 
+  hours: string;
+  weekDate: string;
+}
+
+// Tipo para el estado del proyecto
+interface ProjectBudgetStatus {
+  totalComputed: number;
+  totalPlanned: number;
+  budgetMax: number;
+  percentage: number;
+}
+
 export default function EmployeeDashboard() {
   const { 
     employees, allocations, absences, teamEvents, projects, clients,
-    addAllocation, isLoading: isGlobalLoading, getEmployeeMonthlyLoad 
+    addAllocation, isLoading: isGlobalLoading, getEmployeeMonthlyLoad, getEmployeeLoadForWeek
   } = useApp();
   
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -42,11 +65,16 @@ export default function EmployeeDashboard() {
   const [showGoals, setShowGoals] = useState(false);
   const [showAbsences, setShowAbsences] = useState(false);
   const [isAddingExtra, setIsAddingExtra] = useState(false);
+  const [isAddingTasks, setIsAddingTasks] = useState(false);
 
-  // Estados Formulario Tarea Extra (SIMPLIFICADO)
+  // Estados Formulario Gestión Interna
   const [extraTaskName, setExtraTaskName] = useState('');
   const [extraHours, setExtraHours] = useState('1');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+
+  // Estados Formulario Añadir Tareas
+  const [newTasks, setNewTasks] = useState<NewTaskRow[]>([]);
+  const [openComboboxId, setOpenComboboxId] = useState<string | null>(null);
 
   useEffect(() => {
     const checkUserLink = async () => {
@@ -75,25 +103,53 @@ export default function EmployeeDashboard() {
       return clients.find(c => c.name === INTERNAL_CLIENT_NAME);
   }, [clients]);
 
+  // Proyectos activos para el selector
+  const activeProjects = useMemo(() => 
+    projects.filter(p => p.status === 'active').sort((a, b) => a.name.localeCompare(b.name)),
+  [projects]);
+
+  // Semanas del mes actual
+  const weeks = useMemo(() => getWeeksForMonth(currentMonth), [currentMonth]);
+
+  // Función para calcular estado del presupuesto de un proyecto
+  const getProjectBudgetStatus = (projectId: string): ProjectBudgetStatus => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return { totalComputed: 0, totalPlanned: 0, budgetMax: 0, percentage: 0 };
+
+    const monthAllocations = allocations.filter(a => 
+      a.projectId === projectId && 
+      isSameMonth(parseISO(a.weekStartDate), currentMonth)
+    );
+
+    let totalComputed = 0;
+    let totalPlanned = 0;
+
+    monthAllocations.forEach(a => {
+      if (a.status === 'completed') {
+        totalComputed += (a.hoursComputed || 0);
+      } else {
+        totalPlanned += (a.hoursAssigned || 0);
+      }
+    });
+
+    const budgetMax = project.budgetHours || 0;
+    const percentage = budgetMax > 0 ? (totalComputed / budgetMax) * 100 : 0;
+
+    return { totalComputed, totalPlanned, budgetMax, percentage };
+  };
+
   // Función para obtener o crear el cliente y proyecto interno
   const getOrCreateInternalProject = async (): Promise<string | null> => {
-      // Si ya existe el proyecto, retornamos su ID
-      if (internalProject) {
-          return internalProject.id;
-      }
+      if (internalProject) return internalProject.id;
 
       setIsCreatingProject(true);
       try {
           let clientId = internalClient?.id;
 
-          // PASO 1: Crear cliente interno si no existe
           if (!clientId) {
               const { data: clientData, error: clientError } = await supabase
                   .from('clients')
-                  .insert({
-                      name: INTERNAL_CLIENT_NAME,
-                      color: '#6b7280' // Gris neutro
-                  })
+                  .insert({ name: INTERNAL_CLIENT_NAME, color: '#6b7280' })
                   .select()
                   .single();
 
@@ -102,7 +158,6 @@ export default function EmployeeDashboard() {
               toast.success(`Cliente "${INTERNAL_CLIENT_NAME}" creado`);
           }
 
-          // PASO 2: Crear proyecto interno
           const { data: projectData, error: projectError } = await supabase
               .from('projects')
               .insert({
@@ -143,7 +198,6 @@ export default function EmployeeDashboard() {
       }
 
       try {
-          // Obtener o crear el proyecto interno
           const projectId = await getOrCreateInternalProject();
           
           if (!projectId) {
@@ -151,12 +205,10 @@ export default function EmployeeDashboard() {
               return;
           }
 
-          // Calcular el Lunes de la semana actual
           const today = new Date();
           const mondayOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 });
           const formattedDate = format(mondayOfCurrentWeek, 'yyyy-MM-dd');
 
-          // Crear la asignación con el mismo valor en los 3 campos de horas
           await addAllocation({
               projectId: projectId,
               employeeId: myEmployeeProfile.id,
@@ -169,10 +221,8 @@ export default function EmployeeDashboard() {
               description: 'Gestión interna'
           });
           
-          toast.success("Tarea registrada correctamente");
+          toast.success("Gestión interna registrada");
           setIsAddingExtra(false);
-          
-          // Reset del formulario
           setExtraTaskName('');
           setExtraHours('1');
       } catch (error) {
@@ -181,6 +231,144 @@ export default function EmployeeDashboard() {
       }
   };
 
+  // Inicializar formulario de añadir tareas
+  const openAddTasksDialog = () => {
+    const defaultWeek = getStorageKey(weeks[0]?.weekStart || new Date(), currentMonth);
+    setNewTasks([{
+      id: crypto.randomUUID(),
+      projectId: '',
+      taskName: '',
+      hours: '',
+      weekDate: defaultWeek
+    }]);
+    setIsAddingTasks(true);
+  };
+
+  const addTaskRow = () => {
+    const lastTask = newTasks[newTasks.length - 1];
+    setNewTasks(prev => [...prev, {
+      id: crypto.randomUUID(),
+      projectId: lastTask?.projectId || '',
+      taskName: '',
+      hours: '',
+      weekDate: lastTask?.weekDate || getStorageKey(weeks[0]?.weekStart || new Date(), currentMonth)
+    }]);
+  };
+
+  const removeTaskRow = (id: string) => {
+    if (newTasks.length === 1) return;
+    setNewTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  const updateTaskRow = (id: string, field: keyof NewTaskRow, value: string) => {
+    setNewTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+  };
+
+  const handleSaveTasks = async () => {
+    if (!myEmployeeProfile) return;
+
+    const validTasks = newTasks.filter(t => t.projectId && t.hours && parseFloat(t.hours) > 0);
+    
+    if (validTasks.length === 0) {
+      toast.error("Añade al menos una tarea con proyecto y horas");
+      return;
+    }
+
+    try {
+      for (const task of validTasks) {
+        await addAllocation({
+          employeeId: myEmployeeProfile.id,
+          projectId: task.projectId,
+          taskName: task.taskName || 'Tarea',
+          weekStartDate: task.weekDate,
+          hoursAssigned: parseFloat(task.hours),
+          status: 'planned'
+        });
+      }
+
+      toast.success(`${validTasks.length} tarea(s) añadida(s)`);
+      setIsAddingTasks(false);
+      setNewTasks([]);
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al crear tareas");
+    }
+  };
+
+  // Calcular impacto de las tareas nuevas
+  const tasksImpact = useMemo(() => {
+    if (!myEmployeeProfile) return { projects: [], weeks: [] };
+
+    // Impacto en proyectos
+    const projectImpact: Record<string, { name: string; adding: number; status: ProjectBudgetStatus }> = {};
+    
+    newTasks.forEach(task => {
+      if (task.projectId && task.hours) {
+        const hours = parseFloat(task.hours) || 0;
+        if (hours > 0) {
+          if (!projectImpact[task.projectId]) {
+            const project = projects.find(p => p.id === task.projectId);
+            projectImpact[task.projectId] = {
+              name: project?.name || 'Desconocido',
+              adding: 0,
+              status: getProjectBudgetStatus(task.projectId)
+            };
+          }
+          projectImpact[task.projectId].adding += hours;
+        }
+      }
+    });
+
+    const projectsResult = Object.entries(projectImpact).map(([id, data]) => {
+      const newTotal = data.status.totalComputed + data.status.totalPlanned + data.adding;
+      const exceeds = data.status.budgetMax > 0 && newTotal > data.status.budgetMax;
+      return { id, ...data, newTotal, exceeds };
+    });
+
+    // Impacto en semanas (capacidad)
+    const weekImpact: Record<string, { weekIndex: number; adding: number }> = {};
+    
+    newTasks.forEach(task => {
+      if (task.weekDate && task.hours) {
+        const hours = parseFloat(task.hours) || 0;
+        if (hours > 0) {
+          if (!weekImpact[task.weekDate]) {
+            const weekIndex = weeks.findIndex((w, i) => getStorageKey(w.weekStart, currentMonth) === task.weekDate);
+            weekImpact[task.weekDate] = { weekIndex: weekIndex >= 0 ? weekIndex : 0, adding: 0 };
+          }
+          weekImpact[task.weekDate].adding += hours;
+        }
+      }
+    });
+
+    const weeksResult = Object.entries(weekImpact).map(([weekDate, data]) => {
+      const weekData = weeks[data.weekIndex];
+      const currentLoad = weekData ? getEmployeeLoadForWeek(
+        myEmployeeProfile.id,
+        weekDate,
+        weekData.effectiveStart,
+        weekData.effectiveEnd
+      ) : { hours: 0, capacity: 40 };
+      
+      const newTotal = round2(currentLoad.hours + data.adding);
+      const exceeds = newTotal > currentLoad.capacity;
+      
+      return {
+        weekDate,
+        weekIndex: data.weekIndex,
+        adding: data.adding,
+        currentHours: currentLoad.hours,
+        capacity: currentLoad.capacity,
+        newTotal,
+        exceeds
+      };
+    }).sort((a, b) => a.weekIndex - b.weekIndex);
+
+    return { projects: projectsResult, weeks: weeksResult };
+  }, [newTasks, projects, weeks, currentMonth, myEmployeeProfile, getEmployeeLoadForWeek]);
+
+  const hasAnyExcess = tasksImpact.projects.some(p => p.exceeds) || tasksImpact.weeks.some(w => w.exceeds);
+
   const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   const handleToday = () => setCurrentMonth(new Date());
@@ -188,7 +376,6 @@ export default function EmployeeDashboard() {
   if (isGlobalLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">Cargando...</div>;
   if (!myEmployeeProfile) return null;
 
-  const weeks = getWeeksForMonth(currentMonth);
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const gridTemplate = `250px repeat(${weeks.length}, minmax(0, 1fr)) 100px`;
@@ -204,21 +391,29 @@ export default function EmployeeDashboard() {
               <p className="text-slate-500">Panel de Control Operativo</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {/* BOTÓN TAREA EXTRA (SIMPLIFICADO) */}
+            {/* BOTÓN AÑADIR TAREAS */}
+            <Button 
+              onClick={openAddTasksDialog}
+              className="gap-2 bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+            >
+              <ListPlus className="h-4 w-4" /> Añadir Tareas
+            </Button>
+
+            {/* BOTÓN GESTIÓN INTERNA */}
             <Dialog open={isAddingExtra} onOpenChange={setIsAddingExtra}>
                 <DialogTrigger asChild>
-                    <Button className="gap-2 bg-slate-900 text-white hover:bg-slate-800 shadow-sm">
-                        <PlusCircle className="h-4 w-4" /> Tarea Extra
+                    <Button variant="outline" className="gap-2 border-slate-300 hover:bg-slate-50">
+                        <Clock className="h-4 w-4" /> Gestión Interna
                     </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Clock className="h-5 w-5 text-indigo-600" />
+                            <Clock className="h-5 w-5 text-slate-600" />
                             Registrar Gestión Interna
                         </DialogTitle>
                         <DialogDescription>
-                            Se guardará en <strong className="text-slate-700">{INTERNAL_PROJECT_NAME}</strong> con las horas indicadas.
+                            Reuniones, formaciones, deadlines u otras tareas no asociadas a clientes.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
@@ -229,7 +424,7 @@ export default function EmployeeDashboard() {
                                 value={extraTaskName} 
                                 onChange={e => setExtraTaskName(e.target.value)} 
                                 autoFocus 
-                                placeholder="Ej: Llamada cliente, Reunión interna, Formación..." 
+                                placeholder="Ej: Reunión equipo, Formación, Deadline..." 
                             />
                         </div>
                         <div className="space-y-2">
@@ -247,7 +442,7 @@ export default function EmployeeDashboard() {
                                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">h</span>
                             </div>
                             <p className="text-xs text-slate-400">
-                                Este tiempo se registrará como estimado, real y computado.
+                                Se guardará en "{INTERNAL_PROJECT_NAME}" como completada.
                             </p>
                         </div>
                     </div>
@@ -262,7 +457,6 @@ export default function EmployeeDashboard() {
                         <Button 
                             onClick={handleAddExtraTask}
                             disabled={isCreatingProject || !extraTaskName.trim()}
-                            className="bg-indigo-600 hover:bg-indigo-700"
                         >
                             {isCreatingProject ? 'Creando...' : 'Registrar'}
                         </Button>
@@ -321,7 +515,12 @@ export default function EmployeeDashboard() {
                         onOpenSheet={(empId, date) => setSelectedCell({ employeeId: empId, weekStart: date })}
                     />
                     <div className="flex items-center justify-center border-l p-2 bg-slate-50/30">
-                        <div className="flex flex-col items-center justify-center w-20 h-14 rounded-lg bg-red-50 border border-red-200 text-red-700">
+                        <div className={cn(
+                          "flex flex-col items-center justify-center w-20 h-14 rounded-lg border",
+                          monthlyLoad.percentage > 100 
+                            ? "bg-red-50 border-red-200 text-red-700"
+                            : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        )}>
                             <span className="text-base font-bold leading-none">{monthlyLoad.hours}h</span>
                             <span className="text-[10px] opacity-70">/ {monthlyLoad.capacity}h</span>
                         </div>
@@ -345,6 +544,7 @@ export default function EmployeeDashboard() {
           <MyWeekView employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
       </div>
 
+      {/* MODAL: ALLOCATION SHEET */}
       {selectedCell && (
         <AllocationSheet 
             open={!!selectedCell} 
@@ -354,6 +554,176 @@ export default function EmployeeDashboard() {
             viewDateContext={currentMonth} 
         />
       )}
+
+      {/* MODAL: AÑADIR TAREAS */}
+      <Dialog open={isAddingTasks} onOpenChange={setIsAddingTasks}>
+        <DialogContent className="sm:max-w-[900px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListPlus className="h-5 w-5 text-indigo-600" />
+              Añadir Tareas
+            </DialogTitle>
+            <DialogDescription>
+              Añade múltiples tareas a tu planificación de {getMonthName(currentMonth)}.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {/* Header de columnas */}
+            <div className="flex text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
+              <div className="flex-1 pl-1">Proyecto</div>
+              <div className="flex-1 pl-1">Tarea</div>
+              <div className="w-24 text-center">Horas</div>
+              <div className="w-32">Semana</div>
+              <div className="w-8"></div>
+            </div>
+            
+            {/* Filas de tareas */}
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-2 -mr-2">
+              {newTasks.map((task) => (
+                <div key={task.id} className="flex gap-2 items-start">
+                  {/* Proyecto */}
+                  <div className="flex-1 min-w-0">
+                    <Popover open={openComboboxId === task.id} onOpenChange={(isOpen) => setOpenComboboxId(isOpen ? task.id : null)}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 px-3 text-left font-normal", !task.projectId && "text-muted-foreground")}>
+                          <span className="truncate">{task.projectId ? formatProjectName(activeProjects.find((p) => p.id === task.projectId)?.name || '') : "Seleccionar..."}</span>
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Buscar proyecto..." />
+                          <CommandList>
+                            <CommandEmpty>No encontrado.</CommandEmpty>
+                            <CommandGroup className="max-h-[200px] overflow-y-auto">
+                              {activeProjects.map((project) => (
+                                <CommandItem key={project.id} value={project.name} onSelect={() => { updateTaskRow(task.id, 'projectId', project.id); setOpenComboboxId(null); }}>
+                                  <Check className={cn("mr-2 h-4 w-4", task.projectId === project.id ? "opacity-100" : "opacity-0")} />
+                                  {formatProjectName(project.name)}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  {/* Tarea */}
+                  <Input 
+                    className="flex-1 h-10" 
+                    placeholder="Nombre de la tarea..." 
+                    value={task.taskName} 
+                    onChange={(e) => updateTaskRow(task.id, 'taskName', e.target.value)} 
+                  />
+
+                  {/* Horas */}
+                  <Input 
+                    type="number" 
+                    className="w-24 h-10 text-center" 
+                    placeholder="0" 
+                    value={task.hours} 
+                    onChange={(e) => updateTaskRow(task.id, 'hours', e.target.value)} 
+                    step="0.5" 
+                    min="0"
+                  />
+
+                  {/* Semana */}
+                  <div className="w-32">
+                    <Select value={task.weekDate} onValueChange={(v) => updateTaskRow(task.id, 'weekDate', v)}>
+                      <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {weeks.map((w, i) => (
+                          <SelectItem key={w.weekStart.toISOString()} value={getStorageKey(w.weekStart, currentMonth)}>
+                            Sem {i + 1}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Eliminar */}
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-10 w-8 text-muted-foreground hover:text-destructive" 
+                    onClick={() => removeTaskRow(task.id)} 
+                    disabled={newTasks.length === 1}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            
+            <Button variant="outline" size="sm" onClick={addTaskRow} className="w-full mt-4 border-dashed">
+              <Plus className="h-4 w-4 mr-2" /> Añadir otra fila
+            </Button>
+          </div>
+
+          <DialogFooter className="flex flex-col gap-2">
+            {/* Resumen de impacto */}
+            {newTasks.some(t => t.projectId && t.hours) && (
+              <div className={cn(
+                "flex items-center gap-3 text-xs px-3 py-2 rounded-lg w-full flex-wrap",
+                hasAnyExcess ? "bg-amber-50 border border-amber-200" : "bg-emerald-50 border border-emerald-200"
+              )}>
+                {/* Impacto en proyectos */}
+                {tasksImpact.projects.map((p, idx) => (
+                  <div key={p.id} className="flex items-center gap-1.5">
+                    {idx > 0 && <span className="text-slate-300">│</span>}
+                    {p.exceeds ? (
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    )}
+                    <span className={cn("font-medium truncate max-w-[100px]", p.exceeds ? "text-amber-700" : "text-emerald-700")}>
+                      {formatProjectName(p.name)}
+                    </span>
+                    <span className={cn("tabular-nums", p.exceeds ? "text-amber-600" : "text-emerald-600")}>
+                      +{p.adding}h
+                    </span>
+                    {p.exceeds && p.status.budgetMax > 0 && (
+                      <span className="text-amber-600 font-semibold text-[10px]">
+                        ({round2(p.newTotal)}/{p.status.budgetMax}h)
+                      </span>
+                    )}
+                  </div>
+                ))}
+                
+                {tasksImpact.projects.length > 0 && tasksImpact.weeks.length > 0 && (
+                  <span className="text-slate-300">║</span>
+                )}
+                
+                {/* Impacto en semanas */}
+                {tasksImpact.weeks.map((w, idx) => (
+                  <div key={w.weekDate} className="flex items-center gap-1.5">
+                    {idx > 0 && <span className="text-slate-300">│</span>}
+                    {w.exceeds ? (
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    )}
+                    <span className={cn("font-medium", w.exceeds ? "text-amber-700" : "text-emerald-700")}>
+                      S{w.weekIndex + 1}
+                    </span>
+                    <span className={cn("tabular-nums text-[10px]", w.exceeds ? "text-amber-600" : "text-emerald-600")}>
+                      {w.newTotal}h/{w.capacity}h
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-2 w-full">
+              <Button variant="outline" onClick={() => setIsAddingTasks(false)}>Cancelar</Button>
+              <Button onClick={handleSaveTasks} className="bg-indigo-600 hover:bg-indigo-700">
+                Guardar Tareas
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {showGoals && <ProfessionalGoalsSheet open={showGoals} onOpenChange={setShowGoals} employeeId={myEmployeeProfile.id} />}
       {showAbsences && <AbsencesSheet open={showAbsences} onOpenChange={setShowAbsences} employeeId={myEmployeeProfile.id} />}
