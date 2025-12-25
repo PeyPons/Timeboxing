@@ -1,10 +1,12 @@
-import { Employee, WorkSchedule } from '@/types';
+import { WorkSchedule } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 interface ScheduleEditorProps {
   schedule: WorkSchedule;
-  onChange: (schedule: WorkSchedule) => void;
+  onChange?: (schedule: WorkSchedule) => void;
+  readOnly?: boolean; // Nueva prop
 }
 
 const dayLabels: { key: keyof WorkSchedule; label: string }[] = [
@@ -17,8 +19,10 @@ const dayLabels: { key: keyof WorkSchedule; label: string }[] = [
   { key: 'sunday', label: 'Dom' },
 ];
 
-export function ScheduleEditor({ schedule, onChange }: ScheduleEditorProps) {
+export function ScheduleEditor({ schedule, onChange, readOnly = false }: ScheduleEditorProps) {
   const handleDayChange = (day: keyof WorkSchedule, value: string) => {
+    if (readOnly || !onChange) return;
+    
     const hours = parseFloat(value) || 0;
     onChange({
       ...schedule,
@@ -26,7 +30,9 @@ export function ScheduleEditor({ schedule, onChange }: ScheduleEditorProps) {
     });
   };
 
-  const totalHours = Object.values(schedule).reduce((sum, h) => sum + h, 0);
+  // Aseguramos que schedule exista para evitar el error "Cannot convert undefined to object"
+  const safeSchedule = schedule || { monday:0, tuesday:0, wednesday:0, thursday:0, friday:0, saturday:0, sunday:0 };
+  const totalHours = Object.values(safeSchedule).reduce((sum, h) => sum + (Number(h) || 0), 0);
 
   return (
     <div className="space-y-4">
@@ -39,9 +45,13 @@ export function ScheduleEditor({ schedule, onChange }: ScheduleEditorProps) {
               min="0"
               max="24"
               step="0.5"
-              value={schedule[key]}
+              value={safeSchedule[key]}
               onChange={(e) => handleDayChange(key, e.target.value)}
-              className="h-9 text-center"
+              className={cn(
+                "h-9 text-center p-1",
+                readOnly && "bg-slate-50 text-slate-500 cursor-default focus-visible:ring-0 border-slate-100"
+              )}
+              disabled={readOnly} // Bloqueo real del input
             />
           </div>
         ))}
