@@ -62,7 +62,7 @@ const tourSteps: TourStep[] = [
     id: 'absences',
     target: '[data-tour="absences"]',
     title: 'Ausencias',
-    description: 'Solicita vacaciones, bajas o cualquier tipo de ausencia. Tu capacidad se ajustará automáticamente.',
+    description: 'Si tienes vacaciones, bajas o cualquier tipo de ausencia. Tu capacidad se ajustará automáticamente.',
     icon: <Calendar className="w-6 h-6 text-amber-500" />,
     position: 'bottom',
     highlight: true
@@ -89,7 +89,7 @@ const tourSteps: TourStep[] = [
     id: 'dependencies-widget',
     target: '[data-tour="dependencies-widget"]',
     title: 'Estado de Dependencias',
-    description: 'Ve quién espera por ti y por quién estás esperando. Las dependencias en verde ya están listas para que empieces.',
+    description: 'Ve quién espera por ti y por quién estás esperando. Las dependencias en verde ya están listas para que puedas empezar.',
     icon: <Users className="w-6 h-6 text-indigo-500" />,
     position: 'top',
     highlight: true
