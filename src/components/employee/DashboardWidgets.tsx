@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Users, ArrowRight, AlertOctagon, Link as LinkIcon, CheckCircle2, Clock, Flag, Zap, PlayCircle, AlertTriangle } from 'lucide-react';
 import { isSameMonth, parseISO } from 'date-fns';
+import { formatProjectName } from '@/lib/utils';
 
 interface WidgetProps {
   employeeId: string;
@@ -57,7 +58,7 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
                       <p className="text-[10px] uppercase text-red-400 font-semibold mb-1">Tu tarea pendiente</p>
                       <p className="font-bold text-red-900">{blockingTask.taskName || 'Sin nombre'}</p>
                       <Badge variant="outline" className="mt-1 text-[9px] bg-white">
-                          {proj?.name}
+                          {formatProjectName(proj?.name || '')}
                       </Badge>
                   </div>
                   
@@ -85,7 +86,7 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
           title: "Cierre Rápido",
           content: (
               <p className="text-sm">
-                  🏁 <strong>A punto:</strong> Te queda muy poco en <em>{proj?.name}</em>. ¡Liquídala hoy mismo!
+                  🏁 <strong>A punto:</strong> Te queda muy poco en <em>{formatProjectName(proj?.name || '')}</em>. ¡Liquídala hoy mismo!
               </p>
           ),
           style: 'bg-emerald-50 border-emerald-200 text-emerald-900'
@@ -97,7 +98,7 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
           title: "Recomendación",
           content: (
               <p className="text-sm">
-                  🚀 <strong>Foco:</strong> Empieza por <strong>{proj?.name}</strong>, es tu bloque más grande ({heavyTask?.hoursAssigned}h).
+                  🚀 <strong>Foco:</strong> Empieza por <strong>{formatProjectName(proj?.name || '')}</strong>, es tu bloque más grande ({heavyTask?.hoursAssigned}h).
               </p>
           ),
           style: 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 text-amber-900'
@@ -179,7 +180,7 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
                             {/* Header con proyecto */}
                             <div className="px-3 py-1.5 bg-white/50 border-b border-slate-100 flex items-center justify-between">
                                 <Badge variant="outline" className="text-[9px] h-5 bg-white border-slate-200 text-slate-600">
-                                    {item.myProject?.name}
+                                    {formatProjectName(item.myProject?.name || '')}
                                 </Badge>
                                 {item.isReady ? (
                                     <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
@@ -227,7 +228,7 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
                             {/* Header con proyecto */}
                             <div className="px-3 py-1.5 bg-white/50 border-b border-red-100 flex items-center justify-between">
                                 <Badge variant="outline" className="text-[9px] h-5 bg-white border-red-200 text-red-500">
-                                    {item.myProject?.name}
+                                    {formatProjectName(item.myProject?.name || '')}
                                 </Badge>
                                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                             </div>
