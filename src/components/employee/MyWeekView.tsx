@@ -136,7 +136,7 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
           <div>
               <h2 className="text-2xl font-bold text-slate-900 capitalize">{monthLabel}</h2>
               <p className="text-slate-500 flex items-center gap-2 mt-1">
-                  <Calendar className="w-4 h-4"/> Rendimiento por Proyecto
+                  <Calendar className="w-4 h-4"/> Rendimiento por proyecto
               </p>
           </div>
           
@@ -287,7 +287,7 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                                 <div className="flex justify-between items-center text-[10px] mb-1">
                                   <span className="text-slate-500 flex items-center gap-1">
                                     <Target className="w-3 h-3" />
-                                    Presupuesto proyecto
+                                    Horas
                                   </span>
                                   <span className={cn(
                                     "font-bold",
@@ -328,7 +328,7 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                             ) : (
                               <div className="flex items-center justify-center h-full text-[10px] text-slate-400">
                                 <Target className="w-3 h-3 mr-1.5 opacity-50" />
-                                Sin presupuesto definido
+                                Sin horas definidas
                               </div>
                             )}
                           </div>
