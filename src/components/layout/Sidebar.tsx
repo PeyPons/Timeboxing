@@ -98,7 +98,7 @@ export function Sidebar() {
         </NavLink>
 
         <NavLink to="/informes-clientes" icon={FileDown} active={location.pathname === '/informes-clientes'}>
-          <span className="truncate">Informes Clientes</span>
+          <span className="truncate">Informes clientes</span>
         </NavLink>
 
         <NavLink to="/dashboard-ai" icon={Sparkles} active={location.pathname === '/dashboard-ai'}>
@@ -133,7 +133,7 @@ export function Sidebar() {
             <button 
               onClick={handleLogout}
               className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-950/30 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-              title="Cerrar Sesión"
+              title="Cerrar sesión"
             >
               <LogOut className="h-4 w-4" />
             </button>

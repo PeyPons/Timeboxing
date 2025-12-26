@@ -56,7 +56,7 @@ export function ProjectsSheet({ open, onOpenChange, employeeId }: ProjectsSheetP
                 {employee.name.substring(0, 2).toUpperCase()}
             </div>
             <div>
-                <div className="text-base font-bold text-slate-900">Proyectos Asignados</div>
+                <div className="text-base font-bold text-slate-900">Proyectos asignados</div>
                 <div className="text-xs font-normal text-muted-foreground flex items-center gap-1">
                     <Briefcase className="h-3 w-3" /> {sortedProjects.length} proyectos activos
                 </div>

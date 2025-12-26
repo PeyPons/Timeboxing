@@ -657,7 +657,7 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className={cn("max-w-[650px] overflow-visible gap-0 p-0", !editingAllocation ? "max-w-[950px]" : "")}>
           <DialogHeader className="p-6 pb-2">
-            <DialogTitle>{editingAllocation ? 'Editar Tarea' : 'Añadir Tareas'}</DialogTitle>
+            <DialogTitle>{editingAllocation ? 'Editar tarea' : 'Añadir tareas'}</DialogTitle>
             <DialogDescription>{editingAllocation ? 'Modifica detalles y dependencias.' : 'Añade múltiples tareas rápidamente.'}</DialogDescription>
           </DialogHeader>
 

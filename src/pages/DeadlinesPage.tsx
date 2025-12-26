@@ -1938,7 +1938,7 @@ export default function DeadlinesPage() {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>
-              {editingGlobal ? 'Editar Asignación Global' : 'Nueva Asignación Global'}
+              {editingGlobal ? 'Editar asignación global' : 'Nueva asignación global'}
             </DialogTitle>
             <DialogDescription>
               Tareas que afectan a uno o más empleados

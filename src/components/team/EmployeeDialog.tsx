@@ -161,7 +161,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{isEditing ? 'Editar Empleado' : 'Nuevo Empleado'}</DialogTitle>
+            <DialogTitle>{isEditing ? 'Editar empleado' : 'Nuevo empleado'}</DialogTitle>
             <DialogDescription>Modifica datos, acceso y horario.</DialogDescription>
           </DialogHeader>
 
@@ -175,7 +175,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
             <TabsContent value="profile" className="space-y-4 py-4">
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="name">Nombre Completo</Label>
+                  <Label htmlFor="name">Nombre completo</Label>
                   <Input id="name" value={name} onChange={e => setName(e.target.value)} required />
                 </div>
                 
@@ -183,7 +183,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                     <div className="flex items-center gap-2 mb-2">
                         {hasAccess ? <ShieldCheck className="w-4 h-4 text-emerald-600"/> : <Lock className="w-4 h-4 text-amber-500"/>}
                         <span className="text-sm font-semibold text-slate-700">
-                            {hasAccess ? 'Acceso (Activo)' : 'Configurar Acceso'}
+                            {hasAccess ? 'Acceso (activo)' : 'Configurar acceso'}
                         </span>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -192,7 +192,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                             <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="usuario@agencia.com" />
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="password">{hasAccess ? 'Nueva Contraseña' : 'Crear Contraseña'}</Label>
+                            <Label htmlFor="password">{hasAccess ? 'Nueva contraseña' : 'Crear contraseña'}</Label>
                             <Input 
                                 id="password" 
                                 type="password" 
@@ -264,7 +264,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
 
                 <div className="flex justify-end pt-4">
                     <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={isProcessing}>
-                        {isProcessing ? 'Guardando...' : 'Guardar Datos'}
+                        {isProcessing ? 'Guardando...' : 'Guardar datos'}
                     </Button>
                 </div>
               </form>
@@ -281,7 +281,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                       onChange={setWorkSchedule} 
                   />
                   <div className="flex justify-end pt-2">
-                      <Button onClick={handleSubmit} className="bg-indigo-600">Guardar Horario</Button>
+                      <Button onClick={handleSubmit} className="bg-indigo-600">Guardar horario</Button>
                   </div>
               </div>
             </TabsContent>

@@ -32,7 +32,7 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
         </CardHeader>
         <CardContent className="flex-1">
           <p className="text-sm text-slate-500">
-            ✨ <strong>¡Todo al día!</strong> No tienes tareas pendientes este mes. Usa el botón <em>"Añadir Tareas"</em> para planificar tu trabajo.
+            ✨ <strong>¡Todo al día!</strong> No tienes tareas pendientes este mes. Usa el botón <em>"Añadir tareas"</em> para planificar tu trabajo.
           </p>
         </CardContent>
       </Card>

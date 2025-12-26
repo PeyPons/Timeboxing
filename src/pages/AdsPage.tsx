@@ -488,7 +488,7 @@ export default function AdsPage() {
           />
           <StatCard 
             icon={TrendingUp} 
-            label="Valor Conversiones" 
+            label="Valor conversiones" 
             value={formatCurrency(globalStats.totalRevenue)}
             subValue={`ROAS ${globalStats.globalRoas.toFixed(2)}x`}
             color="emerald"
@@ -502,14 +502,14 @@ export default function AdsPage() {
           />
           <StatCard 
             icon={ArrowDownRight} 
-            label="Diario Recomendado" 
+            label="Diario recomendado" 
             value={formatCurrency(globalStats.totalRecommendedDaily)}
             subValue="Para no pasarte"
             color={globalStats.totalRecommendedDaily < globalStats.totalCurrentDaily ? 'amber' : 'emerald'}
           />
           <StatCard 
             icon={AlertTriangle} 
-            label="En Riesgo" 
+            label="En riesgo" 
             value={globalStats.atRisk.toString()}
             subValue="cuentas"
             color={globalStats.atRisk > 0 ? 'red' : 'slate'}
@@ -722,14 +722,14 @@ export default function AdsPage() {
                           />
                         </div>
 
-                        {/* Comparativa Diario Actual vs Recomendado */}
+                        {/* Comparativa diario actual vs recomendado */}
                         <div className="grid grid-cols-2 gap-3">
                           <div className={cn(
                             "p-3 rounded-lg border-2 text-center",
                             isOverspending ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-200"
                           )}>
                             <div className="text-[10px] uppercase text-slate-500 font-medium mb-1">
-                              Diario Actual
+                              Diario actual
                             </div>
                             <div className={cn(
                               "text-xl font-bold",
@@ -746,7 +746,7 @@ export default function AdsPage() {
                             "bg-emerald-50 border-emerald-200"
                           )}>
                             <div className="text-[10px] uppercase text-slate-500 font-medium mb-1">
-                              Diario Recomendado
+                              Diario recomendado
                             </div>
                             <div className="text-xl font-bold text-emerald-600">
                               {formatCurrency(client.recommendedDaily)}
@@ -859,11 +859,11 @@ export default function AdsPage() {
         )}
       </div>
 
-      {/* Modal Configurar Cliente */}
+      {/* Modal configurar cliente */}
       <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Configurar Cuenta</DialogTitle>
+            <DialogTitle>Configurar cuenta</DialogTitle>
             <DialogDescription>
               {editingClient?.name}
             </DialogDescription>
@@ -908,12 +908,12 @@ export default function AdsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Dividir Cuentas */}
+      {/* Modal dividir cuentas */}
       <Dialog open={isSplitModalOpen} onOpenChange={setIsSplitModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Scissors className="w-5 h-5" /> Dividir Cuentas
+              <Scissors className="w-5 h-5" /> Dividir cuentas
             </DialogTitle>
             <DialogDescription>
               Crea cuentas virtuales separando campañas que contengan una palabra clave específica.
@@ -923,7 +923,7 @@ export default function AdsPage() {
             {/* Formulario nueva regla */}
             <div className="grid grid-cols-12 gap-3 items-end bg-slate-50 p-4 rounded-lg border">
               <div className="col-span-12 sm:col-span-4 space-y-1">
-                <Label className="text-xs font-medium">Cuenta Origen</Label>
+                <Label className="text-xs font-medium">Cuenta origen</Label>
                 <Select value={newRuleAccount} onValueChange={setNewRuleAccount}>
                   <SelectTrigger className="bg-white">
                     <SelectValue placeholder="Selecciona..." />
@@ -962,7 +962,7 @@ export default function AdsPage() {
 
             {/* Lista de reglas activas */}
             <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-500 uppercase">Reglas Activas ({segmentationRules.length})</h4>
+              <h4 className="text-xs font-bold text-slate-500 uppercase">Reglas activas ({segmentationRules.length})</h4>
               {segmentationRules.length === 0 ? (
                 <p className="text-sm text-slate-400 italic py-4 text-center">No hay reglas definidas</p>
               ) : (

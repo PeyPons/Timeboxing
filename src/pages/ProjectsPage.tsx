@@ -265,7 +265,7 @@ export default function ProjectsPage() {
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={openNewProject} className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2">
-            <Plus className="h-4 w-4" /> Nuevo Proyecto
+            <Plus className="h-4 w-4" /> Nuevo proyecto
           </Button>
           <div className="flex items-center gap-1 bg-white p-1 rounded-lg border shadow-sm">
             <Button variant="ghost" size="icon" onClick={handlePrevMonth} className="h-8 w-8">
@@ -1004,7 +1004,7 @@ export default function ProjectsPage() {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{isCreating ? 'Nuevo Proyecto' : 'Editar Proyecto'}</DialogTitle>
+            <DialogTitle>{isCreating ? 'Nuevo proyecto' : 'Editar proyecto'}</DialogTitle>
             <DialogDescription>Configura los parámetros operativos y estratégicos.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-6 py-4">
@@ -1014,7 +1014,7 @@ export default function ProjectsPage() {
                 <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
               </div>
               <div className="space-y-2">
-                <Label>Cliente Asociado</Label>
+                <Label>Cliente asociado</Label>
                 <Select value={formData.clientId} onValueChange={(val) => setFormData({...formData, clientId: val})}>
                   <SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
                   <SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
@@ -1023,15 +1023,15 @@ export default function ProjectsPage() {
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Horas Asignadas</Label>
+                <Label>Horas asignadas</Label>
                 <Input type="number" value={formData.budgetHours} onChange={e => setFormData({...formData, budgetHours: e.target.value})} />
               </div>
               <div className="space-y-2">
-                <Label>Horas Mínimas</Label>
+                <Label>Horas mínimas</Label>
                 <Input type="number" value={formData.minimumHours} onChange={e => setFormData({...formData, minimumHours: e.target.value})} />
               </div>
               <div className="space-y-2">
-                <Label>Fee Mensual (€)</Label>
+                <Label>Fee mensual (€)</Label>
                 <Input type="number" value={formData.monthlyFee} onChange={e => setFormData({...formData, monthlyFee: e.target.value})} />
               </div>
             </div>
@@ -1054,7 +1054,7 @@ export default function ProjectsPage() {
                   <SelectContent>
                     <SelectItem value="healthy">🟢 Sano</SelectItem>
                     <SelectItem value="needs_attention">🟠 Atención</SelectItem>
-                    <SelectItem value="at_risk">🔴 En Peligro</SelectItem>
+                    <SelectItem value="at_risk">🔴 En peligro</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1096,7 +1096,7 @@ export default function ProjectsPage() {
               </Button>
             )}
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>Guardar Cambios</Button>
+            <Button onClick={handleSave}>Guardar cambios</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

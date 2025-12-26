@@ -232,7 +232,7 @@ export default function ReportsPage() {
     {
       title: 'Capacidad',
       value: `${totalCapacity}h`,
-      subtitle: selectedEmployeeId === 'all' ? 'Total Equipo' : 'Disponible',
+      subtitle: selectedEmployeeId === 'all' ? 'Total equipo' : 'Disponible',
       icon: Users,
       color: 'text-slate-600',
       bgColor: 'bg-slate-100',
@@ -386,7 +386,7 @@ export default function ReportsPage() {
 
             <Card className="col-span-3">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><FolderOpen className="h-5 w-5" /> Proyectos Activos</CardTitle>
+                <CardTitle className="flex items-center gap-2"><FolderOpen className="h-5 w-5" /> Proyectos activos</CardTitle>
                 <CardDescription>Actividad por proyecto este mes.</CardDescription>
               </CardHeader>
               <CardContent>

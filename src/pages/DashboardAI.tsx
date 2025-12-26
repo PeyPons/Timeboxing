@@ -484,7 +484,7 @@ export default function DashboardAI() {
     return `
 REPORTE DE GESTIÓN (MINGUITO AI):
 Fecha: ${format(now, "dd/MM/yyyy")}
-Capacidad Semanal Equipo: ${totalCapacity}h | Total Asignado Mes: ${totalAssigned}h
+Capacidad semanal equipo: ${totalCapacity}h | Total asignado mes: ${totalAssigned}h
 
 🎯 ÍNDICE DE FIABILIDAD (Precisión en estimaciones):
 ${reliabilityReport.length > 0 ? JSON.stringify(reliabilityReport, null, 2) : "Faltan datos de horas reales para calcular fiabilidad."}

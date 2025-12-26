@@ -73,7 +73,7 @@ export default function SettingsPage() {
                             />
                         </div>
                         <Button onClick={handleAddAccount} disabled={loading} className="w-full md:w-1/4 bg-slate-900 hover:bg-slate-800">
-                            {loading ? 'Guardando...' : 'Añadir Cuenta'}
+                            {loading ? 'Guardando...' : 'Añadir cuenta'}
                         </Button>
                     </div>
                     <div className="bg-slate-50 p-3 rounded text-xs text-slate-500 border border-slate-100">
