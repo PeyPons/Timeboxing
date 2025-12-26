@@ -49,16 +49,16 @@ export function Sidebar() {
           Mi Espacio
         </NavLink>
 
+        <NavLink to="/deadlines" icon={Calendar} active={location.pathname === '/deadlines'}>
+          Deadline
+        </NavLink>
+
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-2">
           Gestión
         </div>
         
         <NavLink to="/planner" icon={LayoutDashboard} active={location.pathname === '/planner'}>
           Planificador
-        </NavLink>
-
-        <NavLink to="/deadlines" icon={Calendar} active={location.pathname === '/deadlines'}>
-          Deadlines
         </NavLink>
 
         <NavLink to="/projects" icon={FolderKanban} active={location.pathname === '/projects'}>
