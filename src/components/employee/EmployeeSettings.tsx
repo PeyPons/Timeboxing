@@ -1,3 +1,4 @@
+// Componente de ajustes de cuenta del empleado
 import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
