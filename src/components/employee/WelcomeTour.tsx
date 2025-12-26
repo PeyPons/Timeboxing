@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { 
   X, ChevronLeft, ChevronRight, ListPlus, Clock, Calendar, 
   TrendingUp, Users, LayoutDashboard, Target, Sparkles, 
-  CheckCircle2, AlertOctagon, MousePointerClick, Zap
+  CheckCircle2, AlertOctagon, MousePointerClick, Zap, FileDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -37,6 +37,15 @@ const tourSteps: TourStep[] = [
     title: 'Añadir Tareas',
     description: 'Aquí puedes planificar tu trabajo. Añade múltiples tareas a la vez, selecciona el proyecto, las horas y la semana. Verás alertas si te pasas del presupuesto.',
     icon: <ListPlus className="w-6 h-6 text-indigo-500" />,
+    position: 'bottom',
+    highlight: true
+  },
+  {
+    id: 'crm-export',
+    target: '[data-tour="crm-export"]',
+    title: 'Exportar al CRM',
+    description: 'Una vez planificadas tus tareas, puedes exportarlas al CRM con un solo clic. Se generará un archivo CSV listo para importar. Necesitas tener configurado tu ID de usuario del CRM.',
+    icon: <FileDown className="w-6 h-6 text-purple-500" />,
     position: 'bottom',
     highlight: true
   },
