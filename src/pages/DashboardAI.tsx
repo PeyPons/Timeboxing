@@ -22,7 +22,7 @@ interface Message {
   text: string;
   timestamp: Date;
   provider?: 'gemini' | 'openrouter' | 'coco';
-  modelName?: string; // Para guardar el nombre específico del modelo
+  modelName?: string;
 }
 
 // Preguntas sugeridas para guiar al usuario
@@ -35,53 +35,131 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 // ============================================================
-// LISTA DE MODELOS OPENROUTER (DEFINITIVA Y ESTABLE)
+// LISTA DE MODELOS OPENROUTER (TODOS LOS GRATUITOS + FALLBACKS)
 // ============================================================
+// Ordenados para intentar calidad primero, pero incluye los 39 gratuitos + fallbacks.
 const OPENROUTER_MODEL_CHAIN = [
-  "google/gemma-2-9b-it:free",
+  // --- TIER S: LOS PESOS PESADOS (Gratis) ---
+  "google/gemini-2.0-flash-exp:free",
   "meta-llama/llama-3.3-70b-instruct:free",
+  "deepseek/deepseek-r1-0528:free",
+  "meta-llama/llama-3.1-405b-instruct:free",
+  "nousresearch/hermes-3-llama-3.1-405b:free",
+  "allenai/olmo-3.1-32b-think:free",
+  "alibaba/tongyi-deepresearch-30b-a3b:free",
+  
+  // --- TIER A: MODELOS EQUILIBRADOS Y EFICIENTES ---
+  "google/gemma-3-27b-it:free",
+  "mistralai/mistral-small-3.1-24b-instruct:free",
+  "nvidia/nemotron-3-nano-30b-a3b:free",
+  "qwen/qwen3-coder:free",
+  "allenai/olmo-3-32b-think:free",
+  "nex-agi/deepseek-v3.1-nex-n1:free",
+  "kwaipilot/kat-coder-pro:free",
+  "google/gemma-3-12b-it:free",
+  
+  // --- TIER B: MODELOS RÁPIDOS Y EXPERIMENTALES ---
+  "google/gemma-3-4b-it:free",
+  "xiaomi/mimo-v2-flash:free",
   "mistralai/mistral-7b-instruct:free",
-  "microsoft/phi-3-medium-128k-instruct:free",
-  "qwen/qwen-2.5-7b-instruct:free",
-  "google/gemini-2.0-flash-exp:free"
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "qwen/qwen-2.5-vl-7b-instruct:free",
+  "microsoft/phi-3-medium-128k-instruct:free", // Mantenemos compatibilidad aunque no esté en la lista nueva explícita, suele ser free
+  
+  // --- TIER C: RESTO DE LA LISTA DE 39 (Experimentales / Específicos) ---
+  "bytedance-seed/seedream-4.5",
+  "mistralai/devstral-2512:free",
+  "sourceful/riverflow-v2-max-preview",
+  "sourceful/riverflow-v2-standard-preview",
+  "sourceful/riverflow-v2-fast-preview",
+  "arcee-ai/trinity-mini:free",
+  "tngtech/tng-r1t-chimera:free",
+  "nvidia/nemotron-nano-12b-v2-vl:free",
+  "nvidia/nemotron-nano-9b-v2:free",
+  "openai/gpt-oss-120b:free",
+  "openai/gpt-oss-20b:free",
+  "z-ai/glm-4.5-air:free",
+  "moonshotai/kimi-k2:free",
+  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+  "google/gemma-3n-e2b-it:free",
+  "google/gemma-3n-e4b-it:free",
+  "tngtech/deepseek-r1t2-chimera:free",
+  "tngtech/deepseek-r1t-chimera:free",
+  "qwen/qwen3-4b:free",
+
+  // --- TIER Z: FALLBACKS DE PAGO (ÚLTIMO RECURSO) ---
+  "cerebras/llama3.1-70b", // Velocidad extrema
+  "openai/gpt-5-mini"      // El "GPT-5" solicitado (probablemente mapeado a 4o-mini o future preview)
 ];
 
 // ============================================================
 // CONFIGURACIÓN DE COLORES Y NOMBRES POR MODELO
 // ============================================================
 const MODEL_CONFIG: Record<string, { name: string; color: string; border: string; bg: string }> = {
-  // Google / Gemini / Gemma
+  // --- GOOGLE ---
   "google/gemini-2.0-flash": { name: "Gemini Flash 2.0", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
   "google/gemini-2.0-flash-exp:free": { name: "Gemini Flash Exp", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
-  "google/gemma-2-9b-it:free": { name: "Gemma 2 9B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
+  "google/gemma-3-27b-it:free": { name: "Gemma 3 27B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
+  "google/gemma-3-12b-it:free": { name: "Gemma 3 12B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
+  "google/gemma-3-4b-it:free": { name: "Gemma 3 4B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
+  "google/gemma-3n-e2b-it:free": { name: "Gemma 3N 2B", color: "text-sky-500", border: "border-sky-200", bg: "bg-sky-50" },
+  "google/gemma-3n-e4b-it:free": { name: "Gemma 3N 4B", color: "text-sky-500", border: "border-sky-200", bg: "bg-sky-50" },
   
-  // Meta / Llama
-  "meta-llama/llama-3.3-70b-instruct:free": { name: "Llama 3.3 70B", color: "text-blue-700", border: "border-blue-300", bg: "bg-blue-100" },
-  "meta-llama/llama-3.2-3b-instruct:free": { name: "Llama 3.2 3B", color: "text-blue-700", border: "border-blue-300", bg: "bg-blue-100" },
+  // --- META (LLAMA) ---
+  "meta-llama/llama-3.3-70b-instruct:free": { name: "Llama 3.3 70B", color: "text-indigo-600", border: "border-indigo-200", bg: "bg-indigo-50" },
+  "meta-llama/llama-3.1-405b-instruct:free": { name: "Llama 3.1 405B", color: "text-indigo-700", border: "border-indigo-300", bg: "bg-indigo-100" },
+  "meta-llama/llama-3.2-3b-instruct:free": { name: "Llama 3.2 3B", color: "text-indigo-500", border: "border-indigo-200", bg: "bg-indigo-50" },
   
-  // Mistral
+  // --- MISTRAL ---
   "mistralai/mistral-7b-instruct:free": { name: "Mistral 7B", color: "text-orange-500", border: "border-orange-200", bg: "bg-orange-50" },
-  "mistralai/devstral-2512:free": { name: "Mistral Dev", color: "text-orange-600", border: "border-orange-300", bg: "bg-orange-100" },
+  "mistralai/mistral-small-3.1-24b-instruct:free": { name: "Mistral Small 3", color: "text-orange-600", border: "border-orange-200", bg: "bg-orange-50" },
+  "mistralai/devstral-2512:free": { name: "Mistral Dev", color: "text-amber-600", border: "border-amber-200", bg: "bg-amber-50" },
   
-  // Microsoft
-  "microsoft/phi-3-medium-128k-instruct:free": { name: "Phi-3 Medium", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
-  "microsoft/phi-3-mini-128k-instruct:free": { name: "Phi-3 Mini", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
-
-  // Qwen (Alibaba)
-  "qwen/qwen-2.5-7b-instruct:free": { name: "Qwen 2.5 7B", color: "text-purple-600", border: "border-purple-200", bg: "bg-purple-50" },
+  // --- QWEN / ALIBABA ---
+  "qwen/qwen-2.5-vl-7b-instruct:free": { name: "Qwen 2.5 VL", color: "text-purple-600", border: "border-purple-200", bg: "bg-purple-50" },
   "qwen/qwen3-coder:free": { name: "Qwen 3 Coder", color: "text-purple-700", border: "border-purple-300", bg: "bg-purple-100" },
+  "qwen/qwen3-4b:free": { name: "Qwen 3 4B", color: "text-purple-500", border: "border-purple-200", bg: "bg-purple-50" },
+  "alibaba/tongyi-deepresearch-30b-a3b:free": { name: "Tongyi Research", color: "text-violet-600", border: "border-violet-200", bg: "bg-violet-50" },
 
-  // Xiaomi
+  // --- DEEPSEEK & NOUS / TNG ---
+  "deepseek/deepseek-r1-0528:free": { name: "DeepSeek R1", color: "text-cyan-700", border: "border-cyan-200", bg: "bg-cyan-50" },
+  "nex-agi/deepseek-v3.1-nex-n1:free": { name: "DeepSeek V3.1 Nex", color: "text-cyan-600", border: "border-cyan-200", bg: "bg-cyan-50" },
+  "tngtech/tng-r1t-chimera:free": { name: "TNG R1T", color: "text-cyan-800", border: "border-cyan-300", bg: "bg-cyan-100" },
+  "tngtech/deepseek-r1t2-chimera:free": { name: "TNG R1T2", color: "text-cyan-800", border: "border-cyan-300", bg: "bg-cyan-100" },
+  "tngtech/deepseek-r1t-chimera:free": { name: "TNG R1T", color: "text-cyan-800", border: "border-cyan-300", bg: "bg-cyan-100" },
+  "nousresearch/hermes-3-llama-3.1-405b:free": { name: "Hermes 3 405B", color: "text-teal-700", border: "border-teal-300", bg: "bg-teal-100" },
+  
+  // --- NVIDIA ---
+  "nvidia/nemotron-3-nano-30b-a3b:free": { name: "Nvidia Nemotron 30B", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
+  "nvidia/nemotron-nano-12b-v2-vl:free": { name: "Nvidia Nano 12B", color: "text-emerald-500", border: "border-emerald-200", bg: "bg-emerald-50" },
+  "nvidia/nemotron-nano-9b-v2:free": { name: "Nvidia Nano 9B", color: "text-emerald-500", border: "border-emerald-200", bg: "bg-emerald-50" },
+
+  // --- ALLEN AI (OLMO) ---
+  "allenai/olmo-3.1-32b-think:free": { name: "Olmo 3.1", color: "text-slate-600", border: "border-slate-300", bg: "bg-slate-100" },
+  "allenai/olmo-3-32b-think:free": { name: "Olmo 3", color: "text-slate-600", border: "border-slate-300", bg: "bg-slate-100" },
+
+  // --- OPENAI (OSS & Paid Fallback) ---
+  "openai/gpt-oss-120b:free": { name: "GPT OSS 120B", color: "text-green-700", border: "border-green-300", bg: "bg-green-100" },
+  "openai/gpt-oss-20b:free": { name: "GPT OSS 20B", color: "text-green-600", border: "border-green-200", bg: "bg-green-50" },
+  "openai/gpt-5-mini": { name: "GPT-5 Mini", color: "text-green-500", border: "border-green-200", bg: "bg-green-50" }, // Paid Fallback
+
+  // --- XIAOMI / BYTEDANCE / SOURCEFUL / OTHERS ---
   "xiaomi/mimo-v2-flash:free": { name: "Xiaomi MiMo", color: "text-orange-600", border: "border-orange-300", bg: "bg-orange-50" },
-  
-  // Nvidia
-  "nvidia/nemotron-3-nano-30b-a3b:free": { name: "Nvidia Nemotron", color: "text-green-600", border: "border-green-300", bg: "bg-green-50" },
+  "bytedance-seed/seedream-4.5": { name: "Seedream 4.5", color: "text-pink-600", border: "border-pink-200", bg: "bg-pink-50" },
+  "sourceful/riverflow-v2-max-preview": { name: "Riverflow Max", color: "text-blue-500", border: "border-blue-200", bg: "bg-blue-50" },
+  "sourceful/riverflow-v2-standard-preview": { name: "Riverflow Std", color: "text-blue-500", border: "border-blue-200", bg: "bg-blue-50" },
+  "sourceful/riverflow-v2-fast-preview": { name: "Riverflow Fast", color: "text-blue-500", border: "border-blue-200", bg: "bg-blue-50" },
+  "arcee-ai/trinity-mini:free": { name: "Trinity Mini", color: "text-fuchsia-600", border: "border-fuchsia-200", bg: "bg-fuchsia-50" },
+  "kwaipilot/kat-coder-pro:free": { name: "Kat Coder Pro", color: "text-yellow-600", border: "border-yellow-200", bg: "bg-yellow-50" },
+  "z-ai/glm-4.5-air:free": { name: "GLM 4.5 Air", color: "text-indigo-500", border: "border-indigo-200", bg: "bg-indigo-50" },
+  "moonshotai/kimi-k2:free": { name: "Kimi K2", color: "text-rose-500", border: "border-rose-200", bg: "bg-rose-50" },
+  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free": { name: "Dolphin Mistral", color: "text-teal-600", border: "border-teal-200", bg: "bg-teal-50" },
 
-  // DeepSeek
-  "deepseek/deepseek-r1-0528:free": { name: "DeepSeek R1", color: "text-cyan-600", border: "border-cyan-300", bg: "bg-cyan-50" },
+  // --- CEREBRAS (Paid Fallback) ---
+  "cerebras/llama3.1-70b": { name: "🚀 Cerebras Llama", color: "text-red-600", border: "border-red-300", bg: "bg-red-50" },
   
-  // Fallbacks genéricos
-  "default": { name: "Unknown Model", color: "text-slate-600", border: "border-slate-200", bg: "bg-slate-50" }
+  // --- Default ---
+  "default": { name: "AI Model", color: "text-slate-600", border: "border-slate-200", bg: "bg-slate-50" }
 };
 
 // ============================================================
@@ -159,70 +237,61 @@ async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: st
   return { text: result.response.text(), provider: 'gemini', modelName: modelName };
 }
 
+// VERSIÓN NATIVA: Usa el sistema de fallback integrado de OpenRouter
 async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter'; modelName: string }> {
   const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-  for (const modelId of OPENROUTER_MODEL_CHAIN) {
-    console.log(`🟣 [OpenRouter] Intentando con modelo: ${modelId}...`);
+  try {
+    console.log(`🟣 [OpenRouter] Iniciando petición con cadena masiva (${OPENROUTER_MODEL_CHAIN.length} modelos)...`);
+    
+    const response = await fetch(OPENROUTER_API_URL, {
+      method: 'POST',
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": window.location.origin,
+        "X-Title": "Timeboxing App"
+      },
+      // Pasamos la lista completa a 'models' para que OpenRouter gestione el fallback
+      body: JSON.stringify({
+        models: OPENROUTER_MODEL_CHAIN, 
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+      }),
+    });
 
-    try {
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": window.location.origin,
-          "X-Title": "Timeboxing App"
-        },
-        body: JSON.stringify({
-          model: modelId, 
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.7,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Status ${response.status}: ${errorText}`);
-      }
-
-      const responseData = await response.json();
-      
-      if (responseData?.choices?.[0]?.message?.content) {
-        console.log(`✅ [OpenRouter] Éxito con ${modelId}`);
-        return { 
-          text: responseData.choices[0].message.content, 
-          provider: 'openrouter', 
-          modelName: modelId 
-        };
-      } else {
-        throw new Error(`Estructura incorrecta en ${modelId}`);
-      }
-
-    } catch (error: any) {
-      console.warn(`⚠️ Falló ${modelId}: ${error.message}`);
-      continue;
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Status ${response.status}: ${errorText}`);
     }
-  }
 
-  throw new Error('OpenRouter agotado: Ningún modelo gratuito respondió correctamente.');
+    const responseData = await response.json();
+    
+    // Obtenemos qué modelo respondió realmente
+    const usedModel = responseData.model || "unknown-model";
+
+    if (responseData?.choices?.[0]?.message?.content) {
+      console.log(`✅ [OpenRouter] Éxito. Respondió: ${usedModel}`);
+      return { 
+        text: responseData.choices[0].message.content, 
+        provider: 'openrouter', 
+        modelName: usedModel // Devolvemos el modelo exacto que usó OpenRouter
+      };
+    } else {
+      throw new Error(`Estructura incorrecta en respuesta OpenRouter`);
+    }
+
+  } catch (error: any) {
+    console.warn(`⚠️ Error crítico en OpenRouter: ${error.message}`);
+    throw error;
+  }
 }
 
 async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco'; modelName: string }> {
   const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
-  
   const simplifiedPrompt = `Responde breve y claro en texto plano (sin markdown): ${prompt.substring(0, 1000)}`;
+  const payload = { message: simplifiedPrompt, noAuth: "true", action: "text/generateResume", app: "CHATBOT", rol: "user", method: "POST", language: "es" };
   
-  const payload = {
-    message: simplifiedPrompt,
-    noAuth: "true",
-    action: "text/generateResume",
-    app: "CHATBOT",
-    rol: "user",
-    method: "POST",
-    language: "es",
-  };
-
   const response = await fetch(COCO_API_URL, {
     method: 'POST',
     headers: { "Content-Type": "application/json" },
@@ -247,9 +316,7 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
       .replace(/\n{3,}/g, '\n\n')         
       .trim();
     
-    if (cleanText.length < 5) {
-      throw new Error('Respuesta de Coco insuficiente o inválida');
-    }
+    if (cleanText.length < 5) throw new Error('Respuesta de Coco insuficiente');
 
     return { text: cleanText, provider: 'coco', modelName: 'Coco Custom' };
   } else {
@@ -274,7 +341,7 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
 
   if (openRouterApiKey) {
     try {
-      console.log('🟣 Intentando con OpenRouter (Cascada)...');
+      console.log('🟣 Intentando con OpenRouter (Nativo)...');
       const result = await callOpenRouterAPI(prompt, openRouterApiKey);
       return result;
     } catch (error: any) {
