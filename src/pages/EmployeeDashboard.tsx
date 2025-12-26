@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { MyWeekView } from '@/components/employee/MyWeekView';
 import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/DashboardWidgets'; 
 import { ReliabilityIndexCard } from '@/components/employee/ReliabilityIndexCard';
+import { CollaborationCards } from '@/components/employee/CollaborationCards';
 import { WelcomeTour, useWelcomeTour } from '@/components/employee/WelcomeTour';
 import { EmployeeSettings } from '@/components/employee/EmployeeSettings';
 import { Card } from '@/components/ui/card';
@@ -494,6 +495,9 @@ export default function EmployeeDashboard() {
           </div>
         </div>
       </Card>
+
+      {/* 3.5. TARJETAS DE COLABORACIÓN Y MOTIVACIÓN */}
+      <CollaborationCards employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
 
       {/* 4. ALERTAS (izq) + DEPENDENCIAS (der) - Misma altura */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
