@@ -34,6 +34,18 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 // ============================================================
+// LISTA DE MODELOS OPENROUTER (Orden de prioridad)
+// ============================================================
+const OPENROUTER_MODEL_CHAIN = [
+    "google/gemini-2.0-flash-exp:free",        // 1. Google (Muy rápido y ventana enorme)
+    "meta-llama/llama-3.3-70b-instruct:free",  // 2. Meta (El mejor Open Source actual)
+    "qwen/qwen-2.5-vl-7b-instruct:free",       // 3. Qwen (Muy equilibrado)
+    "mistralai/mistral-small-3.1-24b-instruct:free", // 4. Mistral (Eficiente)
+    "deepseek/deepseek-r1-0528:free",          // 5. DeepSeek (Razonamiento)
+    "microsoft/phi-3-mini-128k-instruct:free"  // 6. Fallback ligero final
+];
+
+// ============================================================
 // FUNCIÓN PARA PARSEAR MARKDOWN BÁSICO
 // ============================================================
 function parseSimpleMarkdown(text: string): React.ReactNode {
@@ -122,44 +134,63 @@ async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: st
   return { text: result.response.text(), provider: 'gemini' };
 }
 
+/**
+ * Función mejorada: Itera por la lista de modelos hasta que uno responde.
+ * Evita errores 404/429 probando alternativas automáticamente.
+ */
 async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter' }> {
   const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-  
-  // SOLUCIÓN: En lugar de "auto" (que puede elegir modelos de pago), pasamos una lista separada por comas.
-  // OpenRouter intentará el primero, si falla, el segundo, etc. Todos estos son gratuitos.
-  const FREE_MODELS_CHAIN = "google/gemini-2.0-flash-exp:free,meta-llama/llama-3.3-70b-instruct:free,microsoft/phi-3-medium-128k-instruct:free";
 
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: 'POST',
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": window.location.origin,
-      "X-Title": "Timeboxing App"
-    },
-    body: JSON.stringify({
-      model: FREE_MODELS_CHAIN, 
-      messages: [
-        {
-          role: "user",
-          content: prompt
-        }
-      ]
-    }),
-  });
+  // Iteramos sobre la lista de modelos uno por uno
+  for (const modelId of OPENROUTER_MODEL_CHAIN) {
+    console.log(`🟣 [OpenRouter] Intentando con modelo: ${modelId}...`);
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": window.location.origin, // Necesario para ranking free
+          "X-Title": "Timeboxing App"
+        },
+        body: JSON.stringify({
+          model: modelId, 
+          messages: [
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          temperature: 0.7,
+        }),
+      });
+
+      // Si el servidor responde con error (404, 429, 500), lanzamos excepción para ir al catch y probar el siguiente
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Status ${response.status}: ${errorText}`);
+      }
+
+      const responseData = await response.json();
+      
+      // Validación de la respuesta
+      if (responseData?.choices?.[0]?.message?.content) {
+        console.log(`✅ [OpenRouter] Éxito con ${modelId}`);
+        return { text: responseData.choices[0].message.content, provider: 'openrouter' };
+      } else {
+        throw new Error(`Estructura incorrecta en ${modelId}`);
+      }
+
+    } catch (error: any) {
+      console.warn(`⚠️ Falló ${modelId}: ${error.message}`);
+      // No hacemos 'throw' aquí, dejamos que el bucle continúe con el siguiente modelo
+      continue;
+    }
   }
 
-  const responseData = await response.json();
-  
-  if (responseData?.choices?.[0]?.message?.content) {
-    return { text: responseData.choices[0].message.content, provider: 'openrouter' };
-  } else {
-    throw new Error('Respuesta inesperada de OpenRouter API: Estructura incorrecta');
-  }
+  // Si llegamos aquí, es que TODOS los modelos del array fallaron
+  throw new Error('OpenRouter agotado: Ningún modelo gratuito respondió correctamente.');
 }
 
 async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco' }> {
@@ -195,14 +226,14 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
   if (responseData && responseData.data) {
     // Limpieza AGRESIVA para evitar el output "0h. 0h:"
     let cleanText = responseData.data
-      .replace(/```/g, '')               
-      .replace(/<[^>]*>/g, '')           
-      .replace(/^\s*[\*\-]\s*$/gm, '')   
-      .replace(/\*\*/g, '')              
-      .replace(/\*\s*\n/g, '\n')         
-      .replace(/^\*\s*/gm, '- ')         
-      .replace(/<br\s*\/?>/gi, '\n')     
-      .replace(/\n{3,}/g, '\n\n')        
+      .replace(/```/g, '')                
+      .replace(/<[^>]*>/g, '')            
+      .replace(/^\s*[\*\-]\s*$/gm, '')    
+      .replace(/\*\*/g, '')               
+      .replace(/\*\s*\n/g, '\n')          
+      .replace(/^\*\s*/gm, '- ')          
+      .replace(/<br\s*\/?>/gi, '\n')      
+      .replace(/\n{3,}/g, '\n\n')         
       .trim();
     
     // Si la respuesta sigue siendo basura muy corta (ej: "0h"), lanzar error para que no se muestre
@@ -233,15 +264,15 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
     }
   }
 
-  // Intento 2: OpenRouter
+  // Intento 2: OpenRouter (Modo Cascada Integrado)
   if (openRouterApiKey) {
     try {
-      console.log('🟣 Intentando con OpenRouter...');
+      console.log('🟣 Intentando con OpenRouter (Cascada)...');
       const result = await callOpenRouterAPI(prompt, openRouterApiKey);
-      console.log('✅ OpenRouter respondió correctamente');
+      // El log de éxito ya está dentro de la función callOpenRouterAPI
       return result;
     } catch (error: any) {
-      console.warn('⚠️ OpenRouter falló:', error.message);
+      console.warn('⚠️ OpenRouter falló completamente:', error.message);
       // Continuar con el siguiente proveedor
     }
   }
@@ -283,8 +314,6 @@ export default function DashboardAI() {
   // ============================================================
   const analysisData = useMemo(() => {
     const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
     // Proteccion: asegurar que todos los arrays esten inicializados
     const safeEmployees = employees || [];
     const safeAllocations = allocations || [];
@@ -551,7 +580,7 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
     return {
       utilization: isNaN(utilization) ? 0 : utilization,
       balance: isNaN(balance) ? 0 : balance,
-    criticalAlerts: analysisData.alerts.critical || 0,
+      criticalAlerts: analysisData.alerts.critical || 0,
       warningAlerts: analysisData.alerts.warning || 0
     };
   }, [analysisData]);
