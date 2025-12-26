@@ -144,27 +144,26 @@ export function DeadlinesTour({ onComplete, forceShow = false }: DeadlinesTourPr
 
     // Esperar a que currentUser esté disponible antes de decidir
     if (currentUser === undefined) {
+      // Aún no se ha cargado el usuario, no mostrar nada
       return;
     }
 
-    // Verificar desde la base de datos si el usuario está logueado
-    if (currentUser) {
-      // Si deadlinesTourCompleted es null/undefined, tratarlo como false
-      const isCompleted = currentUser.deadlinesTourCompleted === true;
-      if (!isCompleted) {
-        const timer = setTimeout(() => setIsVisible(true), 500);
-        return () => clearTimeout(timer);
-      } else {
-        // Asegurarse de que el tour no se muestre si ya está completado
-        setIsVisible(false);
-      }
+    // Si currentUser es null o no existe, NO mostrar el tour
+    // Esto evita loops infinitos cuando el empleado no tiene user_id asociado
+    if (!currentUser) {
+      console.log('[DeadlinesTour] No hay currentUser, no se muestra el tour');
+      return;
+    }
+
+    // Verificar si el tour ya fue completado
+    const isCompleted = currentUser.deadlinesTourCompleted === true;
+    if (!isCompleted) {
+      console.log('[DeadlinesTour] Tour no completado, mostrando...');
+      const timer = setTimeout(() => setIsVisible(true), 500);
+      return () => clearTimeout(timer);
     } else {
-      // Fallback a localStorage si no hay usuario
-      const completed = localStorage.getItem('timeboxing_deadlines_tour_completed');
-      if (!completed) {
-        const timer = setTimeout(() => setIsVisible(true), 500);
-        return () => clearTimeout(timer);
-      }
+      console.log('[DeadlinesTour] Tour ya completado');
+      setIsVisible(false);
     }
   }, [forceShow, currentUser]);
 

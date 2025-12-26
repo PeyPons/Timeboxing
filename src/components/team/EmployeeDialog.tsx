@@ -83,21 +83,47 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
     let authUserId = employeeToEdit?.user_id;
     let authMessage = "";
 
-    // DEBUG: Ver qué valores tenemos
-    console.log('[EmployeeDialog] handleSubmit called');
-    console.log('[EmployeeDialog] password value:', JSON.stringify(password));
-    console.log('[EmployeeDialog] password.length:', password.length);
-    console.log('[EmployeeDialog] email value:', email);
-
     try {
-        // SOLO gestionar autenticación si el usuario proporciona una contraseña nueva
-        // Si no hay contraseña, simplemente guardamos los datos del empleado sin tocar auth
-        const shouldCreateAuth = password.length >= 6;
-        console.log('[EmployeeDialog] shouldCreateAuth:', shouldCreateAuth);
+        const isNewEmployee = !employeeToEdit;
+        const hasPassword = password.length >= 6;
         
-        if (shouldCreateAuth) {
+        // Para NUEVOS empleados, es OBLIGATORIO crear cuenta de acceso
+        if (isNewEmployee) {
+            if (!email || !email.trim()) {
+                toast.error("El email es obligatorio para crear un nuevo empleado");
+                setIsProcessing(false);
+                return;
+            }
+            if (!hasPassword) {
+                toast.error("La contraseña es obligatoria (mínimo 6 caracteres) para crear un nuevo empleado");
+                setIsProcessing(false);
+                return;
+            }
+            
+            // Crear usuario en Supabase Auth
+            console.log('[EmployeeDialog] Creando usuario en Auth:', email);
+            const { data, error } = await supabase.functions.invoke('create-user', {
+                body: { email, password, name }
+            });
+            
+            if (error) {
+                console.error('[EmployeeDialog] Error en create-user:', error);
+                throw new Error(error.message || 'Error al crear cuenta de acceso');
+            }
+            
+            if (!data?.user?.id) {
+                console.error('[EmployeeDialog] No se recibió user.id:', data);
+                throw new Error('No se pudo crear la cuenta de acceso. Verifica que la Edge Function esté desplegada.');
+            }
+            
+            authUserId = data.user.id;
+            authMessage = "Empleado y cuenta de acceso creados.";
+            console.log('[EmployeeDialog] Usuario Auth creado:', authUserId);
+        } 
+        // Para empleados EXISTENTES, solo actualizar si hay nueva contraseña
+        else if (hasPassword) {
             if (!email) {
-                toast.error("Debes proporcionar un email para crear acceso");
+                toast.error("Debes proporcionar un email para actualizar el acceso");
                 setIsProcessing(false);
                 return;
             }
@@ -110,11 +136,17 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                 if (error) throw error;
                 authMessage = "Credenciales actualizadas.";
             } else {
-                // No tiene cuenta de auth -> crear nueva
+                // Empleado existente SIN cuenta de auth -> crear nueva
+                console.log('[EmployeeDialog] Creando cuenta Auth para empleado existente:', email);
                 const { data, error } = await supabase.functions.invoke('create-user', {
                     body: { email, password, name }
                 });
-                if (error) throw error;
+                
+                if (error) {
+                    console.error('[EmployeeDialog] Error en create-user:', error);
+                    throw new Error(error.message || 'Error al crear cuenta de acceso');
+                }
+                
                 if (data?.user?.id) {
                     authUserId = data.user.id;
                     authMessage = "Cuenta de acceso creada.";
@@ -186,20 +218,45 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                   <Input id="name" value={name} onChange={e => setName(e.target.value)} required />
                 </div>
                 
-                <div className="p-4 bg-slate-50 border rounded-lg space-y-4">
+                <div className={`p-4 border rounded-lg space-y-4 ${isEditing ? 'bg-slate-50' : 'bg-amber-50 border-amber-200'}`}>
                     <div className="flex items-center gap-2 mb-2">
-                        {hasAccess ? <ShieldCheck className="w-4 h-4 text-emerald-600"/> : <Lock className="w-4 h-4 text-amber-500"/>}
-                        <span className="text-sm font-semibold text-slate-700">
-                            {hasAccess ? 'Acceso (activo)' : 'Configurar acceso'}
-                        </span>
+                        {hasAccess ? (
+                          <>
+                            <ShieldCheck className="w-4 h-4 text-emerald-600"/>
+                            <span className="text-sm font-semibold text-slate-700">Acceso activo</span>
+                          </>
+                        ) : isEditing ? (
+                          <>
+                            <Lock className="w-4 h-4 text-red-500"/>
+                            <span className="text-sm font-semibold text-red-700">Sin acceso al sistema</span>
+                          </>
+                        ) : (
+                          <>
+                            <Key className="w-4 h-4 text-amber-600"/>
+                            <span className="text-sm font-semibold text-amber-800">Configurar acceso (obligatorio)</span>
+                          </>
+                        )}
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
-                            <Label htmlFor="email">Email</Label>
-                            <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="usuario@agencia.com" />
+                            <Label htmlFor="email">
+                              Email {!isEditing && <span className="text-red-500">*</span>}
+                            </Label>
+                            <Input 
+                              id="email" 
+                              type="email" 
+                              value={email} 
+                              onChange={e => setEmail(e.target.value)} 
+                              placeholder="usuario@agencia.com"
+                              required={!isEditing}
+                              className={!isEditing && !email ? 'border-amber-300' : ''}
+                            />
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="password">{hasAccess ? 'Nueva contraseña' : 'Crear contraseña'}</Label>
+                            <Label htmlFor="password">
+                              {hasAccess ? 'Nueva contraseña' : 'Contraseña'}
+                              {!isEditing && <span className="text-red-500">*</span>}
+                            </Label>
                             <Input 
                                 id="password" 
                                 type="password" 
@@ -207,13 +264,17 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                                 onChange={e => setPassword(e.target.value)} 
                                 placeholder={hasAccess ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"}
                                 autoComplete="new-password"
+                                required={!isEditing}
+                                className={!isEditing && password.length < 6 ? 'border-amber-300' : ''}
                             />
                         </div>
                     </div>
-                    <p className="text-xs text-slate-500">
+                    <p className={`text-xs ${isEditing ? 'text-slate-500' : 'text-amber-700'}`}>
                         {hasAccess 
                             ? "Deja la contraseña vacía si no quieres cambiarla." 
-                            : "Introduce email y contraseña solo si deseas crear acceso al sistema."}
+                            : isEditing 
+                              ? "Este empleado no puede acceder al sistema. Introduce email y contraseña para habilitarlo."
+                              : "El email y la contraseña son obligatorios para que el empleado pueda acceder al sistema."}
                     </p>
                 </div>
 

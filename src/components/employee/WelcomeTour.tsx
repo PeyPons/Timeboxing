@@ -161,26 +161,27 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     }
 
     // Esperar a que currentUser esté disponible antes de decidir
+    // Si currentUser es undefined, significa que aún no se ha cargado
     if (currentUser === undefined) {
-      // Aún no se ha cargado el usuario, esperar
+      // Aún no se ha cargado el usuario, no mostrar nada
       return;
     }
 
-    // Verificar desde la base de datos si el usuario está logueado
-    if (currentUser) {
-      // Si welcomeTourCompleted es null/undefined, tratarlo como false
-      const isCompleted = currentUser.welcomeTourCompleted === true;
-      if (!isCompleted) {
-        const timer = setTimeout(() => setIsVisible(true), 500);
-        return () => clearTimeout(timer);
-      }
+    // Si currentUser es null o no existe, NO mostrar el tour
+    // Esto evita loops infinitos cuando el empleado no tiene user_id asociado
+    if (!currentUser) {
+      console.log('[WelcomeTour] No hay currentUser, no se muestra el tour');
+      return;
+    }
+
+    // Verificar si el tour ya fue completado
+    const isCompleted = currentUser.welcomeTourCompleted === true;
+    if (!isCompleted) {
+      console.log('[WelcomeTour] Tour no completado, mostrando...');
+      const timer = setTimeout(() => setIsVisible(true), 500);
+      return () => clearTimeout(timer);
     } else {
-      // Fallback a localStorage si no hay usuario (por compatibilidad)
-      const completed = localStorage.getItem('timeboxing_welcome_tour_completed');
-      if (!completed) {
-        const timer = setTimeout(() => setIsVisible(true), 500);
-        return () => clearTimeout(timer);
-      }
+      console.log('[WelcomeTour] Tour ya completado');
     }
   }, [forceShow, currentUser]);
 
