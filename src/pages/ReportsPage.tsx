@@ -422,6 +422,7 @@ export default function ReportsPage() {
                     <CardDescription>Análisis de Ocupación (Plan), Rentabilidad (Real vs Comp) y Fiabilidad de Estimación (Histórico).</CardDescription>
                 </CardHeader>
                 <CardContent>
+                    <TooltipProvider>
                     <div className="space-y-6">
                         {employeeData.map(emp => (
                             // ✅ KEY ÚNICA: Fuerza re-render al cambiar de mes para arreglar el bug visual del color rojo
@@ -434,62 +435,60 @@ export default function ReportsPage() {
                                         <div className="font-medium text-sm truncate flex items-center gap-2">
                                             {emp.name}
                                             {/* NUEVO: Badge de Fiabilidad Histórica */}
-                                            <TooltipProvider>
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                        <Badge 
-                                                            variant="outline" 
-                                                            className={cn(
-                                                                "text-[10px] px-1.5 py-0 h-5 font-mono cursor-help flex items-center gap-1",
-                                                                getReliabilityColor(emp.reliability.index, emp.reliability.tasksAnalyzed)
-                                                            )}
-                                                        >
-                                                            {getReliabilityIcon(emp.reliability.trend)}
-                                                            {emp.reliability.tasksAnalyzed >= 5 
-                                                                ? `${emp.reliability.index.toFixed(0)}%` 
-                                                                : '?'}
-                                                        </Badge>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent side="right" className="max-w-[280px]">
-                                                        <div className="space-y-2">
-                                                            <p className="font-semibold text-sm">
-                                                                Índice de Fiabilidad: {getReliabilityLabel(emp.reliability)}
+                                            <Tooltip>
+                                                <TooltipTrigger>
+                                                    <Badge 
+                                                        variant="outline" 
+                                                        className={cn(
+                                                            "text-[10px] px-1.5 py-0 h-5 font-mono cursor-help flex items-center gap-1",
+                                                            getReliabilityColor(emp.reliability.index, emp.reliability.tasksAnalyzed)
+                                                        )}
+                                                    >
+                                                        {getReliabilityIcon(emp.reliability.trend)}
+                                                        {emp.reliability.tasksAnalyzed >= 5 
+                                                            ? `${emp.reliability.index.toFixed(0)}%` 
+                                                            : '?'}
+                                                    </Badge>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="right" className="max-w-[280px]">
+                                                    <div className="space-y-2">
+                                                        <p className="font-semibold text-sm">
+                                                            Índice de Fiabilidad: {getReliabilityLabel(emp.reliability)}
+                                                        </p>
+                                                        {emp.reliability.tasksAnalyzed >= 5 ? (
+                                                            <>
+                                                                <div className="text-xs space-y-1">
+                                                                    <p>📊 <strong>{emp.reliability.tasksAnalyzed}</strong> tareas analizadas</p>
+                                                                    <p>⏱️ Estimado total: <strong>{emp.reliability.totalEstimated}h</strong></p>
+                                                                    <p>⚡ Real total: <strong>{emp.reliability.totalReal}h</strong></p>
+                                                                    <p>📈 Ratio: <strong>{emp.reliability.index.toFixed(1)}%</strong></p>
+                                                                </div>
+                                                                <div className="pt-2 border-t text-xs">
+                                                                    {emp.reliability.trend === 'underestimates' && (
+                                                                        <p className="text-amber-600">
+                                                                            ⚠️ Subestima ~{Math.abs(emp.reliability.deviation).toFixed(1)}h por tarea
+                                                                        </p>
+                                                                    )}
+                                                                    {emp.reliability.trend === 'overestimates' && (
+                                                                        <p className="text-blue-600">
+                                                                            📈 Sobreestima ~{Math.abs(emp.reliability.deviation).toFixed(1)}h por tarea
+                                                                        </p>
+                                                                    )}
+                                                                    {emp.reliability.trend === 'accurate' && (
+                                                                        <p className="text-emerald-600">
+                                                                            ✅ Estimaciones precisas
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            </>
+                                                        ) : (
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Se necesitan al menos 5 tareas completadas con horas reales para calcular el índice.
                                                             </p>
-                                                            {emp.reliability.tasksAnalyzed >= 5 ? (
-                                                                <>
-                                                                    <div className="text-xs space-y-1">
-                                                                        <p>📊 <strong>{emp.reliability.tasksAnalyzed}</strong> tareas analizadas</p>
-                                                                        <p>⏱️ Estimado total: <strong>{emp.reliability.totalEstimated}h</strong></p>
-                                                                        <p>⚡ Real total: <strong>{emp.reliability.totalReal}h</strong></p>
-                                                                        <p>📈 Ratio: <strong>{emp.reliability.index.toFixed(1)}%</strong></p>
-                                                                    </div>
-                                                                    <div className="pt-2 border-t text-xs">
-                                                                        {emp.reliability.trend === 'underestimates' && (
-                                                                            <p className="text-amber-600">
-                                                                                ⚠️ Subestima ~{Math.abs(emp.reliability.deviation).toFixed(1)}h por tarea
-                                                                            </p>
-                                                                        )}
-                                                                        {emp.reliability.trend === 'overestimates' && (
-                                                                            <p className="text-blue-600">
-                                                                                📈 Sobreestima ~{Math.abs(emp.reliability.deviation).toFixed(1)}h por tarea
-                                                                            </p>
-                                                                        )}
-                                                                        {emp.reliability.trend === 'accurate' && (
-                                                                            <p className="text-emerald-600">
-                                                                                ✅ Estimaciones precisas
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                </>
-                                                            ) : (
-                                                                <p className="text-xs text-muted-foreground">
-                                                                    Se necesitan al menos 5 tareas completadas con horas reales para calcular el índice.
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    </TooltipContent>
-                                                </Tooltip>
-                                            </TooltipProvider>
+                                                        )}
+                                                    </div>
+                                                </TooltipContent>
+                                            </Tooltip>
                                         </div>
                                         <div className="text-xs text-muted-foreground">{emp.role}</div>
                                     </div>
@@ -539,6 +538,7 @@ export default function ReportsPage() {
                             </div>
                         ))}
                     </div>
+                    </TooltipProvider>
                 </CardContent>
             </Card>
         </TabsContent>
