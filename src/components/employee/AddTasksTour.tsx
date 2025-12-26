@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
   X, ChevronLeft, ChevronRight, FolderOpen, FileText, 
@@ -76,7 +76,9 @@ interface AddTasksTourProps {
 export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null);
   const [highlightedElement, setHighlightedElement] = useState<HTMLElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -106,14 +108,55 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
   }, [highlightedElement]);
 
   const applyHighlight = useCallback((element: HTMLElement) => {
-    element.style.boxShadow = '0 0 0 4px #818cf8, 0 0 0 8px rgba(129, 140, 248, 0.3), 0 0 30px rgba(129, 140, 248, 0.5)';
+    element.style.boxShadow = '0 0 0 3px #818cf8, 0 0 0 6px rgba(129, 140, 248, 0.3), 0 0 20px rgba(129, 140, 248, 0.5)';
     element.style.position = 'relative';
-    element.style.zIndex = '10';
+    element.style.zIndex = '100';
     element.style.background = 'white';
     element.classList.add('tour-highlighted');
-    
-    // Scroll into view si es necesario
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
+  const calculateTooltipPosition = useCallback((element: HTMLElement | null) => {
+    if (!element) {
+      setTooltipPosition(null);
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const tooltipWidth = 320;
+    const tooltipHeight = 220;
+    const gap = 12;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let top = 0;
+    let left = 0;
+
+    // Intentar posicionar debajo del elemento
+    if (rect.bottom + gap + tooltipHeight < viewportHeight) {
+      top = rect.bottom + gap;
+      left = rect.left + rect.width / 2 - tooltipWidth / 2;
+    } 
+    // Si no cabe abajo, intentar arriba
+    else if (rect.top - gap - tooltipHeight > 0) {
+      top = rect.top - gap - tooltipHeight;
+      left = rect.left + rect.width / 2 - tooltipWidth / 2;
+    }
+    // Si no cabe, a la derecha
+    else if (rect.right + gap + tooltipWidth < viewportWidth) {
+      top = rect.top + rect.height / 2 - tooltipHeight / 2;
+      left = rect.right + gap;
+    }
+    // Última opción: a la izquierda
+    else {
+      top = rect.top + rect.height / 2 - tooltipHeight / 2;
+      left = rect.left - gap - tooltipWidth;
+    }
+
+    // Ajustar para que no se salga de la pantalla
+    left = Math.max(16, Math.min(left, viewportWidth - tooltipWidth - 16));
+    top = Math.max(16, Math.min(top, viewportHeight - tooltipHeight - 16));
+
+    setTooltipPosition({ top, left });
   }, []);
 
   useEffect(() => {
@@ -121,7 +164,6 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
 
     const step = tourSteps[currentStep];
     
-    // Limpiar highlight anterior
     cleanupHighlight();
 
     if (step.target) {
@@ -130,15 +172,20 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
         if (element) {
           setHighlightedElement(element);
           applyHighlight(element);
+          calculateTooltipPosition(element);
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          setHighlightedElement(null);
+          setTooltipPosition(null);
         }
       }, 100);
       return () => clearTimeout(timer);
     } else {
       setHighlightedElement(null);
+      setTooltipPosition(null);
     }
-  }, [isVisible, currentStep, cleanupHighlight, applyHighlight]);
+  }, [isVisible, currentStep, cleanupHighlight, applyHighlight, calculateTooltipPosition]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => cleanupHighlight();
   }, [cleanupHighlight]);
@@ -179,22 +226,30 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === tourSteps.length - 1;
   const progress = ((currentStep + 1) / tourSteps.length) * 100;
+  const isCentered = !step.target || !tooltipPosition;
 
   return (
     <>
-      {/* Overlay semi-transparente dentro del dialog */}
+      {/* Overlay semi-transparente */}
       <div 
-        className="absolute inset-0 bg-black/50 z-40 rounded-lg"
+        className="absolute inset-0 bg-black/40 z-[60] rounded-lg"
         onClick={handleSkip}
       />
       
-      {/* Card del tour - posición fija en el centro del dialog */}
+      {/* Tooltip posicionado junto al elemento */}
       <div 
-        className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none"
+        ref={tooltipRef}
+        className="fixed z-[70] animate-in fade-in slide-in-from-bottom-2 duration-200"
+        style={isCentered ? {
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+        } : {
+          top: tooltipPosition?.top,
+          left: tooltipPosition?.left,
+        }}
       >
-        <div 
-          className="bg-white rounded-xl shadow-2xl overflow-hidden w-[360px] pointer-events-auto animate-in fade-in zoom-in-95 duration-200"
-        >
+        <div className="bg-white rounded-xl shadow-2xl overflow-hidden w-[320px] border border-slate-200">
           {/* Progress bar */}
           <div className="h-1 bg-slate-100">
             <div 
@@ -203,22 +258,22 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
             />
           </div>
 
-          {/* Header */}
-          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white">
+          {/* Header compacto */}
+          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-3 text-white">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-white/20 rounded-lg">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-white/20 rounded-lg">
                   {step.icon}
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg">{step.title}</h3>
-                  <p className="text-xs text-white/70">Paso {currentStep + 1} de {tourSteps.length}</p>
+                  <h3 className="font-bold">{step.title}</h3>
+                  <p className="text-[10px] text-white/70">Paso {currentStep + 1} de {tourSteps.length}</p>
                 </div>
               </div>
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="text-white/70 hover:text-white hover:bg-white/20 h-8 w-8"
+                className="text-white/70 hover:text-white hover:bg-white/20 h-7 w-7"
                 onClick={handleSkip}
               >
                 <X className="h-4 w-4" />
@@ -226,30 +281,24 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
             </div>
           </div>
 
-          {/* Content */}
-          <div className="p-4">
+          {/* Content compacto */}
+          <div className="p-3">
             <p className="text-sm text-slate-600 leading-relaxed">
               {step.description}
             </p>
             
             {step.tip && (
-              <div className="flex items-start gap-2 mt-3 p-2.5 bg-amber-50 border border-amber-100 rounded-lg">
-                <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                <p className="text-xs text-amber-700">{step.tip}</p>
-              </div>
-            )}
-
-            {step.target && (
-              <div className="mt-3 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg text-center">
-                👆 Mira el campo resaltado en púrpura
+              <div className="flex items-start gap-2 mt-2 p-2 bg-amber-50 border border-amber-100 rounded-lg">
+                <Lightbulb className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-[11px] text-amber-700">{step.tip}</p>
               </div>
             )}
           </div>
 
-          {/* Footer */}
-          <div className="px-4 pb-4">
+          {/* Footer compacto */}
+          <div className="px-3 pb-3">
             {/* Dots */}
-            <div className="flex justify-center gap-1.5 mb-3">
+            <div className="flex justify-center gap-1 mb-2">
               {tourSteps.map((_, index) => (
                 <button
                   key={index}
@@ -272,36 +321,36 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
                 variant="ghost"
                 size="sm"
                 onClick={handleSkip}
-                className="text-slate-400 hover:text-slate-600 h-8 px-2 text-xs"
+                className="text-slate-400 hover:text-slate-600 h-7 px-2 text-xs"
               >
                 Saltar
               </Button>
 
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 {!isFirstStep && (
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handlePrev}
-                    className="gap-1 h-8"
+                    className="gap-1 h-7 text-xs"
                   >
                     <ChevronLeft className="w-3 h-3" />
-                    Anterior
+                    Ant.
                   </Button>
                 )}
                 <Button
                   size="sm"
                   onClick={handleNext}
-                  className="gap-1 bg-indigo-600 hover:bg-indigo-700 h-8"
+                  className="gap-1 bg-indigo-600 hover:bg-indigo-700 h-7 text-xs"
                 >
                   {isLastStep ? (
                     <>
-                      ¡Entendido!
+                      ¡Listo!
                       <CheckCircle2 className="w-3 h-3" />
                     </>
                   ) : (
                     <>
-                      Siguiente
+                      Sig.
                       <ChevronRight className="w-3 h-3" />
                     </>
                   )}
@@ -310,6 +359,18 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
             </div>
           </div>
         </div>
+
+        {/* Flecha apuntando al elemento (si no está centrado) */}
+        {!isCentered && highlightedElement && (
+          <div 
+            className="absolute w-3 h-3 bg-white border-l border-t border-slate-200 rotate-45"
+            style={{
+              top: -6,
+              left: '50%',
+              marginLeft: -6,
+            }}
+          />
+        )}
       </div>
 
       {/* CSS para la animación del highlight */}
@@ -319,10 +380,10 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
         }
         @keyframes tour-glow {
           0%, 100% {
-            box-shadow: 0 0 0 4px #818cf8, 0 0 0 8px rgba(129, 140, 248, 0.3), 0 0 30px rgba(129, 140, 248, 0.5);
+            box-shadow: 0 0 0 3px #818cf8, 0 0 0 6px rgba(129, 140, 248, 0.3), 0 0 20px rgba(129, 140, 248, 0.5);
           }
           50% {
-            box-shadow: 0 0 0 4px #818cf8, 0 0 0 12px rgba(129, 140, 248, 0.2), 0 0 40px rgba(129, 140, 248, 0.7);
+            box-shadow: 0 0 0 3px #a78bfa, 0 0 0 10px rgba(129, 140, 248, 0.15), 0 0 30px rgba(129, 140, 248, 0.6);
           }
         }
       `}</style>
