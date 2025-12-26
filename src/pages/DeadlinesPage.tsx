@@ -145,7 +145,23 @@ export default function DeadlinesPage() {
   useEffect(() => {
     loadDeadlines();
     loadGlobalAssignments();
-  }, [selectedMonth]);
+    
+    // Limpiar cualquier lock huérfano de este usuario al cargar/cambiar mes
+    const cleanupMyLocks = async () => {
+      if (currentUser) {
+        try {
+          await supabase
+            .from('project_editing_locks')
+            .delete()
+            .eq('employee_id', currentUser.id)
+            .eq('month', selectedMonth);
+        } catch (error) {
+          console.error('Error limpiando locks al cargar:', error);
+        }
+      }
+    };
+    cleanupMyLocks();
+  }, [selectedMonth, currentUser]);
 
   // Suscripción en tiempo real para deadlines
   useEffect(() => {
@@ -307,7 +323,8 @@ export default function DeadlinesPage() {
           const locksMap: Record<string, { employeeId: string; employeeName: string; lockedAt: string }> = {};
           data.forEach((lock: any) => {
             const employee = employees.find(e => e.id === lock.employee_id);
-            if (employee && lock.expires_at > new Date().toISOString()) {
+            // Solo mostrar locks de OTROS usuarios, no los propios
+            if (employee && lock.employee_id !== currentUser?.id && lock.expires_at > new Date().toISOString()) {
               locksMap[lock.project_id] = {
                 employeeId: lock.employee_id,
                 employeeName: employee.first_name || employee.name || 'Desconocido',
@@ -323,7 +340,7 @@ export default function DeadlinesPage() {
     };
     
     loadEditingLocks();
-  }, [selectedMonth, employees]);
+  }, [selectedMonth, employees, currentUser]);
 
   // Suscripción en tiempo real para locks de edición
   useEffect(() => {
@@ -859,7 +876,7 @@ export default function DeadlinesPage() {
         await supabase
           .from('project_editing_locks')
           .update({
-            expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString() // 2 minutos
+            expires_at: new Date(Date.now() + 60 * 1000).toISOString() // 1 minuto
           })
           .eq('id', existingLock.id);
         return true;
@@ -872,7 +889,7 @@ export default function DeadlinesPage() {
           project_id: projectId,
           employee_id: currentUser.id,
           month: selectedMonth,
-          expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString() // 2 minutos
+          expires_at: new Date(Date.now() + 60 * 1000).toISOString() // 1 minuto
         });
       
       if (error) {
@@ -907,7 +924,7 @@ export default function DeadlinesPage() {
       const { error } = await supabase
         .from('project_editing_locks')
         .update({
-          expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString() // 2 minutos de expiración
+          expires_at: new Date(Date.now() + 60 * 1000).toISOString() // 1 minuto de expiración
         })
         .eq('project_id', projectId)
         .eq('employee_id', currentUser.id)
@@ -929,14 +946,44 @@ export default function DeadlinesPage() {
     if (!currentUser) return;
     
     try {
-      await supabase
+      const { error } = await supabase
         .from('project_editing_locks')
         .delete()
         .eq('project_id', projectId)
         .eq('employee_id', currentUser.id)
         .eq('month', selectedMonth);
+      
+      if (error) {
+        console.error('Error liberando lock:', error);
+      }
+      
+      // También actualizar el estado local de locks
+      setEditingLocks(prev => {
+        const newLocks = { ...prev };
+        delete newLocks[projectId];
+        return newLocks;
+      });
     } catch (error) {
       console.error('Error liberando lock:', error);
+    }
+  };
+
+  // Liberar TODOS los locks de este usuario (para limpieza)
+  const releaseAllMyLocks = async () => {
+    if (!currentUser) return;
+    
+    try {
+      const { error } = await supabase
+        .from('project_editing_locks')
+        .delete()
+        .eq('employee_id', currentUser.id)
+        .eq('month', selectedMonth);
+      
+      if (error) {
+        console.error('Error liberando todos los locks:', error);
+      }
+    } catch (error) {
+      console.error('Error liberando todos los locks:', error);
     }
   };
 
@@ -945,15 +992,27 @@ export default function DeadlinesPage() {
     // Si ya estamos editando este proyecto, no hacer nada
     if (editingProjectId === projectId) return;
     
-    // Si estamos editando otro proyecto, cancelarlo primero
+    // PRIMERO: Liberar TODOS los locks de este usuario en este mes
+    // Esto asegura que no queden locks huérfanos
+    await releaseAllMyLocks();
+    
+    // Limpiar estado de edición anterior si existe
     if (editingProjectId) {
-      await cancelEditingProject();
+      if (lockRefreshIntervalRef.current) {
+        clearInterval(lockRefreshIntervalRef.current);
+        lockRefreshIntervalRef.current = null;
+      }
+      if ((window as any).__deadlineBeforeUnload) {
+        window.removeEventListener('beforeunload', (window as any).__deadlineBeforeUnload);
+        delete (window as any).__deadlineBeforeUnload;
+      }
     }
     
-    // Intentar adquirir el lock
+    // Intentar adquirir el lock (ahora que no tenemos ningún lock activo)
     const lockAcquired = await acquireEditLock(projectId);
     if (!lockAcquired) {
       // No se pudo adquirir el lock, no permitir editar
+      setEditingProjectId(null);
       return;
     }
     
@@ -966,15 +1025,13 @@ export default function DeadlinesPage() {
     });
     setExpandedProjects(prev => new Set([...prev, projectId]));
     
-    // Renovar el lock cada 30 segundos mientras se edita (heartbeat)
+    // Renovar el lock cada 20 segundos mientras se edita (heartbeat más frecuente)
     if (lockRefreshIntervalRef.current) {
       clearInterval(lockRefreshIntervalRef.current);
     }
     lockRefreshIntervalRef.current = setInterval(() => {
-      if (editingProjectId === projectId) {
-        renewEditLock(projectId);
-      }
-    }, 30 * 1000); // Cada 30 segundos
+      renewEditLock(projectId);
+    }, 20 * 1000); // Cada 20 segundos
     
     // Liberar lock cuando se cierra la ventana/pestaña
     const handleBeforeUnload = () => {
@@ -1016,13 +1073,14 @@ export default function DeadlinesPage() {
     setInlineFormData({ employeeHours: {}, notes: '', isHidden: false });
   };
 
-  const toggleProjectExpanded = (projectId: string) => {
+  const toggleProjectExpanded = async (projectId: string) => {
     setExpandedProjects(prev => {
       const newSet = new Set(prev);
       if (newSet.has(projectId)) {
         newSet.delete(projectId);
+        // Si estamos editando este proyecto, cerrarlo y liberar lock
         if (editingProjectId === projectId) {
-          setEditingProjectId(null);
+          cancelEditingProject(); // Liberar lock
         }
       } else {
         newSet.add(projectId);
