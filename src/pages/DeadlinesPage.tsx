@@ -896,7 +896,7 @@ export default function DeadlinesPage() {
         // Si falla por conflicto, verificar de nuevo
         const { data: conflictLock } = await supabase
           .from('project_editing_locks')
-          .select('*, employees!inner(id, first_name, name)')
+          .select('*')
           .eq('project_id', projectId)
           .eq('month', selectedMonth)
           .gt('expires_at', new Date().toISOString())
