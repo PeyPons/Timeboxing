@@ -343,7 +343,7 @@ export default function EmployeeDashboard() {
         // - directa: 0 (tarea directa), 1 (indirecta)
         // - recurrente: vacío o 0 (no recurrente), 1 (recurrente)
         // - fechas: vacías = hoy como inicio, sin fecha fin
-        csvRows.push(`"${taskName}",${userId},project,${projectId},${hours},0,,,""`);
+        csvRows.push(`"${taskName}",${userId},project,${projectId},${hours},0,,,`);;
       }
     });
 
@@ -490,6 +490,7 @@ export default function EmployeeDashboard() {
               className="gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
               disabled={!myEmployeeProfile?.crmUserId}
               title={!myEmployeeProfile?.crmUserId ? "Configura tu ID de CRM en el perfil" : "Exportar tareas al CRM"}
+              data-tour="crm-export"
             >
               <FileDown className="h-4 w-4" /> Tareas CRM
             </Button>
@@ -712,12 +713,12 @@ export default function EmployeeDashboard() {
                             </span>
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[300px] p-0" align="start">
+                        <PopoverContent className="w-[400px] p-0" align="start">
                           <Command>
                             <CommandInput placeholder="Buscar proyecto..." />
                             <CommandList>
                               <CommandEmpty>No encontrado.</CommandEmpty>
-                              <CommandGroup className="max-h-[200px] overflow-y-auto">
+                              <CommandGroup className="max-h-[250px] overflow-y-auto">
                                 {activeProjects.map((project) => {
                                   // Verificar si este proyecto ya está en la lista y excede
                                   const wouldExceed = tasksImpact.projects.find(p => p.id === project.id)?.exceeds;
