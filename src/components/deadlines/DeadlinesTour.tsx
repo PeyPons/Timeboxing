@@ -45,7 +45,7 @@ const tourSteps: TourStep[] = [
     target: '[data-tour="filters"]',
     title: 'Filtros y búsqueda',
     description: 'Busca proyectos por nombre o cliente, filtra solo proyectos SEO, muestra ocultos o encuentra proyectos sin asignar. Útil para encontrar rápidamente lo que necesitas.',
-    icon: <Filter className="w-6 w-6 text-purple-500" />,
+    icon: <Filter className="w-6 h-6 text-purple-500" />,
     position: 'bottom',
     highlight: true
   },
