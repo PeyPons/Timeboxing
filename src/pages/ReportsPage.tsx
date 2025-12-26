@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   BarChart3, 
   Users, 
@@ -17,7 +18,10 @@ import {
   CalendarDays,
   CheckCircle2,
   Filter,
-  Zap
+  Zap,
+  Target,
+  AlertTriangle,
+  TrendingDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
@@ -25,6 +29,46 @@ import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO } from
 import { es } from 'date-fns/locale';
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+// ============================================================================
+// NUEVO: Interfaz y función para calcular el Índice de Fiabilidad Histórico
+// ============================================================================
+interface ReliabilityData {
+  index: number;           // Índice de fiabilidad (0-200+)
+  totalEstimated: number;  // Total horas estimadas históricas
+  totalReal: number;       // Total horas reales históricas
+  tasksAnalyzed: number;   // Número de tareas analizadas
+  trend: 'accurate' | 'overestimates' | 'underestimates' | 'insufficient';
+  deviation: number;       // Desviación promedio en horas por tarea
+}
+
+// Función para obtener el color del badge según el índice de fiabilidad
+const getReliabilityColor = (index: number, tasksAnalyzed: number): string => {
+  if (tasksAnalyzed < 5) return 'bg-slate-100 text-slate-600 border-slate-200'; // Datos insuficientes
+  if (index >= 90 && index <= 110) return 'bg-emerald-100 text-emerald-700 border-emerald-200'; // Preciso
+  if (index >= 70 && index < 90) return 'bg-amber-100 text-amber-700 border-amber-200'; // Subestima moderado
+  if (index > 110 && index <= 130) return 'bg-amber-100 text-amber-700 border-amber-200'; // Sobreestima moderado
+  return 'bg-red-100 text-red-700 border-red-200'; // Desviación significativa
+};
+
+// Función para obtener el icono según la tendencia
+const getReliabilityIcon = (trend: ReliabilityData['trend']) => {
+  switch (trend) {
+    case 'accurate': return <Target className="h-3 w-3" />;
+    case 'overestimates': return <TrendingUp className="h-3 w-3" />;
+    case 'underestimates': return <TrendingDown className="h-3 w-3" />;
+    default: return <AlertTriangle className="h-3 w-3" />;
+  }
+};
+
+// Función para obtener el texto descriptivo de la tendencia
+const getReliabilityLabel = (data: ReliabilityData): string => {
+  if (data.tasksAnalyzed < 5) return 'Pocos datos';
+  if (data.trend === 'accurate') return 'Preciso';
+  if (data.trend === 'overestimates') return 'Sobreestima';
+  if (data.trend === 'underestimates') return 'Subestima';
+  return 'Sin datos';
+};
 
 export default function ReportsPage() {
   const { employees, clients, projects, allocations } = useApp();
@@ -47,7 +91,7 @@ export default function ReportsPage() {
   }, [employees, selectedEmployeeId]);
 
   const monthAllocations = useMemo(() => {
-    return allocations.filter(a => {
+    return (allocations || []).filter(a => {
       const weekStart = parseISO(a.weekStartDate);
       const inMonth = weekStart >= monthStart && weekStart <= monthEnd;
       const matchesEmp = selectedEmployeeId === 'all' || a.employeeId === selectedEmployeeId;
@@ -72,6 +116,59 @@ export default function ReportsPage() {
   const utilizationRate = totalCapacity > 0 ? (monthStats.planned / totalCapacity) * 100 : 0;
   const profitabilityRate = monthStats.real > 0 ? (monthStats.computed / monthStats.real) * 100 : 0;
 
+  // ============================================================================
+  // NUEVO: Cálculo del Índice de Fiabilidad Histórico por empleado
+  // ============================================================================
+  const reliabilityByEmployee = useMemo(() => {
+    const reliabilityMap: Record<string, ReliabilityData> = {};
+    
+    // Agrupar TODAS las allocations completadas por empleado (histórico completo)
+    (employees || []).forEach(emp => {
+      const completedTasks = (allocations || []).filter(a => 
+        a.employeeId === emp.id && 
+        a.status === 'completed' &&
+        a.hoursAssigned > 0 &&
+        (a.hoursActual || 0) > 0
+      );
+      
+      const totalEstimated = round2(completedTasks.reduce((sum, a) => sum + a.hoursAssigned, 0));
+      const totalReal = round2(completedTasks.reduce((sum, a) => sum + (a.hoursActual || 0), 0));
+      const tasksAnalyzed = completedTasks.length;
+      
+      // Calcular índice: (Estimado / Real) * 100
+      // 100% = perfecto, <100% = subestima, >100% = sobreestima
+      const index = totalReal > 0 ? round2((totalEstimated / totalReal) * 100) : 0;
+      
+      // Determinar tendencia
+      let trend: ReliabilityData['trend'] = 'insufficient';
+      if (tasksAnalyzed >= 5) {
+        if (index >= 90 && index <= 110) {
+          trend = 'accurate';
+        } else if (index < 90) {
+          trend = 'underestimates'; // Estima menos de lo que tarda
+        } else {
+          trend = 'overestimates'; // Estima más de lo que tarda
+        }
+      }
+      
+      // Calcular desviación promedio por tarea
+      const deviation = tasksAnalyzed > 0 
+        ? round2((totalReal - totalEstimated) / tasksAnalyzed) 
+        : 0;
+      
+      reliabilityMap[emp.id] = {
+        index,
+        totalEstimated,
+        totalReal,
+        tasksAnalyzed,
+        trend,
+        deviation
+      };
+    });
+    
+    return reliabilityMap;
+  }, [employees, allocations]);
+
   const employeeData = useMemo(() => {
     return activeEmployees.map(e => {
       const capacity = getMonthlyCapacity(year, month, e.workSchedule);
@@ -85,19 +182,29 @@ export default function ReportsPage() {
       const percentage = capacity > 0 ? (plannedHours / capacity) * 100 : 0;
       // Eficiencia individual (Comp vs Real)
       const efficiency = realHours > 0 ? (computedHours / realHours) * 100 : 0;
+      
+      // NUEVO: Añadir datos de fiabilidad histórica
+      const reliability = reliabilityByEmployee[e.id] || {
+        index: 0,
+        totalEstimated: 0,
+        totalReal: 0,
+        tasksAnalyzed: 0,
+        trend: 'insufficient' as const,
+        deviation: 0
+      };
 
-      return { ...e, plannedHours, realHours, computedHours, capacity, percentage, efficiency };
+      return { ...e, plannedHours, realHours, computedHours, capacity, percentage, efficiency, reliability };
     }).sort((a, b) => b.percentage - a.percentage);
-  }, [activeEmployees, monthAllocations, year, month]);
+  }, [activeEmployees, monthAllocations, year, month, reliabilityByEmployee]);
 
   const projectData = useMemo(() => {
     const relevantProjectIds = new Set(monthAllocations.map(a => a.projectId));
     const projectsToShow = selectedEmployeeId === 'all' 
-        ? projects.filter(p => p.status === 'active') 
-        : projects.filter(p => relevantProjectIds.has(p.id));
+        ? (projects || []).filter(p => p.status === 'active') 
+        : (projects || []).filter(p => relevantProjectIds.has(p.id));
 
     return projectsToShow.map(p => {
-        const client = clients.find(c => c.id === p.clientId);
+        const client = (clients || []).find(c => c.id === p.clientId);
         const projAllocations = monthAllocations.filter(a => a.projectId === p.id);
         const completedTasks = projAllocations.filter(a => a.status === 'completed');
         
@@ -171,37 +278,39 @@ export default function ReportsPage() {
                     Análisis de rendimiento {selectedEmployeeId !== 'all' ? 'individual' : 'del equipo'}.
                 </p>
             </div>
-
-            <div className="flex items-center gap-4">
-                <div className="w-[200px]">
+            
+            {/* Controles */}
+            <div className="flex items-center gap-3 flex-wrap">
+                {/* Filtro Empleado */}
+                <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-slate-400" />
                     <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
-                        <SelectTrigger className="bg-white">
-                            <div className="flex items-center gap-2">
-                                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-                                <SelectValue placeholder="Filtrar..." />
-                            </div>
+                        <SelectTrigger className="w-[180px] bg-white">
+                            <SelectValue placeholder="Filtrar empleado" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">Todo el Equipo</SelectItem>
-                            {employees.filter(e => e.isActive).map(emp => (
-                                <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                            <SelectItem value="all">Todo el equipo</SelectItem>
+                            {(employees || []).filter(e => e.isActive).map(e => (
+                                <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
                 </div>
 
-                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-lg border shadow-sm">
-                    <Button variant="ghost" size="icon" onClick={handlePrevMonth}>
+                {/* Navegación Mes */}
+                <div className="flex items-center gap-1 bg-white border rounded-lg px-2 py-1">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePrevMonth}>
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <div className="flex items-center gap-2 px-2 min-w-[140px] justify-center font-medium">
-                        <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                        <span className="capitalize">{format(currentMonth, 'MMMM yyyy', { locale: es })}</span>
+                    <div className="flex items-center gap-1.5 px-2 min-w-[140px] justify-center">
+                        <CalendarDays className="h-4 w-4 text-indigo-600" />
+                        <span className="font-medium text-sm capitalize">
+                            {format(currentMonth, 'MMMM yyyy', { locale: es })}
+                        </span>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={handleNextMonth}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNextMonth}>
                         <ChevronRight className="h-4 w-4" />
                     </Button>
-                    <div className="w-px h-6 bg-border mx-1" />
                     <Button variant="ghost" size="sm" onClick={handleToday} className="text-xs">Hoy</Button>
                 </div>
             </div>
@@ -272,37 +381,18 @@ export default function ReportsPage() {
                         Si la barra verde no llena la azul, estamos trabajando más de lo que facturamos.
                     </p>
                 </div>
-
-                <div className="pt-4 grid grid-cols-4 gap-2 text-center border-t">
-                    <div>
-                        <div className="text-xl font-bold text-slate-400">{totalCapacity}</div>
-                        <div className="text-[10px] uppercase font-bold text-slate-400">Capacidad</div>
-                    </div>
-                    <div>
-                        <div className="text-xl font-bold text-indigo-600">{monthStats.planned}</div>
-                        <div className="text-[10px] uppercase font-bold text-indigo-600">Plan</div>
-                    </div>
-                    <div>
-                        <div className="text-xl font-bold text-blue-600">{monthStats.real}</div>
-                        <div className="text-[10px] uppercase font-bold text-blue-600">Real</div>
-                    </div>
-                     <div>
-                        <div className="text-xl font-bold text-emerald-600">{monthStats.computed}</div>
-                        <div className="text-[10px] uppercase font-bold text-emerald-600">Comp.</div>
-                    </div>
-                </div>
               </CardContent>
             </Card>
 
             <Card className="col-span-3">
               <CardHeader>
-                <CardTitle>Top Proyectos (Planificado)</CardTitle>
-                <CardDescription>Mayor inversión de tiempo prevista este mes.</CardDescription>
+                <CardTitle className="flex items-center gap-2"><FolderOpen className="h-5 w-5" /> Proyectos Activos</CardTitle>
+                <CardDescription>Actividad por proyecto este mes.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
+                <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2">
                     {projectData.slice(0, 5).map(p => (
-                        <div key={p.id} className="flex items-center justify-between">
+                        <div key={p.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50">
                             <div className="flex items-center gap-3 min-w-0">
                                 <div className="h-8 w-8 rounded flex items-center justify-center border bg-slate-50 shrink-0">
                                     <FolderOpen className="h-4 w-4 text-slate-500" />
@@ -329,7 +419,7 @@ export default function ReportsPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Desglose por Empleado</CardTitle>
-                    <CardDescription>Análisis de Ocupación (Plan) y Rentabilidad (Real vs Comp).</CardDescription>
+                    <CardDescription>Análisis de Ocupación (Plan), Rentabilidad (Real vs Comp) y Fiabilidad de Estimación (Histórico).</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-6">
@@ -341,7 +431,66 @@ export default function ReportsPage() {
                                         {emp.name.substring(0, 2).toUpperCase()}
                                     </div>
                                     <div className="min-w-0">
-                                        <div className="font-medium text-sm truncate">{emp.name}</div>
+                                        <div className="font-medium text-sm truncate flex items-center gap-2">
+                                            {emp.name}
+                                            {/* NUEVO: Badge de Fiabilidad Histórica */}
+                                            <TooltipProvider>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Badge 
+                                                            variant="outline" 
+                                                            className={cn(
+                                                                "text-[10px] px-1.5 py-0 h-5 font-mono cursor-help flex items-center gap-1",
+                                                                getReliabilityColor(emp.reliability.index, emp.reliability.tasksAnalyzed)
+                                                            )}
+                                                        >
+                                                            {getReliabilityIcon(emp.reliability.trend)}
+                                                            {emp.reliability.tasksAnalyzed >= 5 
+                                                                ? `${emp.reliability.index.toFixed(0)}%` 
+                                                                : '?'}
+                                                        </Badge>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="right" className="max-w-[280px]">
+                                                        <div className="space-y-2">
+                                                            <p className="font-semibold text-sm">
+                                                                Índice de Fiabilidad: {getReliabilityLabel(emp.reliability)}
+                                                            </p>
+                                                            {emp.reliability.tasksAnalyzed >= 5 ? (
+                                                                <>
+                                                                    <div className="text-xs space-y-1">
+                                                                        <p>📊 <strong>{emp.reliability.tasksAnalyzed}</strong> tareas analizadas</p>
+                                                                        <p>⏱️ Estimado total: <strong>{emp.reliability.totalEstimated}h</strong></p>
+                                                                        <p>⚡ Real total: <strong>{emp.reliability.totalReal}h</strong></p>
+                                                                        <p>📈 Ratio: <strong>{emp.reliability.index.toFixed(1)}%</strong></p>
+                                                                    </div>
+                                                                    <div className="pt-2 border-t text-xs">
+                                                                        {emp.reliability.trend === 'underestimates' && (
+                                                                            <p className="text-amber-600">
+                                                                                ⚠️ Subestima ~{Math.abs(emp.reliability.deviation).toFixed(1)}h por tarea
+                                                                            </p>
+                                                                        )}
+                                                                        {emp.reliability.trend === 'overestimates' && (
+                                                                            <p className="text-blue-600">
+                                                                                📈 Sobreestima ~{Math.abs(emp.reliability.deviation).toFixed(1)}h por tarea
+                                                                            </p>
+                                                                        )}
+                                                                        {emp.reliability.trend === 'accurate' && (
+                                                                            <p className="text-emerald-600">
+                                                                                ✅ Estimaciones precisas
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    Se necesitan al menos 5 tareas completadas con horas reales para calcular el índice.
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        </div>
                                         <div className="text-xs text-muted-foreground">{emp.role}</div>
                                     </div>
                                 </div>
@@ -399,50 +548,49 @@ export default function ReportsPage() {
                 {projectData.map(p => {
                     const gain = p.hoursComputed - p.hoursReal;
                     return (
-                        <Card key={p.id + currentMonth.toISOString()} className={cn("border-l-4", p.percentage > 100 ? "border-l-red-500" : "border-l-indigo-500")}>
-                            <CardHeader className="pb-2 bg-slate-50/50 pt-3">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div className="space-y-0.5">
-                                        <div className="flex items-center gap-2">
-                                            <CardTitle className="text-sm truncate max-w-[180px]" title={p.name}>{p.name}</CardTitle>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: p.clientColor }} />
-                                            {p.clientName}
-                                        </div>
+                        <Card key={p.id + currentMonth.toISOString()} className={cn("border-l-4", p.percentage > 100 ? "border-l-red-500" : p.percentage > 80 ? "border-l-amber-500" : "border-l-emerald-500")}>
+                            <CardHeader className="pb-2">
+                                <div className="flex justify-between items-start">
+                                    <div className="min-w-0 pr-2">
+                                        <CardTitle className="text-sm font-semibold truncate" title={p.name}>{p.name}</CardTitle>
+                                        <p className="text-xs text-muted-foreground truncate">{p.clientName}</p>
                                     </div>
-                                    <Badge variant="outline" className="text-[10px] font-mono">{p.budget}h Presup.</Badge>
+                                    <Badge variant={p.percentage > 100 ? "destructive" : p.percentage > 80 ? "secondary" : "outline"} className="shrink-0">
+                                        {p.percentage.toFixed(0)}%
+                                    </Badge>
                                 </div>
                             </CardHeader>
-                            <CardContent className="pt-4 space-y-3">
-                                <div className="flex justify-between items-end">
-                                    <span className="text-xs text-muted-foreground font-medium">Planificado</span>
-                                    <span className={cn("text-sm font-bold", p.percentage > 100 ? "text-red-600" : "text-indigo-600")}>
-                                        {p.hoursPlanned}h
-                                    </span>
+                            <CardContent className="space-y-3">
+                                <Progress value={Math.min(p.percentage, 100)} className={cn("h-2", p.percentage > 100 ? "[&>div]:bg-red-500" : p.percentage > 80 ? "[&>div]:bg-amber-500" : "")} />
+                                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                                    <div>
+                                        <p className="font-bold text-slate-700">{p.hoursPlanned}h</p>
+                                        <p className="text-muted-foreground">Planificado</p>
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-blue-600">{p.hoursReal}h</p>
+                                        <p className="text-muted-foreground">Real</p>
+                                    </div>
+                                    <div>
+                                        <p className={cn("font-bold", gain >= 0 ? "text-emerald-600" : "text-red-600")}>
+                                            {gain >= 0 ? '+' : ''}{gain.toFixed(1)}h
+                                        </p>
+                                        <p className="text-muted-foreground">Balance</p>
+                                    </div>
                                 </div>
-                                <Progress value={p.percentage} className={cn("h-1.5", p.percentage > 100 ? "[&>div]:bg-red-500" : "")} />
-                                
-                                <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t">
-                                    <div className="bg-blue-50 rounded p-1.5 text-center">
-                                        <div className="text-[10px] text-blue-600 font-bold uppercase">Real</div>
-                                        <div className="text-sm font-mono text-blue-700">{p.hoursReal}h</div>
-                                    </div>
-                                    <div className="bg-emerald-50 rounded p-1.5 text-center">
-                                        <div className="text-[10px] text-emerald-600 font-bold uppercase">Comp.</div>
-                                        <div className="text-sm font-mono text-emerald-700">{p.hoursComputed}h</div>
-                                    </div>
+                                <div className="text-[10px] text-muted-foreground text-right">
+                                    Presupuesto: {p.budget}h
                                 </div>
-                                
-                                {Math.abs(gain) > 0.01 && (
-                                    <div className={cn("text-[10px] text-center font-medium py-1 rounded", gain > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800")}>
-                                        Diferencia: {gain > 0 ? '+' : ''}{parseFloat(gain.toFixed(2))}h
-                                    </div>
-                                )}
                             </CardContent>
                         </Card>
                     );
                 })}
+                {projectData.length === 0 && (
+                    <div className="col-span-full text-center py-12 text-muted-foreground">
+                        <FolderOpen className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                        <p>Sin proyectos con actividad este mes.</p>
+                    </div>
+                )}
             </div>
         </TabsContent>
       </Tabs>
