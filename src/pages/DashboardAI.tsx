@@ -447,10 +447,13 @@ export default function DashboardAI() {
         return dep && dep.status !== 'completed';
       });
 
+      // Cálculo seguro de capacidad individual (evita NaN)
+      const safeCapacity = Number(emp.capacity) || 0;
+
       return {
         id: emp.id,
         name: emp.name,
-        capacity: emp.capacity,
+        capacity: safeCapacity,
         assigned: load.totalAssigned,
         completed: empCompleted.length,
         pending: empPending.length,
@@ -460,8 +463,8 @@ export default function DashboardAI() {
         efficiency: efficiency,
         blocking: blocking.length,
         waitingFor: waitingFor.length,
-        overloaded: load.totalAssigned > emp.capacity,
-        underutilized: load.totalAssigned < emp.capacity * 0.7
+        overloaded: load.totalAssigned > safeCapacity,
+        underutilized: load.totalAssigned < safeCapacity * 0.7
       };
     });
 
@@ -472,7 +475,7 @@ export default function DashboardAI() {
       
       const totalAssigned = projTasks.reduce((sum, a) => sum + a.hoursAssigned, 0);
       const totalReal = projCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
-      const totalBudget = proj.totalBudget || 0;
+      const totalBudget = Number(proj.totalBudget) || 0; // Fix NaN en presupuesto
       
       const burnRate = totalBudget > 0 ? (totalReal / totalBudget * 100) : 0;
 
@@ -492,7 +495,8 @@ export default function DashboardAI() {
       };
     });
 
-    const totalCapacity = activeEmployees.reduce((sum, e) => sum + e.capacity, 0);
+    // Fix NaN en Capacidad Total del equipo
+    const totalCapacity = activeEmployees.reduce((sum, e) => sum + (Number(e.capacity) || 0), 0);
     const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
     const utilizationRate = totalCapacity > 0 ? (totalAssigned / totalCapacity * 100) : 0;
     
@@ -586,7 +590,7 @@ export default function DashboardAI() {
 
     // 3. DATOS GENERALES (Siempre presentes, pero resumidos)
     const monthAllocations = safeAllocations.filter(a => isSameMonth(parseISO(a.weekStartDate), now));
-    const totalCapacity = safeEmployees.filter(e => e.isActive).reduce((sum, e) => sum + e.capacity, 0);
+    const totalCapacity = safeEmployees.filter(e => e.isActive).reduce((sum, e) => sum + (Number(e.capacity) || 0), 0); // Fix NaN aquí también
     const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
     
     // Top 5 tareas bloqueadas o pendientes (para dar salseo si no hay preguntas específicas)
@@ -603,7 +607,7 @@ export default function DashboardAI() {
     return `
 DATOS DEL SISTEMA (MES ACTUAL):
 - Fecha: ${format(now, "dd/MM/yyyy")}
-- Capacidad Total: ${totalCapacity}h | Asignado: ${totalAssigned}h (${((totalAssigned/totalCapacity)*100).toFixed(1)}%)
+- Capacidad Total: ${totalCapacity}h | Asignado: ${totalAssigned}h (${totalCapacity > 0 ? ((totalAssigned/totalCapacity)*100).toFixed(1) : 0}%)
 - Empleados Activos: ${safeEmployees.filter(e => e.isActive).length}
 - Proyectos Activos: ${safeProjects.filter(p => p.status === 'active').length}
 
