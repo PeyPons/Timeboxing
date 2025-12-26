@@ -12,19 +12,22 @@ import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   Plus, Pencil, Trash2, Save, Search, Eye, EyeOff, ChevronDown, ChevronRight,
-  Calendar, Users, AlertTriangle, CheckCircle2, XCircle
+  Calendar, Users, AlertTriangle, CheckCircle2, XCircle, Copy, Filter
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { Deadline, GlobalAssignment } from '@/types';
 import { cn } from '@/lib/utils';
-import { format, addMonths, subMonths, getDaysInMonth } from 'date-fns';
+import { format, addMonths, subMonths, getDaysInMonth, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
+import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 
 export default function DeadlinesPage() {
-  const { projects, clients, employees, isAdmin } = useApp();
+  const { projects, clients, employees, isAdmin, absences, teamEvents } = useApp();
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [globalAssignments, setGlobalAssignments] = useState<GlobalAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,8 +41,20 @@ export default function DeadlinesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [onlySEO, setOnlySEO] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
+  const [filterByEmployee, setFilterByEmployee] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'client' | 'assigned' | 'remaining'>('client');
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set());
+  
+  // Estado para edición inline
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [inlineFormData, setInlineFormData] = useState<{
+    employeeHours: Record<string, number>;
+    notes: string;
+    isHidden: boolean;
+  }>({ employeeHours: {}, notes: '', isHidden: false });
+  const [isSaving, setIsSaving] = useState(false);
   
   const [formData, setFormData] = useState({
     projectId: '',
@@ -130,24 +145,36 @@ export default function DeadlinesPage() {
     );
   }, [employees]);
 
-  // Calcular capacidad mensual de un empleado
+  // Calcular capacidad mensual de un empleado (restando ausencias y eventos)
   const getMonthlyCapacity = (employeeId: string) => {
     const employee = employees.find(e => e.id === employeeId);
-    if (!employee) return 0;
+    if (!employee) return { total: 0, absenceHours: 0, eventHours: 0, available: 0 };
     
     const [year, month] = selectedMonth.split('-').map(Number);
+    const monthStart = startOfMonth(new Date(year, month - 1));
+    const monthEnd = endOfMonth(new Date(year, month - 1));
     const daysInMonth = getDaysInMonth(new Date(year, month - 1));
     const workSchedule = employee.workSchedule;
     
-    let totalHours = 0;
+    // Calcular horas base del horario
+    let baseHours = 0;
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month - 1, day);
-      const dayOfWeek = date.getDay(); // 0 = domingo, 1 = lunes, etc.
+      const dayOfWeek = date.getDay();
       const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dayOfWeek];
-      totalHours += workSchedule[dayKey as keyof typeof workSchedule] || 0;
+      baseHours += workSchedule[dayKey as keyof typeof workSchedule] || 0;
     }
     
-    return totalHours;
+    // Restar ausencias
+    const employeeAbsences = absences.filter(a => a.employeeId === employeeId);
+    const absenceHours = getAbsenceHoursInRange(monthStart, monthEnd, employeeAbsences, workSchedule);
+    
+    // Restar eventos del equipo
+    const eventHours = getTeamEventHoursInRange(monthStart, monthEnd, employeeId, teamEvents, workSchedule, employeeAbsences);
+    
+    const available = Math.max(0, baseHours - absenceHours - eventHours);
+    
+    return { total: baseHours, absenceHours, eventHours, available };
   };
 
   // Calcular horas asignadas a un empleado (deadlines + globales)
@@ -203,8 +230,39 @@ export default function DeadlinesPage() {
       filtered = filtered.filter(p => !hiddenProjects.has(p.id));
     }
     
+    // Filtrar por empleado asignado
+    if (filterByEmployee !== 'all') {
+      filtered = filtered.filter(p => {
+        const deadline = deadlines.find(d => d.projectId === p.id && d.month === selectedMonth);
+        return deadline && (deadline.employeeHours[filterByEmployee] || 0) > 0;
+      });
+    }
+    
+    // Ordenar proyectos
+    filtered.sort((a, b) => {
+      if (sortBy === 'client') {
+        const clientA = clients.find(c => c.id === a.clientId)?.name || '';
+        const clientB = clients.find(c => c.id === b.clientId)?.name || '';
+        return clientA.localeCompare(clientB);
+      } else if (sortBy === 'assigned') {
+        const deadlineA = deadlines.find(d => d.projectId === a.id && d.month === selectedMonth);
+        const deadlineB = deadlines.find(d => d.projectId === b.id && d.month === selectedMonth);
+        const totalA = deadlineA ? (Object.values(deadlineA.employeeHours) as number[]).reduce((s, h) => s + (h || 0), 0) : 0;
+        const totalB = deadlineB ? (Object.values(deadlineB.employeeHours) as number[]).reduce((s, h) => s + (h || 0), 0) : 0;
+        return totalB - totalA;
+      } else {
+        const deadlineA = deadlines.find(d => d.projectId === a.id && d.month === selectedMonth);
+        const deadlineB = deadlines.find(d => d.projectId === b.id && d.month === selectedMonth);
+        const assignedA = deadlineA ? (Object.values(deadlineA.employeeHours) as number[]).reduce((s, h) => s + (h || 0), 0) : 0;
+        const assignedB = deadlineB ? (Object.values(deadlineB.employeeHours) as number[]).reduce((s, h) => s + (h || 0), 0) : 0;
+        const remainingA = (a.budgetHours || 0) - assignedA;
+        const remainingB = (b.budgetHours || 0) - assignedB;
+        return remainingB - remainingA;
+      }
+    });
+    
     return filtered;
-  }, [projects, clients, searchTerm, onlySEO, showHidden, hiddenProjects]);
+  }, [projects, clients, searchTerm, onlySEO, showHidden, hiddenProjects, filterByEmployee, deadlines, selectedMonth, sortBy]);
 
   // Agrupar proyectos por cliente
   const projectsByClient = useMemo(() => {
@@ -444,6 +502,112 @@ export default function DeadlinesPage() {
     }
   };
 
+  // Funciones de edición inline
+  const startEditingProject = (projectId: string) => {
+    const deadline = getProjectDeadline(projectId);
+    setEditingProjectId(projectId);
+    setInlineFormData({
+      employeeHours: deadline?.employeeHours ? { ...deadline.employeeHours } : {},
+      notes: deadline?.notes || '',
+      isHidden: deadline?.isHidden || hiddenProjects.has(projectId)
+    });
+    setExpandedProjects(prev => new Set([...prev, projectId]));
+  };
+
+  const cancelEditingProject = () => {
+    setEditingProjectId(null);
+    setInlineFormData({ employeeHours: {}, notes: '', isHidden: false });
+  };
+
+  const toggleProjectExpanded = (projectId: string) => {
+    setExpandedProjects(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(projectId)) {
+        newSet.delete(projectId);
+        if (editingProjectId === projectId) {
+          setEditingProjectId(null);
+        }
+      } else {
+        newSet.add(projectId);
+      }
+      return newSet;
+    });
+  };
+
+  const updateInlineEmployeeHours = (employeeId: string, hours: number) => {
+    setInlineFormData(prev => ({
+      ...prev,
+      employeeHours: {
+        ...prev.employeeHours,
+        [employeeId]: hours >= 0 ? hours : 0
+      }
+    }));
+  };
+
+  const saveInlineDeadline = async (projectId: string) => {
+    setIsSaving(true);
+    try {
+      const existingDeadline = getProjectDeadline(projectId);
+      const deadlineData = {
+        project_id: projectId,
+        month: selectedMonth,
+        notes: inlineFormData.notes || null,
+        employee_hours: inlineFormData.employeeHours,
+        is_hidden: inlineFormData.isHidden
+      };
+
+      if (existingDeadline) {
+        const { error } = await supabase
+          .from('deadlines')
+          .update(deadlineData)
+          .eq('id', existingDeadline.id);
+
+        if (error) throw error;
+
+        setDeadlines(prev => prev.map(d => 
+          d.id === existingDeadline.id 
+            ? { ...d, projectId, month: selectedMonth, notes: inlineFormData.notes, employeeHours: inlineFormData.employeeHours, isHidden: inlineFormData.isHidden }
+            : d
+        ));
+      } else {
+        const { data, error } = await supabase
+          .from('deadlines')
+          .insert(deadlineData)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setDeadlines(prev => [...prev, {
+          id: data.id,
+          projectId: data.project_id,
+          month: data.month,
+          notes: data.notes,
+          employeeHours: data.employee_hours || {},
+          isHidden: data.is_hidden || false
+        }]);
+      }
+
+      if (inlineFormData.isHidden) {
+        setHiddenProjects(prev => new Set([...prev, projectId]));
+      } else {
+        setHiddenProjects(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(projectId);
+          return newSet;
+        });
+      }
+
+      toast.success('Guardado');
+      setEditingProjectId(null);
+    } catch (error: any) {
+      console.error('Error guardando deadline:', error);
+      toast.error(error.message || 'Error al guardar');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const updateEmployeeHours = (employeeId: string, hours: number) => {
     setFormData(prev => ({
       ...prev,
@@ -460,6 +624,58 @@ export default function DeadlinesPage() {
 
   const getTotalHours = (deadline: Deadline) => {
     return Object.values(deadline.employeeHours).reduce((sum, hours) => sum + hours, 0);
+  };
+
+  // Copiar deadlines del mes anterior
+  const copyFromPreviousMonth = async () => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const prevMonth = format(subMonths(new Date(year, month - 1), 1), 'yyyy-MM');
+    
+    const previousDeadlines = deadlines.filter(d => d.month === prevMonth);
+    if (previousDeadlines.length === 0) {
+      toast.error('No hay datos del mes anterior para copiar');
+      return;
+    }
+    
+    if (!confirm(`¿Copiar ${previousDeadlines.length} deadlines del mes anterior?`)) return;
+    
+    try {
+      let copied = 0;
+      for (const deadline of previousDeadlines) {
+        // Verificar que no exista ya en el mes actual
+        const existing = deadlines.find(d => d.projectId === deadline.projectId && d.month === selectedMonth);
+        if (existing) continue;
+        
+        const { data, error } = await supabase
+          .from('deadlines')
+          .insert({
+            project_id: deadline.projectId,
+            month: selectedMonth,
+            notes: deadline.notes,
+            employee_hours: deadline.employeeHours,
+            is_hidden: deadline.isHidden
+          })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        
+        setDeadlines(prev => [...prev, {
+          id: data.id,
+          projectId: data.project_id,
+          month: data.month,
+          notes: data.notes,
+          employeeHours: data.employee_hours || {},
+          isHidden: data.is_hidden || false
+        }]);
+        copied++;
+      }
+      
+      toast.success(`Se copiaron ${copied} deadlines`);
+    } catch (error: any) {
+      console.error('Error copiando deadlines:', error);
+      toast.error(error.message || 'Error al copiar');
+    }
   };
 
   const toggleClient = (clientId: string) => {
@@ -516,6 +732,20 @@ export default function DeadlinesPage() {
               ))}
             </SelectContent>
           </Select>
+          {isAdmin && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={copyFromPreviousMonth}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Copiar del mes anterior</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
       </div>
 
@@ -530,10 +760,12 @@ export default function DeadlinesPage() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {activeEmployees.map(emp => {
-              const capacity = getMonthlyCapacity(emp.id);
+              const capacityData = getMonthlyCapacity(emp.id);
               const assigned = getEmployeeAssignedHours(emp.id);
-              const percentage = capacity > 0 ? (assigned / capacity) * 100 : 0;
+              const available = capacityData.available;
+              const percentage = available > 0 ? (assigned / available) * 100 : (assigned > 0 ? 999 : 0);
               const status = percentage > 100 ? 'overload' : percentage > 85 ? 'warning' : 'healthy';
+              const remaining = available - assigned;
               
               return (
                 <div key={emp.id} className="p-4 border rounded-lg bg-white">
@@ -553,10 +785,42 @@ export default function DeadlinesPage() {
                     {status === 'healthy' && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
                   </div>
                   <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Capacidad:</span>
-                      <span className="font-mono font-semibold">{capacity.toFixed(1)}h</span>
-                    </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex justify-between text-sm cursor-help">
+                            <span className="text-slate-600 border-b border-dotted border-slate-300">
+                              Disponible:
+                            </span>
+                            <span className="font-mono font-semibold">{available.toFixed(1)}h</span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs">
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between gap-4">
+                              <span>Horario base:</span>
+                              <span className="font-mono">{capacityData.total.toFixed(1)}h</span>
+                            </div>
+                            {capacityData.absenceHours > 0 && (
+                              <div className="flex justify-between gap-4 text-red-400">
+                                <span>Ausencias:</span>
+                                <span className="font-mono">-{capacityData.absenceHours.toFixed(1)}h</span>
+                              </div>
+                            )}
+                            {capacityData.eventHours > 0 && (
+                              <div className="flex justify-between gap-4 text-amber-400">
+                                <span>Eventos:</span>
+                                <span className="font-mono">-{capacityData.eventHours.toFixed(1)}h</span>
+                              </div>
+                            )}
+                            <div className="border-t border-slate-600 pt-1 flex justify-between gap-4 font-semibold">
+                              <span>Disponible:</span>
+                              <span className="font-mono">{available.toFixed(1)}h</span>
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-600">Asignado:</span>
                       <span className={cn(
@@ -566,6 +830,15 @@ export default function DeadlinesPage() {
                         "text-slate-900"
                       )}>
                         {assigned.toFixed(1)}h
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Libre:</span>
+                      <span className={cn(
+                        "font-mono font-semibold",
+                        remaining < 0 ? "text-red-600" : "text-emerald-600"
+                      )}>
+                        {remaining.toFixed(1)}h
                       </span>
                     </div>
                     <Progress 
@@ -694,6 +967,32 @@ export default function DeadlinesPage() {
                 Mostrar ocultos
               </Label>
             </div>
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-slate-400" />
+              <Select value={filterByEmployee} onValueChange={setFilterByEmployee}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Empleado..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {activeEmployees.map(emp => (
+                    <SelectItem key={emp.id} value={emp.id}>
+                      {emp.first_name || emp.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Ordenar..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="client">Por cliente</SelectItem>
+                <SelectItem value="assigned">Más asignado</SelectItem>
+                <SelectItem value="remaining">Más disponible</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -740,23 +1039,43 @@ export default function DeadlinesPage() {
                         <div className="divide-y">
                           {clientProjects.map(project => {
                             const deadline = getProjectDeadline(project.id);
-                            const totalAssigned = deadline ? getTotalHours(deadline) : 0;
+                            const isEditing = editingProjectId === project.id;
+                            const currentHours = isEditing ? inlineFormData.employeeHours : (deadline?.employeeHours || {});
+                            const totalAssigned = (Object.values(currentHours) as number[]).reduce((sum, h) => sum + (h || 0), 0);
                             const isOverBudget = totalAssigned > (project.budgetHours || 0);
-                            const isUnderMin = project.minimumHours && totalAssigned < project.minimumHours;
-                            const isHidden = hiddenProjects.has(project.id);
+                            const isUnderMin = project.minimumHours != null && project.minimumHours > 0 && totalAssigned < project.minimumHours;
+                            const isHidden = isEditing ? inlineFormData.isHidden : hiddenProjects.has(project.id);
+                            const isProjectExpanded = expandedProjects.has(project.id);
+                            const progressPct = (project.budgetHours || 0) > 0 ? (totalAssigned / (project.budgetHours || 1)) * 100 : 0;
                             
                             return (
                               <div 
                                 key={project.id} 
                                 className={cn(
-                                  "p-4 hover:bg-slate-50 transition-colors",
+                                  "transition-colors",
                                   isHidden && "opacity-50",
-                                  isOverBudget && "bg-red-50"
+                                  isOverBudget && "bg-red-50/50"
                                 )}
                               >
-                                <div className="flex items-start gap-4">
+                                {/* Header del proyecto - siempre visible */}
+                                <div 
+                                  className={cn(
+                                    "p-4 cursor-pointer hover:bg-slate-50 flex items-center gap-4",
+                                    isProjectExpanded && "border-b bg-slate-50"
+                                  )}
+                                  onClick={() => {
+                                    if (!isEditing) toggleProjectExpanded(project.id);
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    {isProjectExpanded ? (
+                                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                                    )}
+                                  </div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <span className="font-medium">{project.name}</span>
                                       {isHidden && (
                                         <Badge variant="outline" className="text-xs">
@@ -764,74 +1083,179 @@ export default function DeadlinesPage() {
                                           Oculto
                                         </Badge>
                                       )}
-                                    </div>
-                                    <div className="flex items-center gap-4 text-sm text-slate-600 mb-2">
-                                      {project.minimumHours && (
-                                        <span className="font-mono">
-                                          Min: {project.minimumHours}h
-                                        </span>
-                                      )}
-                                      <span className="font-mono">
-                                        Contratadas: {project.budgetHours}h
-                                      </span>
-                                      {deadline?.notes && (
-                                        <span className="text-slate-500 italic" title={deadline.notes}>
-                                          {deadline.notes}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-3 mt-2">
-                                      {activeEmployees.map(emp => {
-                                        const hours = deadline?.employeeHours[emp.id] || 0;
-                                        if (hours === 0 && !deadline) return null;
-                                        return (
-                                          <div key={emp.id} className="flex items-center gap-2">
-                                            <span className="text-xs text-slate-600">{emp.first_name || emp.name}:</span>
-                                            <Badge variant="outline" className="font-mono text-xs">
-                                              {hours}h
-                                            </Badge>
-                                          </div>
-                                        );
-                                      })}
-                                      {deadline && (
-                                        <Badge 
-                                          variant={isOverBudget ? "destructive" : isUnderMin ? "secondary" : "default"}
-                                          className="font-mono ml-auto"
-                                        >
-                                          Total: {totalAssigned}h
+                                      {!deadline && !isEditing && (
+                                        <Badge variant="outline" className="text-xs text-slate-400">
+                                          Sin asignar
                                         </Badge>
                                       )}
                                     </div>
-                                  </div>
-                                  {isAdmin && (
-                                    <div className="flex items-center gap-1">
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8"
-                                        onClick={() => openDialog(deadline || { 
-                                          id: '', 
-                                          projectId: project.id, 
-                                          month: selectedMonth,
-                                          employeeHours: {},
-                                          isHidden: isHidden
-                                        })}
-                                      >
-                                        <Pencil className="h-4 w-4" />
-                                      </Button>
-                                      {deadline && (
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-red-600 hover:text-red-700"
-                                          onClick={() => handleDelete(deadline.id)}
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                    <div className="flex items-center gap-4 text-xs text-slate-500 mt-1">
+                                      {project.minimumHours != null && project.minimumHours > 0 && (
+                                        <span className="font-mono">Min: {project.minimumHours}h</span>
                                       )}
+                                      <span className="font-mono">{project.budgetHours}h contratadas</span>
                                     </div>
-                                  )}
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    {/* Barra de progreso mini */}
+                                    <div className="w-24 hidden sm:block">
+                                      <Progress 
+                                        value={Math.min(progressPct, 100)} 
+                                        className={cn(
+                                          "h-2",
+                                          isOverBudget && "bg-red-200",
+                                          isUnderMin && "bg-amber-200"
+                                        )}
+                                      />
+                                    </div>
+                                    <Badge 
+                                      variant={isOverBudget ? "destructive" : isUnderMin ? "secondary" : totalAssigned > 0 ? "default" : "outline"}
+                                      className="font-mono min-w-[60px] justify-center"
+                                    >
+                                      {totalAssigned}h
+                                    </Badge>
+                                  </div>
                                 </div>
+                                
+                                {/* Panel expandido con edición inline */}
+                                {isProjectExpanded && (
+                                  <div className="p-4 bg-white border-t">
+                                    {isEditing ? (
+                                      /* Modo edición */
+                                      <div className="space-y-4">
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                                          {activeEmployees.map(emp => (
+                                            <div key={emp.id} className="flex flex-col gap-1">
+                                              <Label className="text-xs text-slate-600 truncate" title={emp.first_name || emp.name}>
+                                                {emp.first_name || emp.name}
+                                              </Label>
+                                              <div className="flex items-center gap-1">
+                                                <Input
+                                                  type="number"
+                                                  min="0"
+                                                  step="0.5"
+                                                  value={inlineFormData.employeeHours[emp.id] || ''}
+                                                  onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0)}
+                                                  className="h-8 text-center font-mono text-sm"
+                                                  placeholder="0"
+                                                />
+                                                <span className="text-xs text-slate-400">h</span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row gap-3">
+                                          <div className="flex-1">
+                                            <Input
+                                              placeholder="Notas (ej: LB 3,5h corresponde a link building)"
+                                              value={inlineFormData.notes}
+                                              onChange={(e) => setInlineFormData(prev => ({ ...prev, notes: e.target.value }))}
+                                              className="h-8 text-sm"
+                                            />
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <Switch
+                                              id={`hidden-${project.id}`}
+                                              checked={inlineFormData.isHidden}
+                                              onCheckedChange={(checked) => setInlineFormData(prev => ({ ...prev, isHidden: checked }))}
+                                            />
+                                            <Label htmlFor={`hidden-${project.id}`} className="text-xs cursor-pointer whitespace-nowrap">
+                                              Ocultar
+                                            </Label>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center justify-between pt-2 border-t">
+                                          <div className="text-sm">
+                                            <span className="text-slate-600">Total: </span>
+                                            <span className={cn(
+                                              "font-mono font-semibold",
+                                              isOverBudget ? "text-red-600" : isUnderMin ? "text-amber-600" : "text-slate-900"
+                                            )}>
+                                              {totalAssigned}h
+                                            </span>
+                                            <span className="text-slate-400"> / {project.budgetHours}h</span>
+                                          </div>
+                                          <div className="flex gap-2">
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={cancelEditingProject}
+                                              disabled={isSaving}
+                                            >
+                                              Cancelar
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              onClick={() => saveInlineDeadline(project.id)}
+                                              disabled={isSaving}
+                                              className="bg-indigo-600 hover:bg-indigo-700"
+                                            >
+                                              {isSaving ? 'Guardando...' : 'Guardar'}
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      /* Modo vista */
+                                      <div className="space-y-3">
+                                        {deadline ? (
+                                          <>
+                                            <div className="flex flex-wrap gap-2">
+                                              {activeEmployees.map(emp => {
+                                                const hours = deadline.employeeHours[emp.id] || 0;
+                                                if (hours === 0) return null;
+                                                return (
+                                                  <div key={emp.id} className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded-md">
+                                                    <span className="text-xs text-slate-600">{emp.first_name || emp.name}:</span>
+                                                    <span className="text-xs font-mono font-semibold">{hours}h</span>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                            {deadline.notes && (
+                                              <div className="text-sm text-slate-500 italic">
+                                                {deadline.notes}
+                                              </div>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <div className="text-sm text-slate-400">
+                                            No hay asignaciones para este proyecto
+                                          </div>
+                                        )}
+                                        {isAdmin && (
+                                          <div className="flex items-center gap-2 pt-2 border-t">
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                startEditingProject(project.id);
+                                              }}
+                                              className="gap-1"
+                                            >
+                                              <Pencil className="h-3 w-3" />
+                                              Editar asignaciones
+                                            </Button>
+                                            {deadline && (
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleDelete(deadline.id);
+                                                }}
+                                              >
+                                                <Trash2 className="h-3 w-3" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -940,11 +1364,11 @@ export default function DeadlinesPage() {
                   <span className="text-slate-600">Total asignado:</span>
                   <span className={cn(
                     "font-mono font-semibold",
-                    Object.values(formData.employeeHours).reduce((sum, h) => sum + h, 0) > (projects.find(p => p.id === formData.projectId)?.budgetHours || 0)
+                    Object.values(formData.employeeHours).reduce((sum, h) => (sum as number) + (h as number), 0 as number) > (projects.find(p => p.id === formData.projectId)?.budgetHours || 0)
                       ? "text-red-600"
                       : "text-slate-900"
                   )}>
-                    {Object.values(formData.employeeHours).reduce((sum: number, h: number) => sum + h, 0)}h
+                    {Object.values(formData.employeeHours).reduce((sum, h) => (sum as number) + (h as number), 0 as number)}h
                   </span>
                 </div>
                 {projects.find(p => p.id === formData.projectId)?.minimumHours && (
@@ -1065,3 +1489,4 @@ export default function DeadlinesPage() {
     </div>
   );
 }
+
