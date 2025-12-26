@@ -235,7 +235,7 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
 }
 
 export default function DashboardAI() {
-  const { employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad } = useApp();
+  const { employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad, isLoading: dataLoading } = useApp();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -258,16 +258,28 @@ export default function DashboardAI() {
   // CEREBRO DE MINGUITO: Análisis completo de datos
   // ============================================================
   const analysisData = useMemo(() => {
+    // Protección: asegurar que todos los arrays estén inicializados
+    const safeEmployees = employees || [];
+    const safeAllocations = allocations || [];
+    const safeProjects = projects || [];
+    const safeClients = clients || [];
+    const safeAbsences = absences || [];
+    const safeTeamEvents = teamEvents || [];
+
     const now = new Date();
     const monthStart = startOfMonth(now);
     const monthEnd = endOfMonth(now);
-    const activeEmployees = employees.filter(e => e.isActive);
-    const activeProjects = projects.filter(p => p.status === 'active');
+    const activeEmployees = safeEmployees.filter(e => e.isActive);
+    const activeProjects = safeProjects.filter(p => p.status === 'active');
     
     // Allocations del mes actual
-    const monthAllocations = allocations.filter(a => 
-      isSameMonth(parseISO(a.weekStartDate), now)
-    );
+    const monthAllocations = safeAllocations.filter(a => {
+      try {
+        return isSameMonth(parseISO(a.weekStartDate), now);
+      } catch {
+        return false;
+      }
+    });
     
     const completedTasks = monthAllocations.filter(a => a.status === 'completed');
     const pendingTasks = monthAllocations.filter(a => a.status !== 'completed');
@@ -276,82 +288,120 @@ export default function DashboardAI() {
     // 1. ANÁLISIS DE CARGA POR EMPLEADO
     // ==================
     const employeeAnalysis = activeEmployees.map(emp => {
-      const load = getEmployeeMonthlyLoad(emp.id, now.getFullYear(), now.getMonth());
-      const empTasks = monthAllocations.filter(a => a.employeeId === emp.id);
-      const empCompleted = empTasks.filter(a => a.status === 'completed');
-      const empPending = empTasks.filter(a => a.status !== 'completed');
-      
-      // Eficiencia: horas reales vs computadas
-      const totalReal = empCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
-      const totalComp = empCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
-      const totalEst = empCompleted.reduce((sum, a) => sum + a.hoursAssigned, 0);
-      const efficiency = totalReal > 0 ? ((totalComp - totalReal) / totalReal * 100) : 0;
-      
-      // Dependencias: ¿bloquea a otros?
-      const blocking = empPending.filter(task => 
-        allocations.some(other => other.dependencyId === task.id && other.status !== 'completed')
-      );
-      
-      // Dependencias: ¿esperando por otros?
-      const waitingFor = empPending.filter(task => {
-        if (!task.dependencyId) return false;
-        const dep = allocations.find(a => a.id === task.dependencyId);
-        return dep && dep.status !== 'completed';
-      });
+      try {
+        const load = getEmployeeMonthlyLoad(emp.id, now.getFullYear(), now.getMonth());
+        const empTasks = monthAllocations.filter(a => a.employeeId === emp.id);
+        const empCompleted = empTasks.filter(a => a.status === 'completed');
+        const empPending = empTasks.filter(a => a.status !== 'completed');
+        
+        // Eficiencia: horas reales vs computadas
+        const totalReal = empCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
+        const totalComp = empCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
+        const totalEst = empCompleted.reduce((sum, a) => sum + a.hoursAssigned, 0);
+        const efficiency = totalReal > 0 ? ((totalComp - totalReal) / totalReal * 100) : 0;
+        
+        // Dependencias: ¿bloquea a otros?
+        const blocking = empPending.filter(task => 
+          safeAllocations.some(other => other.dependencyId === task.id && other.status !== 'completed')
+        );
+        
+        // Dependencias: ¿esperando por otros?
+        const waitingFor = empPending.filter(task => {
+          if (!task.dependencyId) return false;
+          const dep = safeAllocations.find(a => a.id === task.dependencyId);
+          return dep && dep.status !== 'completed';
+        });
 
-      return {
-        id: emp.id,
-        name: emp.name,
-        capacity: emp.capacity,
-        assigned: load.totalAssigned,
-        completed: empCompleted.length,
-        pending: empPending.length,
-        realHours: totalReal,
-        computedHours: totalComp,
-        estimatedHours: totalEst,
-        efficiency: efficiency,
-        blocking: blocking.length,
-        waitingFor: waitingFor.length,
-        overloaded: load.totalAssigned > emp.capacity,
-        underutilized: load.totalAssigned < emp.capacity * 0.7
-      };
+        return {
+          id: emp.id,
+          name: emp.name || 'Sin nombre',
+          capacity: emp.capacity || 0,
+          assigned: load?.totalAssigned || 0,
+          completed: empCompleted.length,
+          pending: empPending.length,
+          realHours: totalReal,
+          computedHours: totalComp,
+          estimatedHours: totalEst,
+          efficiency: isNaN(efficiency) ? 0 : efficiency,
+          blocking: blocking.length,
+          waitingFor: waitingFor.length,
+          overloaded: (load?.totalAssigned || 0) > (emp.capacity || 0),
+          underutilized: (load?.totalAssigned || 0) < (emp.capacity || 0) * 0.7
+        };
+      } catch (error) {
+        console.error(`Error analyzing employee ${emp.id}:`, error);
+        return {
+          id: emp.id,
+          name: emp.name || 'Sin nombre',
+          capacity: emp.capacity || 0,
+          assigned: 0,
+          completed: 0,
+          pending: 0,
+          realHours: 0,
+          computedHours: 0,
+          estimatedHours: 0,
+          efficiency: 0,
+          blocking: 0,
+          waitingFor: 0,
+          overloaded: false,
+          underutilized: false
+        };
+      }
     });
 
     // ==================
     // 2. ANÁLISIS DE PROYECTOS
     // ==================
     const projectAnalysis = activeProjects.map(proj => {
-      const projTasks = monthAllocations.filter(a => a.projectId === proj.id);
-      const projCompleted = projTasks.filter(a => a.status === 'completed');
-      const projPending = projTasks.filter(a => a.status !== 'completed');
-      
-      const totalAssigned = projTasks.reduce((sum, a) => sum + a.hoursAssigned, 0);
-      const totalReal = projCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
-      const totalBudget = proj.totalBudget || 0;
-      
-      const burnRate = totalBudget > 0 ? (totalReal / totalBudget * 100) : 0;
+      try {
+        const projTasks = monthAllocations.filter(a => a.projectId === proj.id);
+        const projCompleted = projTasks.filter(a => a.status === 'completed');
+        const projPending = projTasks.filter(a => a.status !== 'completed');
+        
+        const totalAssigned = projTasks.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0);
+        const totalReal = projCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
+        const totalBudget = proj.totalBudget || proj.budgetHours || 0;
+        
+        const burnRate = totalBudget > 0 ? (totalReal / totalBudget * 100) : 0;
 
-      return {
-        id: proj.id,
-        name: proj.name,
-        client: clients.find(c => c.id === proj.clientId)?.name || 'Sin cliente',
-        totalTasks: projTasks.length,
-        completed: projCompleted.length,
-        pending: projPending.length,
-        totalAssigned,
-        totalReal,
-        totalBudget,
-        burnRate,
-        overBudget: totalReal > totalBudget,
-        completion: projTasks.length > 0 ? (projCompleted.length / projTasks.length * 100) : 0
-      };
+        return {
+          id: proj.id,
+          name: proj.name || 'Sin nombre',
+          client: safeClients.find(c => c.id === proj.clientId)?.name || 'Sin cliente',
+          totalTasks: projTasks.length,
+          completed: projCompleted.length,
+          pending: projPending.length,
+          totalAssigned,
+          totalReal,
+          totalBudget,
+          burnRate: isNaN(burnRate) ? 0 : burnRate,
+          overBudget: totalReal > totalBudget,
+          completion: projTasks.length > 0 ? (projCompleted.length / projTasks.length * 100) : 0
+        };
+      } catch (error) {
+        console.error(`Error analyzing project ${proj.id}:`, error);
+        return {
+          id: proj.id,
+          name: proj.name || 'Sin nombre',
+          client: 'Sin cliente',
+          totalTasks: 0,
+          completed: 0,
+          pending: 0,
+          totalAssigned: 0,
+          totalReal: 0,
+          totalBudget: 0,
+          burnRate: 0,
+          overBudget: false,
+          completion: 0
+        };
+      }
     });
 
     // ==================
     // 3. MÉTRICAS GLOBALES
     // ==================
-    const totalCapacity = activeEmployees.reduce((sum, e) => sum + e.capacity, 0);
-    const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+    const totalCapacity = activeEmployees.reduce((sum, e) => sum + (e.capacity || 0), 0);
+    const totalAssigned = monthAllocations.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0);
     const utilizationRate = totalCapacity > 0 ? (totalAssigned / totalCapacity * 100) : 0;
     
     const overloadedEmployees = employeeAnalysis.filter(e => e.overloaded);
@@ -361,22 +411,30 @@ export default function DashboardAI() {
     // ==================
     // 4. AUSENCIAS Y EVENTOS
     // ==================
-    const monthAbsences = absences.filter(a => 
-      isSameMonth(parseISO(a.startDate), now) || isSameMonth(parseISO(a.endDate), now)
-    );
+    const monthAbsences = safeAbsences.filter(a => {
+      try {
+        return isSameMonth(parseISO(a.startDate), now) || isSameMonth(parseISO(a.endDate), now);
+      } catch {
+        return false;
+      }
+    });
     
-    const monthEvents = teamEvents.filter(e => 
-      isSameMonth(parseISO(e.date), now)
-    );
+    const monthEvents = safeTeamEvents.filter(e => {
+      try {
+        return isSameMonth(parseISO(e.date), now);
+      } catch {
+        return false;
+      }
+    });
 
     return {
       month: format(now, "MMMM yyyy", { locale: es }),
       employees: employeeAnalysis,
       projects: projectAnalysis,
       metrics: {
-        totalCapacity,
-        totalAssigned,
-        utilizationRate,
+        totalCapacity: isNaN(totalCapacity) ? 0 : totalCapacity,
+        totalAssigned: isNaN(totalAssigned) ? 0 : totalAssigned,
+        utilizationRate: isNaN(utilizationRate) ? 0 : utilizationRate,
         completedTasks: completedTasks.length,
         pendingTasks: pendingTasks.length,
         overloadedCount: overloadedEmployees.length,
@@ -425,7 +483,7 @@ MÉTRICAS GLOBALES:
 - Empleados Bloqueando Tareas: ${analysisData.metrics.blockingCount}
 
 ANÁLISIS POR EMPLEADO:
-${analysisData.employees.map(e => `
+${(analysisData.employees || []).map(e => `
 - ${e.name}:
   * Capacidad: ${e.capacity}h | Asignado: ${e.assigned}h
   * Tareas: ${e.completed} completadas, ${e.pending} pendientes
@@ -436,7 +494,7 @@ ${analysisData.employees.map(e => `
 `).join('\n')}
 
 ANÁLISIS DE PROYECTOS:
-${analysisData.projects.map(p => `
+${(analysisData.projects || []).map(p => `
 - ${p.name} (Cliente: ${p.client}):
   * Tareas: ${p.completed}/${p.totalTasks} (${p.completion.toFixed(0)}% completado)
   * Horas: ${p.totalReal}h de ${p.totalBudget}h (${p.burnRate.toFixed(1)}% consumido)
@@ -444,15 +502,24 @@ ${analysisData.projects.map(p => `
 `).join('\n')}
 
 AUSENCIAS DEL MES:
-${analysisData.absences.length > 0 ? analysisData.absences.map(a => {
-  const emp = employees.find(e => e.id === a.employeeId);
-  return `- ${emp?.name}: ${a.reason} (${format(parseISO(a.startDate), 'dd/MM')} - ${format(parseISO(a.endDate), 'dd/MM')})`;
+${(analysisData.absences || []).length > 0 ? (analysisData.absences || []).map(a => {
+  const emp = (employees || []).find(e => e.id === a.employeeId);
+  try {
+    return `- ${emp?.name || 'Desconocido'}: ${a.reason || a.type || 'Sin motivo'} (${format(parseISO(a.startDate), 'dd/MM')} - ${format(parseISO(a.endDate), 'dd/MM')})`;
+  } catch {
+    return `- ${emp?.name || 'Desconocido'}: ${a.reason || a.type || 'Sin motivo'}`;
+  }
 }).join('\n') : '- Sin ausencias registradas'}
 
 EVENTOS DEL MES:
-${analysisData.events.length > 0 ? analysisData.events.map(e => 
-  `- ${e.name} (${format(parseISO(e.date), 'dd/MM')}): ${e.attendees.length} asistentes`
-).join('\n') : '- Sin eventos programados'}
+${(analysisData.events || []).length > 0 ? (analysisData.events || []).map(e => {
+  try {
+    const attendeesCount = (e.attendees || []).length;
+    return `- ${e.name || 'Evento'} (${format(parseISO(e.date), 'dd/MM')}): ${attendeesCount} asistentes`;
+  } catch {
+    return `- ${e.name || 'Evento'}: Sin fecha`;
+  }
+}).join('\n') : '- Sin eventos programados'}
 
 PREGUNTA DEL USUARIO: ${input}
 
@@ -509,12 +576,29 @@ INSTRUCCIONES:
   // ============================================================
   // QUICK STATS (Visualización rápida de métricas)
   // ============================================================
-  const quickStats = {
-    utilization: analysisData.metrics.utilizationRate,
-    balance: analysisData.metrics.totalCapacity - analysisData.metrics.totalAssigned,
-    criticalAlerts: analysisData.alerts.critical,
-    warningAlerts: analysisData.alerts.warning
-  };
+  const quickStats = useMemo(() => {
+    const utilization = analysisData.metrics.utilizationRate;
+    const balance = analysisData.metrics.totalCapacity - analysisData.metrics.totalAssigned;
+    
+    return {
+      utilization: isNaN(utilization) ? 0 : utilization,
+      balance: isNaN(balance) ? 0 : balance,
+      criticalAlerts: analysisData.alerts.critical || 0,
+      warningAlerts: analysisData.alerts.warning || 0
+    };
+  }, [analysisData]);
+
+  // Mostrar loader mientras los datos cargan
+  if (dataLoading) {
+    return (
+      <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
+        <div className="text-center">
+          <Sparkles className="h-12 w-12 text-indigo-500 animate-pulse mx-auto mb-4" />
+          <p className="text-muted-foreground">Cargando datos...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col gap-4 p-4">
@@ -619,10 +703,10 @@ INSTRUCCIONES:
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Badge variant="outline" className="text-[10px] bg-white">
-                {analysisData.employees.length} empleados
+                {(analysisData.employees || []).length} empleados
               </Badge>
               <Badge variant="outline" className="text-[10px] bg-white">
-                {analysisData.projects.length} proyectos
+                {(analysisData.projects || []).length} proyectos
               </Badge>
               <Button 
                 variant="ghost" 
