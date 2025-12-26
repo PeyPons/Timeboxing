@@ -709,7 +709,7 @@ export default function AdsReportGenerator() {
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                     <div>
                                         <p className="font-medium">Generando análisis con IA...</p>
-                                        <p className="text-sm text-indigo-600">Esto puede tardar 1-2 minutos dependiendo del proveedor.</p>
+                                        <p className="text-sm text-indigo-600">Esto puede tardar hasta 8 minutos dependiendo del proveedor.</p>
                                     </div>
                                 </div>
                             ) : (
