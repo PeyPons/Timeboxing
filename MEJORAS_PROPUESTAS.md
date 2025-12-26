@@ -43,28 +43,33 @@ export class AIService {
 
 ---
 
-### 2. **Dividir componentes grandes en componentes más pequeños**
-**Problema**: 
-- `DeadlinesPage.tsx`: 2029 líneas
-- `EmployeeDashboard.tsx`: ~626 líneas
-- `ProjectsPage.tsx`: ~1105 líneas
+### 2. **Refactorizar componentes grandes (OPCIONAL - solo si causa problemas)**
+**Nota importante**: El tamaño del componente no es un problema si funciona bien. `DeadlinesPage.tsx` (2029 líneas) funciona perfectamente y fue creado recientemente con toda su funcionalidad integrada.
 
-**Solución**: Dividir en componentes más pequeños:
+**Cuándo considerar dividir**:
+- Si el componente causa problemas de rendimiento (re-renders innecesarios)
+- Si diferentes partes necesitan reutilizarse en otros lugares
+- Si el código se vuelve difícil de mantener o entender
+
+**Si decides dividir en el futuro** (manteniendo TODA la funcionalidad):
 ```typescript
-// DeadlinesPage.tsx → Dividir en:
-- DeadlinesHeader.tsx
-- DeadlinesFilters.tsx
-- DeadlinesProjectList.tsx
-- DeadlinesAvailabilityPanel.tsx
-- DeadlinesGlobalAssignments.tsx
-- DeadlinesRedistributionTips.tsx
+// Solo si realmente necesitas reutilizar partes:
+- DeadlinesHeader.tsx (si se usa en múltiples lugares)
+- DeadlinesFilters.tsx (si se reutiliza)
+- DeadlinesProjectList.tsx (si se necesita en otra página)
+- DeadlinesAvailabilityPanel.tsx (ya está bien separado visualmente)
+- DeadlinesGlobalAssignments.tsx (si se reutiliza)
+- DeadlinesRedistributionTips.tsx (si se reutiliza)
 ```
 
-**Beneficio**:
-- Mejor mantenibilidad
+**Alternativa menos invasiva**: En lugar de dividir, puedes:
+- Extraer funciones de utilidad a archivos separados
+- Usar `useMemo` y `useCallback` para optimizar
+- Agrupar lógica relacionada en hooks personalizados (sin cambiar la estructura)
+
+**Beneficio** (solo si realmente necesitas):
 - Reutilización de componentes
-- Testing más fácil
-- Mejor rendimiento (React.memo)
+- Testing más granular (pero puedes testear el componente completo también)
 
 ---
 
@@ -598,15 +603,15 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
 1. ✅ **Extraer lógica de IA duplicada** (#1)
 2. ✅ **Sistema de logging estructurado** (#15)
 3. ✅ **Manejo de errores centralizado** (#10)
-4. ✅ **Dividir DeadlinesPage** (#2)
-5. ✅ **Añadir tests básicos** (#13)
+4. ✅ **Añadir tests básicos** (#13)
+5. ✅ **Extraer constantes mágicas** (#4)
 
 ### Media Prioridad
-6. ✅ **Optimizar re-renders** (#6)
+6. ✅ **Optimizar re-renders** (#6) - Aplicar React.memo donde sea necesario
 7. ✅ **Validación con Zod** (#11)
-8. ✅ **Extraer constantes** (#4)
-9. ✅ **Hooks personalizados** (#3)
-10. ✅ **Índices de BD** (#24)
+8. ✅ **Hooks personalizados** (#3) - Para lógica repetitiva, sin cambiar estructura existente
+9. ✅ **Índices de BD** (#24)
+10. ⚠️ **Refactorizar componentes grandes** (#2) - SOLO si realmente causa problemas o necesitas reutilizar partes
 
 ### Baja Prioridad (Mejoras futuras)
 11. ✅ **Tests E2E** (#14)
