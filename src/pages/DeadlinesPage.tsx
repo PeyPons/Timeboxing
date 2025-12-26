@@ -774,13 +774,13 @@ export default function DeadlinesPage() {
         </div>
       </div>
 
-      {/* Resumen de Empleados - Diseño compacto */}
+      {/* Resumen de Empleados - Cards completos */}
       <div className="bg-white rounded-xl border shadow-sm p-4">
-        <h3 className="text-sm font-medium text-slate-500 mb-3 flex items-center gap-2">
+        <h3 className="text-sm font-medium text-slate-500 mb-4 flex items-center gap-2">
           <Users className="h-4 w-4" />
-          Resumen del equipo
+          Resumen por Empleado
         </h3>
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {activeEmployees.map(emp => {
             const capacityData = getMonthlyCapacity(emp.id);
             const assigned = getEmployeeAssignedHours(emp.id);
@@ -790,72 +790,75 @@ export default function DeadlinesPage() {
             const remaining = available - assigned;
             
             return (
-              <TooltipProvider key={emp.id}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className={cn(
-                      "flex items-center gap-2 px-3 py-2 rounded-lg border cursor-help transition-colors",
-                      status === 'overload' && "bg-red-50 border-red-200",
-                      status === 'warning' && "bg-amber-50 border-amber-200",
-                      status === 'healthy' && "bg-white border-slate-200 hover:border-slate-300"
-                    )}>
-                      <Avatar className="h-7 w-7">
-                        <AvatarImage src={emp.avatarUrl} alt={emp.name} />
-                        <AvatarFallback className="bg-slate-600 text-white text-xs">
-                          {(emp.first_name || emp.name)[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="text-sm">
-                        <span className="font-medium">{emp.first_name || emp.name}</span>
-                        <span className={cn(
-                          "ml-2 font-mono text-xs",
-                          status === 'overload' ? "text-red-600" : 
-                          status === 'warning' ? "text-amber-600" : 
-                          "text-slate-500"
-                        )}>
-                          {assigned.toFixed(0)}/{available.toFixed(0)}h
-                        </span>
-                      </div>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs">
-                    <div className="space-y-1 text-xs">
-                      <div className="font-semibold mb-2">{emp.first_name || emp.name}</div>
-                      <div className="flex justify-between gap-4">
-                        <span>Base:</span>
-                        <span className="font-mono">{capacityData.total.toFixed(1)}h</span>
-                      </div>
-                      {capacityData.absenceHours > 0 && (
-                        <div className="flex justify-between gap-4 text-red-400">
-                          <span>Ausencias:</span>
-                          <span className="font-mono">-{capacityData.absenceHours.toFixed(1)}h</span>
-                        </div>
-                      )}
-                      {capacityData.eventHours > 0 && (
-                        <div className="flex justify-between gap-4 text-amber-400">
-                          <span>Eventos:</span>
-                          <span className="font-mono">-{capacityData.eventHours.toFixed(1)}h</span>
-                        </div>
-                      )}
-                      <div className="border-t border-slate-600 pt-1 flex justify-between gap-4">
-                        <span>Disponible:</span>
-                        <span className="font-mono font-semibold">{available.toFixed(1)}h</span>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <span>Asignado:</span>
-                        <span className="font-mono">{assigned.toFixed(1)}h</span>
-                      </div>
-                      <div className={cn(
-                        "flex justify-between gap-4 font-semibold",
-                        remaining < 0 ? "text-red-400" : "text-emerald-400"
-                      )}>
-                        <span>Libre:</span>
-                        <span className="font-mono">{remaining.toFixed(1)}h</span>
-                      </div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <div 
+                key={emp.id} 
+                className={cn(
+                  "p-3 rounded-lg border transition-colors",
+                  status === 'overload' && "bg-red-50 border-red-200",
+                  status === 'warning' && "bg-amber-50 border-amber-200",
+                  status === 'healthy' && "bg-slate-50 border-slate-200"
+                )}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                    <AvatarFallback className="bg-indigo-600 text-white text-xs">
+                      {(emp.first_name || emp.name)[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{emp.first_name || emp.name}</div>
+                  </div>
+                  {status === 'overload' && <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />}
+                  {status === 'warning' && <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />}
+                  {status === 'healthy' && <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />}
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-slate-500 cursor-help border-b border-dotted border-slate-300">Disponible</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">
+                          <div className="space-y-0.5">
+                            <div>Base: {capacityData.total.toFixed(1)}h</div>
+                            {capacityData.absenceHours > 0 && <div className="text-red-400">Ausencias: -{capacityData.absenceHours.toFixed(1)}h</div>}
+                            {capacityData.eventHours > 0 && <div className="text-amber-400">Eventos: -{capacityData.eventHours.toFixed(1)}h</div>}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <span className="font-mono font-medium">{available.toFixed(1)}h</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Asignado</span>
+                    <span className={cn(
+                      "font-mono font-medium",
+                      status === 'overload' ? "text-red-600" : status === 'warning' ? "text-amber-600" : ""
+                    )}>{assigned.toFixed(1)}h</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Libre</span>
+                    <span className={cn(
+                      "font-mono font-medium",
+                      remaining < 0 ? "text-red-600" : "text-emerald-600"
+                    )}>{remaining.toFixed(1)}h</span>
+                  </div>
+                  <Progress 
+                    value={Math.min(percentage, 100)} 
+                    className={cn(
+                      "h-1.5 mt-1",
+                      status === 'overload' && "[&>div]:bg-red-500",
+                      status === 'warning' && "[&>div]:bg-amber-500",
+                      status === 'healthy' && "[&>div]:bg-emerald-500"
+                    )}
+                  />
+                  <div className="text-right text-xs font-medium" style={{ color: status === 'overload' ? '#dc2626' : status === 'warning' ? '#d97706' : '#059669' }}>
+                    {percentage}%
+                  </div>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -1024,7 +1027,7 @@ export default function DeadlinesPage() {
                               >
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-sm">{project.name}</span>
+                                    <span className="text-sm font-medium">{project.name}</span>
                                     {isHidden && (
                                       <EyeOff className="h-3 w-3 text-slate-400" />
                                     )}
@@ -1033,13 +1036,43 @@ export default function DeadlinesPage() {
                                     {project.minimumHours != null && project.minimumHours > 0 && (
                                       <span className="mr-2">min {project.minimumHours}h</span>
                                     )}
-                                    <span>{project.budgetHours}h</span>
+                                    <span>{project.budgetHours}h contratadas</span>
                                   </div>
                                 </div>
                                 
-                                {/* Horas asignadas */}
+                                {/* Empleados asignados con avatars */}
+                                {!isEditing && totalAssigned > 0 && (
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {activeEmployees.map(emp => {
+                                      const hours = (currentHours as Record<string, number>)[emp.id] || 0;
+                                      if (hours === 0) return null;
+                                      return (
+                                        <TooltipProvider key={emp.id}>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <div className="flex items-center gap-1 bg-slate-100 rounded-full pl-0.5 pr-2 py-0.5">
+                                                <Avatar className="h-5 w-5">
+                                                  <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                                                  <AvatarFallback className="bg-indigo-600 text-white text-[10px]">
+                                                    {(emp.first_name || emp.name)[0]}
+                                                  </AvatarFallback>
+                                                </Avatar>
+                                                <span className="text-xs font-mono font-medium text-slate-600">{hours}h</span>
+                                              </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <span>{emp.first_name || emp.name}: {hours}h</span>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                
+                                {/* Total horas */}
                                 <div className={cn(
-                                  "text-sm font-mono font-medium min-w-[50px] text-right",
+                                  "text-sm font-mono font-semibold min-w-[50px] text-right",
                                   isOverBudget ? "text-red-600" : 
                                   isUnderMin ? "text-amber-600" : 
                                   totalAssigned > 0 ? "text-slate-700" : "text-slate-400"
