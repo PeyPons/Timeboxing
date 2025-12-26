@@ -29,6 +29,7 @@ import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 
 export default function DeadlinesPage() {
   const { projects, clients, employees, absences, teamEvents, currentUser } = useApp();
+  const { showTour } = useDeadlinesTour();
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [globalAssignments, setGlobalAssignments] = useState<GlobalAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1409,7 +1410,6 @@ export default function DeadlinesPage() {
   };
 
   const redistributionTips = getRedistributionTips();
-  const { showTour } = useDeadlinesTour();
 
   return (
     <div className="flex gap-6 p-6 min-h-screen bg-slate-50">
