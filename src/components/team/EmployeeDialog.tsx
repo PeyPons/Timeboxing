@@ -5,11 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { Employee, WorkSchedule } from '@/types';
+import { UserPermissions, PERMISSION_LABELS, DEFAULT_PERMISSIONS } from '@/types/permissions';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Briefcase, CalendarClock, Target, Lock, Clock, ShieldCheck, Hash } from 'lucide-react';
+import { Briefcase, CalendarClock, Target, Lock, Clock, ShieldCheck, Hash, Key } from 'lucide-react';
 
 import { ScheduleEditor } from './ScheduleEditor';
 import { ProjectsSheet } from './ProjectsSheet';
@@ -39,6 +41,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
   const [crmUserId, setCrmUserId] = useState<number | ''>('');
   
   const [workSchedule, setWorkSchedule] = useState<WorkSchedule>(defaultSchedule);
+  const [permissions, setPermissions] = useState<UserPermissions>(DEFAULT_PERMISSIONS);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
@@ -57,6 +60,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setHourlyRate(employeeToEdit.hourlyRate || 0);
         setCrmUserId(employeeToEdit.crmUserId || '');
         setWorkSchedule(employeeToEdit.workSchedule || defaultSchedule);
+        setPermissions(employeeToEdit.permissions || DEFAULT_PERMISSIONS);
       } else {
         setName('');
         setEmail('');
@@ -67,6 +71,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setHourlyRate(0);
         setCrmUserId('');
         setWorkSchedule(defaultSchedule);
+        setPermissions(DEFAULT_PERMISSIONS);
       }
     }
   }, [open, employeeToEdit]);
@@ -126,7 +131,8 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
             defaultWeeklyCapacity: Number(capacity),
             hourlyRate: Number(hourlyRate),
             crmUserId: crmUserId !== '' ? Number(crmUserId) : undefined,
-            workSchedule: workSchedule, 
+            workSchedule: workSchedule,
+            permissions: permissions,
             isActive: true,
             avatarUrl: employeeToEdit?.avatarUrl || `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${name}`
         };
@@ -166,8 +172,9 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
           </DialogHeader>
 
           <Tabs defaultValue="profile" className="w-full mt-2">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="profile">Perfil</TabsTrigger>
+              <TabsTrigger value="permissions" disabled={!isEditing}>Permisos</TabsTrigger>
               <TabsTrigger value="schedule" disabled={!isEditing}>Horario</TabsTrigger>
               <TabsTrigger value="management" disabled={!isEditing}>Gestión</TabsTrigger>
             </TabsList>
@@ -268,6 +275,99 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                     </Button>
                 </div>
               </form>
+            </TabsContent>
+
+            <TabsContent value="permissions" className="py-4 space-y-4">
+              <div className="bg-indigo-50 text-indigo-800 p-3 rounded-md text-sm flex gap-2">
+                <Key className="h-5 w-5 shrink-0" />
+                <p>Controla a qué secciones puede acceder este empleado. Si un permiso está desactivado, no verá esa sección en el menú.</p>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">Gestión</h3>
+                  {(['can_access_planner', 'can_access_projects', 'can_access_clients', 'can_access_team'] as const).map((permission) => (
+                    <div key={permission} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50">
+                      <div className="flex-1">
+                        <Label htmlFor={permission} className="text-sm font-medium cursor-pointer">
+                          {PERMISSION_LABELS[permission]}
+                        </Label>
+                      </div>
+                      <Switch
+                        id={permission}
+                        checked={permissions[permission] !== false}
+                        onCheckedChange={(checked) => 
+                          setPermissions(prev => ({ ...prev, [permission]: checked }))
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-3 pt-4 border-t">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">PPC</h3>
+                  {(['can_access_google_ads', 'can_access_meta_ads', 'can_access_ads_reports'] as const).map((permission) => (
+                    <div key={permission} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50">
+                      <div className="flex-1">
+                        <Label htmlFor={permission} className="text-sm font-medium cursor-pointer">
+                          {PERMISSION_LABELS[permission]}
+                        </Label>
+                      </div>
+                      <Switch
+                        id={permission}
+                        checked={permissions[permission] !== false}
+                        onCheckedChange={(checked) => 
+                          setPermissions(prev => ({ ...prev, [permission]: checked }))
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-3 pt-4 border-t">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">Análisis</h3>
+                  {(['can_access_reports', 'can_access_client_reports'] as const).map((permission) => (
+                    <div key={permission} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50">
+                      <div className="flex-1">
+                        <Label htmlFor={permission} className="text-sm font-medium cursor-pointer">
+                          {PERMISSION_LABELS[permission]}
+                        </Label>
+                      </div>
+                      <Switch
+                        id={permission}
+                        checked={permissions[permission] !== false}
+                        onCheckedChange={(checked) => 
+                          setPermissions(prev => ({ ...prev, [permission]: checked }))
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-3 pt-4 border-t">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">Otros</h3>
+                  <div className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50">
+                    <div className="flex-1">
+                      <Label htmlFor="can_access_deadlines" className="text-sm font-medium cursor-pointer">
+                        {PERMISSION_LABELS.can_access_deadlines}
+                      </Label>
+                    </div>
+                    <Switch
+                      id="can_access_deadlines"
+                      checked={permissions.can_access_deadlines !== false}
+                      onCheckedChange={(checked) => 
+                        setPermissions(prev => ({ ...prev, can_access_deadlines: checked }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button onClick={handleSubmit} className="bg-indigo-600" disabled={isProcessing}>
+                  {isProcessing ? 'Guardando...' : 'Guardar permisos'}
+                </Button>
+              </div>
             </TabsContent>
 
             <TabsContent value="schedule" className="py-4">

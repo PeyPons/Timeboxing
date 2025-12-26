@@ -8,6 +8,8 @@ export interface WorkSchedule {
   sunday: number;
 }
 
+import { UserPermissions } from './permissions';
+
 export interface Employee {
   id: string;
   name: string;
@@ -25,6 +27,7 @@ export interface Employee {
   crmUserId?: number;  // NUEVO: ID del usuario en el CRM
   welcomeTourCompleted?: boolean;  // Si el usuario completó el tour de bienvenida
   deadlinesTourCompleted?: boolean;  // Si el usuario completó el tour de deadlines
+  permissions?: UserPermissions;  // Permisos de acceso a diferentes secciones
 }
 
 export interface TeamEvent {

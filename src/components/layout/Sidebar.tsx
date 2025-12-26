@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useApp } from '@/contexts/AppContext'; // Importamos contexto para datos reales
+import { usePermissions } from '@/hooks/usePermissions'; // Hook de permisos
 import { supabase } from '@/lib/supabase'; // Para el logout
 import { 
   LayoutDashboard, 
@@ -22,6 +23,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 export function Sidebar() {
   const location = useLocation();
   const { currentUser } = useApp(); // Obtenemos el usuario real
+  const { canAccess } = usePermissions(); // Verificamos permisos
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -44,62 +46,98 @@ export function Sidebar() {
       {/* Navegación Principal */}
       <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
         
-        {/* Enlace directo al Dashboard personal */}
+        {/* Enlace directo al Dashboard personal - Siempre visible */}
         <NavLink to="/" icon={Home} active={location.pathname === '/'}>
           Mi Espacio
         </NavLink>
 
-        <NavLink to="/deadlines" icon={Calendar} active={location.pathname === '/deadlines'}>
-          Deadline
-        </NavLink>
+        {/* Deadline - Verificar permiso */}
+        {canAccess('/deadlines') && (
+          <NavLink to="/deadlines" icon={Calendar} active={location.pathname === '/deadlines'}>
+            Deadline
+          </NavLink>
+        )}
 
-        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-2">
-          Gestión
-        </div>
-        
-        <NavLink to="/planner" icon={LayoutDashboard} active={location.pathname === '/planner'}>
-          Planificador
-        </NavLink>
+        {/* Sección Gestión - Solo mostrar si tiene al menos un permiso */}
+        {(canAccess('/planner') || canAccess('/projects') || canAccess('/clients') || canAccess('/team')) && (
+          <>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-2">
+              Gestión
+            </div>
+            
+            {canAccess('/planner') && (
+              <NavLink to="/planner" icon={LayoutDashboard} active={location.pathname === '/planner'}>
+                Planificador
+              </NavLink>
+            )}
 
-        <NavLink to="/projects" icon={FolderKanban} active={location.pathname === '/projects'}>
-          Proyectos
-        </NavLink>
+            {canAccess('/projects') && (
+              <NavLink to="/projects" icon={FolderKanban} active={location.pathname === '/projects'}>
+                Proyectos
+              </NavLink>
+            )}
 
-        <NavLink to="/clients" icon={Briefcase} active={location.pathname === '/clients'}>
-          Clientes
-        </NavLink>
+            {canAccess('/clients') && (
+              <NavLink to="/clients" icon={Briefcase} active={location.pathname === '/clients'}>
+                Clientes
+              </NavLink>
+            )}
 
-        <NavLink to="/team" icon={Users} active={location.pathname === '/team'}>
-          Equipo
-        </NavLink>
+            {canAccess('/team') && (
+              <NavLink to="/team" icon={Users} active={location.pathname === '/team'}>
+                Equipo
+              </NavLink>
+            )}
+          </>
+        )}
 
-        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
-          PPC
-        </div>
-        
-        <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
-          Google Ads
-        </NavLink>
+        {/* Sección PPC - Solo mostrar si tiene al menos un permiso */}
+        {(canAccess('/ads') || canAccess('/meta-ads') || canAccess('/ads-reports')) && (
+          <>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
+              PPC
+            </div>
+            
+            {canAccess('/ads') && (
+              <NavLink to="/ads" icon={Megaphone} active={location.pathname === '/ads'}>
+                Google Ads
+              </NavLink>
+            )}
 
-        <NavLink to="/meta-ads" icon={Facebook} active={location.pathname === '/meta-ads'}>
-          Meta Ads
-        </NavLink>
+            {canAccess('/meta-ads') && (
+              <NavLink to="/meta-ads" icon={Facebook} active={location.pathname === '/meta-ads'}>
+                Meta Ads
+              </NavLink>
+            )}
 
-        <NavLink to="/ads-reports" icon={FileDown} active={location.pathname === '/ads-reports'}>
-          Informes automatizados
-        </NavLink>
+            {canAccess('/ads-reports') && (
+              <NavLink to="/ads-reports" icon={FileDown} active={location.pathname === '/ads-reports'}>
+                Informes automatizados
+              </NavLink>
+            )}
+          </>
+        )}
 
-        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
-          Análisis
-        </div>
+        {/* Sección Análisis - Solo mostrar si tiene al menos un permiso */}
+        {(canAccess('/reports') || canAccess('/informes-clientes')) && (
+          <>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">
+              Análisis
+            </div>
 
-        <NavLink to="/reports" icon={BarChart3} active={location.pathname === '/reports'}>
-          Reportes
-        </NavLink>
+            {canAccess('/reports') && (
+              <NavLink to="/reports" icon={BarChart3} active={location.pathname === '/reports'}>
+                Reportes
+              </NavLink>
+            )}
 
-        <NavLink to="/informes-clientes" icon={FileDown} active={location.pathname === '/informes-clientes'}>
-          <span className="truncate">Informes clientes</span>
-        </NavLink>
+            {canAccess('/informes-clientes') && (
+              <NavLink to="/informes-clientes" icon={FileDown} active={location.pathname === '/informes-clientes'}>
+                <span className="truncate">Informes clientes</span>
+              </NavLink>
+            )}
+          </>
+        )}
 
         <NavLink to="/dashboard-ai" icon={Sparkles} active={location.pathname === '/dashboard-ai'}>
           Copiloto IA

@@ -10,6 +10,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 // Componentes de Auth
 import Login from "./pages/Login";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+import { PermissionProtectedRoute } from "./components/auth/PermissionProtectedRoute";
 
 // Páginas (Mantenemos tus imports originales y añadimos el Dashboard nuevo)
 import DashboardAI from "./pages/DashboardAI";
@@ -44,21 +45,21 @@ const App = () => (
               {/* Rutas Protegidas */}
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
-                  {/* Dashboard Personal como página de inicio */}
+                  {/* Dashboard Personal como página de inicio - Siempre accesible */}
                   <Route path="/" element={<EmployeeDashboard />} />
                   
-                  {/* Resto de rutas */}
-                  <Route path="/planner" element={<Index />} />
-                  <Route path="/deadlines" element={<DeadlinesPage />} />
-                  <Route path="/team" element={<TeamPage />} />
-                  <Route path="/clients" element={<ClientsPage />} />
-                  <Route path="/projects" element={<ProjectsPage />} />
-                  <Route path="/reports" element={<ReportsPage />} />
-                  <Route path="/informes-clientes" element={<ClientReportsPage />} />
+                  {/* Resto de rutas protegidas por permisos */}
+                  <Route path="/planner" element={<PermissionProtectedRoute requiredPermission="/planner"><Index /></PermissionProtectedRoute>} />
+                  <Route path="/deadlines" element={<PermissionProtectedRoute requiredPermission="/deadlines"><DeadlinesPage /></PermissionProtectedRoute>} />
+                  <Route path="/team" element={<PermissionProtectedRoute requiredPermission="/team"><TeamPage /></PermissionProtectedRoute>} />
+                  <Route path="/clients" element={<PermissionProtectedRoute requiredPermission="/clients"><ClientsPage /></PermissionProtectedRoute>} />
+                  <Route path="/projects" element={<PermissionProtectedRoute requiredPermission="/projects"><ProjectsPage /></PermissionProtectedRoute>} />
+                  <Route path="/reports" element={<PermissionProtectedRoute requiredPermission="/reports"><ReportsPage /></PermissionProtectedRoute>} />
+                  <Route path="/informes-clientes" element={<PermissionProtectedRoute requiredPermission="/informes-clientes"><ClientReportsPage /></PermissionProtectedRoute>} />
                   <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/ads" element={<AdsPage />} />
-                  <Route path="/meta-ads" element={<MetaAdsPage />} />
-                  <Route path="/ads-reports" element={<AdsReportGenerator />} />
+                  <Route path="/ads" element={<PermissionProtectedRoute requiredPermission="/ads"><AdsPage /></PermissionProtectedRoute>} />
+                  <Route path="/meta-ads" element={<PermissionProtectedRoute requiredPermission="/meta-ads"><MetaAdsPage /></PermissionProtectedRoute>} />
+                  <Route path="/ads-reports" element={<PermissionProtectedRoute requiredPermission="/ads-reports"><AdsReportGenerator /></PermissionProtectedRoute>} />
                   <Route path="/dashboard-ai" element={<DashboardAI />} />
                 </Route>
               </Route>

@@ -93,7 +93,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           user_id: e.user_id,
           crmUserId: e.crm_user_id,
           welcomeTourCompleted: e.welcome_tour_completed === true,
-          deadlinesTourCompleted: e.deadlines_tour_completed === true
+          deadlinesTourCompleted: e.deadlines_tour_completed === true,
+          permissions: e.permissions || undefined
         }));
         setEmployees(mappedEmployees);
 
@@ -220,7 +221,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       hourly_rate: employee.hourlyRate,
       crm_user_id: employee.crmUserId,
       welcome_tour_completed: employee.welcomeTourCompleted || false,
-      deadlines_tour_completed: employee.deadlinesTourCompleted || false
+      deadlines_tour_completed: employee.deadlinesTourCompleted || false,
+      permissions: employee.permissions || null
     }).eq('id', employee.id);
   }, []);
 
