@@ -473,7 +473,9 @@ export default function EmployeeDashboard() {
       </div>
 
       {/* 5. ÍNDICE DE FIABILIDAD - Ancho completo */}
-      <ReliabilityIndexCard employeeId={myEmployeeProfile.id} />
+      <div data-tour="reliability-index">
+        <ReliabilityIndexCard employeeId={myEmployeeProfile.id} />
+      </div>
 
       {/* 6. PROYECTOS DEL MES - Con colaboradores y ayuda integrados */}
       <div data-tour="projects-summary">
