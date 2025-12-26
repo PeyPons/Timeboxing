@@ -37,12 +37,29 @@ const SUGGESTED_QUESTIONS = [
 // LISTA DE MODELOS OPENROUTER (Orden de prioridad)
 // ============================================================
 const OPENROUTER_MODEL_CHAIN = [
-    "google/gemini-2.0-flash-exp:free",        // 1. Google (Muy rápido y ventana enorme)
-    "meta-llama/llama-3.3-70b-instruct:free",  // 2. Meta (El mejor Open Source actual)
-    "qwen/qwen-2.5-vl-7b-instruct:free",       // 3. Qwen (Muy equilibrado)
-    "mistralai/mistral-small-3.1-24b-instruct:free", // 4. Mistral (Eficiente)
-    "deepseek/deepseek-r1-0528:free",          // 5. DeepSeek (Razonamiento)
-    "microsoft/phi-3-mini-128k-instruct:free"  // 6. Fallback ligero final
+  // 1. Google: Alta capacidad (si falla por cuota 429, saltará al siguiente)
+  "google/gemini-2.0-flash-exp:free", 
+  
+  // 2. Xiaomi: Modelo Flash rápido
+  "xiaomi/mimo-v2-flash:free",
+  
+  // 3. Qwen Coder: Excelente para lógica y seguir instrucciones estrictas
+  "qwen/qwen3-coder:free", 
+  
+  // 4. Mistral Dev: Versión de desarrollo de Mistral
+  "mistralai/devstral-2512:free", 
+  
+  // 5. Nvidia: Modelo equilibrado
+  "nvidia/nemotron-3-nano-30b-a3b:free", 
+  
+  // 6. DeepSeek R1: Muy bueno razonando (si está disponible)
+  "deepseek/deepseek-r1-0528:free", 
+  
+  // 7. Otros modelos de respaldo detectados por la API
+  "kwaipilot/kat-coder-pro:free",
+  "tngtech/tng-r1t-chimera:free",
+  "tngtech/deepseek-r1t2-chimera:free",
+  "tngtech/deepseek-r1t-chimera:free"
 ];
 
 // ============================================================
