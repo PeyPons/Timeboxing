@@ -17,6 +17,7 @@ import {
   Plus, Pencil, Trash2, Save, Search, Eye, EyeOff, ChevronDown, ChevronRight,
   Calendar, Users, AlertTriangle, CheckCircle2, XCircle, Copy, Filter, Sparkles, Edit
 } from 'lucide-react';
+import { DeadlinesTour, useDeadlinesTour } from '@/components/deadlines/DeadlinesTour';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { Deadline, GlobalAssignment } from '@/types';
@@ -1408,9 +1409,11 @@ export default function DeadlinesPage() {
   };
 
   const redistributionTips = getRedistributionTips();
+  const { showTour } = useDeadlinesTour();
 
   return (
     <div className="flex gap-6 p-6 min-h-screen bg-slate-50">
+      <DeadlinesTour forceShow={showTour} />
       {/* Columna principal - Proyectos */}
       <div className="flex-1 min-w-0 space-y-4">
         {/* Header */}
@@ -1421,7 +1424,7 @@ export default function DeadlinesPage() {
           </div>
           <div className="flex items-center gap-2">
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-[180px] h-9">
+              <SelectTrigger className="w-[180px] h-9" data-tour="month-selector">
                 <Calendar className="h-4 w-4 mr-2" />
                 <SelectValue />
               </SelectTrigger>
@@ -1447,7 +1450,7 @@ export default function DeadlinesPage() {
         </div>
 
       {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-3 bg-white rounded-xl border shadow-sm p-3">
+      <div className="flex flex-wrap items-center gap-3 bg-white rounded-xl border shadow-sm p-3" data-tour="filters">
         <div className="flex-1 min-w-[200px]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -1514,7 +1517,7 @@ export default function DeadlinesPage() {
       </div>
 
       {/* Proyectos por cliente */}
-      <div className="space-y-3">
+      <div className="space-y-3" data-tour="project-list">
         {Object.keys(projectsByClient).length === 0 ? (
           <div className="text-center text-slate-500 py-8 bg-white rounded-xl border">
             No hay proyectos para mostrar
@@ -1582,7 +1585,7 @@ export default function DeadlinesPage() {
                                 {isHidden && <EyeOff className="h-3 w-3 text-slate-400 flex-shrink-0" />}
                                 {/* Indicador de edición concurrente */}
                                 {!isEditing && editingLocks[project.id] && editingLocks[project.id].employeeId !== currentUser?.id && (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 border-amber-200 text-amber-700">
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 border-amber-200 text-amber-700" data-tour="concurrent-editing">
                                     <Edit className="h-2.5 w-2.5 mr-1" />
                                     {editingLocks[project.id].employeeName}
                                   </Badge>
@@ -1646,7 +1649,7 @@ export default function DeadlinesPage() {
                           
                           {/* Panel de edición */}
                           {isEditing && (
-                            <div className="px-4 py-3 bg-slate-50 border-t">
+                            <div className="px-4 py-3 bg-slate-50 border-t" data-tour="inline-editing">
                               <div className="flex flex-wrap gap-2 mb-3">
                                 {activeEmployees.map(emp => (
                                   <div key={emp.id} className="flex items-center gap-2 bg-white border rounded-lg px-2.5 py-1.5">
@@ -1769,7 +1772,7 @@ export default function DeadlinesPage() {
       <div className="w-64 flex-shrink-0">
         <div className="sticky top-6 space-y-4">
           {/* Disponibilidad en tiempo real */}
-          <div className="bg-white rounded-xl border shadow-sm p-3">
+          <div className="bg-white rounded-xl border shadow-sm p-3" data-tour="availability-panel">
             <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
               Disponibilidad
             </h3>
@@ -1874,7 +1877,7 @@ export default function DeadlinesPage() {
 
           {/* Tips de redistribución */}
           {redistributionTips.length > 0 && (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3" data-tour="suggestions">
               <h3 className="text-xs font-semibold text-orange-800 uppercase tracking-wide mb-2 flex items-center gap-1">
                 <Sparkles className="h-3 w-3" />
                 Sugerencias
@@ -1900,7 +1903,7 @@ export default function DeadlinesPage() {
           )}
 
           {/* Tareas globales compactas */}
-          <div className="bg-white rounded-xl border shadow-sm p-3">
+          <div className="bg-white rounded-xl border shadow-sm p-3" data-tour="global-assignments">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
                 Otras asignaciones

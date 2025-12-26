@@ -92,7 +92,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           email: e.email,
           user_id: e.user_id,
           crmUserId: e.crm_user_id,
-          welcomeTourCompleted: e.welcome_tour_completed || false
+          welcomeTourCompleted: e.welcome_tour_completed || false,
+          deadlinesTourCompleted: e.deadlines_tour_completed || false
         }));
         setEmployees(mappedEmployees);
 
@@ -218,7 +219,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       is_active: employee.isActive,
       hourly_rate: employee.hourlyRate,
       crm_user_id: employee.crmUserId,
-      welcome_tour_completed: employee.welcomeTourCompleted || false
+      welcome_tour_completed: employee.welcomeTourCompleted || false,
+      deadlines_tour_completed: employee.deadlinesTourCompleted || false
     }).eq('id', employee.id);
   }, []);
 
