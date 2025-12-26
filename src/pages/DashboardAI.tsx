@@ -12,7 +12,7 @@ import {
   BarChart3, UserX, Link, CheckCircle2, XCircle, Cpu
 } from 'lucide-react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { format, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInDays, addDays, getDaysInMonth } from 'date-fns';
+import { format, startOfWeek, isBefore, parseISO, isSameMonth, differenceInDays, getDaysInMonth, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
@@ -28,17 +28,16 @@ interface Message {
 // Preguntas sugeridas para guiar al usuario
 const SUGGESTED_QUESTIONS = [
   { icon: <Users className="w-3 h-3" />, text: "¿Cómo está la carga del equipo?", category: "carga" },
-  { icon: <AlertTriangle className="w-3 h-3" />, text: "¿Hay alguien bloqueando tareas?", category: "dependencias" },
-  { icon: <TrendingDown className="w-3 h-3" />, text: "¿Quién se ha pasado de horas este mes?", category: "eficiencia" },
-  { icon: <Calendar className="w-3 h-3" />, text: "¿Quién tiene tareas asignadas?", category: "planificacion" },
-  { icon: <Zap className="w-3 h-3" />, text: "Dame un resumen ejecutivo del mes", category: "resumen" },
+  { icon: <AlertTriangle className="w-3 h-3" />, text: "¿Hay dependencias bloqueantes?", category: "dependencias" },
+  { icon: <TrendingDown className="w-3 h-3" />, text: "¿Qué proyectos van lentos?", category: "eficiencia" },
+  { icon: <Calendar className="w-3 h-3" />, text: "¿Qué tareas arrastramos de semanas pasadas?", category: "planificacion" },
+  { icon: <Zap className="w-3 h-3" />, text: "Dame un resumen ejecutivo de gestión", category: "resumen" },
 ];
 
 // ============================================================
 // LISTA DE MODELOS OPENROUTER (TODOS LOS GRATUITOS + FALLBACKS)
 // ============================================================
 const OPENROUTER_MODEL_CHAIN = [
-  // --- TIER S: LOS PESOS PESADOS (Gratis) ---
   "google/gemini-2.0-flash-exp:free",
   "meta-llama/llama-3.3-70b-instruct:free",
   "deepseek/deepseek-r1-0528:free",
@@ -46,8 +45,6 @@ const OPENROUTER_MODEL_CHAIN = [
   "nousresearch/hermes-3-llama-3.1-405b:free",
   "allenai/olmo-3.1-32b-think:free",
   "alibaba/tongyi-deepresearch-30b-a3b:free",
-  
-  // --- TIER A: MODELOS EQUILIBRADOS Y EFICIENTES ---
   "google/gemma-3-27b-it:free",
   "mistralai/mistral-small-3.1-24b-instruct:free",
   "nvidia/nemotron-3-nano-30b-a3b:free",
@@ -56,108 +53,20 @@ const OPENROUTER_MODEL_CHAIN = [
   "nex-agi/deepseek-v3.1-nex-n1:free",
   "kwaipilot/kat-coder-pro:free",
   "google/gemma-3-12b-it:free",
-  
-  // --- TIER B: MODELOS RÁPIDOS Y EXPERIMENTALES ---
   "google/gemma-3-4b-it:free",
   "xiaomi/mimo-v2-flash:free",
   "mistralai/mistral-7b-instruct:free",
   "meta-llama/llama-3.2-3b-instruct:free",
   "qwen/qwen-2.5-vl-7b-instruct:free",
   "microsoft/phi-3-medium-128k-instruct:free",
-  
-  // --- TIER C: RESTO DE LA LISTA DE 39 (Experimentales / Específicos) ---
-  "bytedance-seed/seedream-4.5",
-  "mistralai/devstral-2512:free",
-  "sourceful/riverflow-v2-max-preview",
-  "sourceful/riverflow-v2-standard-preview",
-  "sourceful/riverflow-v2-fast-preview",
-  "arcee-ai/trinity-mini:free",
-  "tngtech/tng-r1t-chimera:free",
-  "nvidia/nemotron-nano-12b-v2-vl:free",
-  "nvidia/nemotron-nano-9b-v2:free",
-  "openai/gpt-oss-120b:free",
-  "openai/gpt-oss-20b:free",
-  "z-ai/glm-4.5-air:free",
-  "moonshotai/kimi-k2:free",
-  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
-  "google/gemma-3n-e2b-it:free",
-  "google/gemma-3n-e4b-it:free",
-  "tngtech/deepseek-r1t2-chimera:free",
-  "tngtech/deepseek-r1t-chimera:free",
-  "qwen/qwen3-4b:free",
-
-  // --- TIER Z: FALLBACKS DE PAGO (ÚLTIMO RECURSO) ---
-  "cerebras/llama3.1-70b", // Velocidad extrema
-  "openai/gpt-5-mini"      // Fallback
+  "cerebras/llama3.1-70b", 
+  "openai/gpt-5-mini"      
 ];
 
-// ============================================================
-// CONFIGURACIÓN DE COLORES Y NOMBRES POR MODELO
-// ============================================================
 const MODEL_CONFIG: Record<string, { name: string; color: string; border: string; bg: string }> = {
-  // --- GOOGLE ---
   "google/gemini-2.0-flash": { name: "Gemini Flash 2.0", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
   "google/gemini-2.0-flash-exp:free": { name: "Gemini Flash Exp", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
   "google/gemma-3-27b-it:free": { name: "Gemma 3 27B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
-  "google/gemma-3-12b-it:free": { name: "Gemma 3 12B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
-  "google/gemma-3-4b-it:free": { name: "Gemma 3 4B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
-  "google/gemma-3n-e2b-it:free": { name: "Gemma 3N 2B", color: "text-sky-500", border: "border-sky-200", bg: "bg-sky-50" },
-  "google/gemma-3n-e4b-it:free": { name: "Gemma 3N 4B", color: "text-sky-500", border: "border-sky-200", bg: "bg-sky-50" },
-  
-  // --- META (LLAMA) ---
-  "meta-llama/llama-3.3-70b-instruct:free": { name: "Llama 3.3 70B", color: "text-indigo-600", border: "border-indigo-200", bg: "bg-indigo-50" },
-  "meta-llama/llama-3.1-405b-instruct:free": { name: "Llama 3.1 405B", color: "text-indigo-700", border: "border-indigo-300", bg: "bg-indigo-100" },
-  "meta-llama/llama-3.2-3b-instruct:free": { name: "Llama 3.2 3B", color: "text-indigo-500", border: "border-indigo-200", bg: "bg-indigo-50" },
-  
-  // --- MISTRAL ---
-  "mistralai/mistral-7b-instruct:free": { name: "Mistral 7B", color: "text-orange-500", border: "border-orange-200", bg: "bg-orange-50" },
-  "mistralai/mistral-small-3.1-24b-instruct:free": { name: "Mistral Small 3", color: "text-orange-600", border: "border-orange-200", bg: "bg-orange-50" },
-  "mistralai/devstral-2512:free": { name: "Mistral Dev", color: "text-amber-600", border: "border-amber-200", bg: "bg-amber-50" },
-  
-  // --- QWEN / ALIBABA ---
-  "qwen/qwen-2.5-vl-7b-instruct:free": { name: "Qwen 2.5 VL", color: "text-purple-600", border: "border-purple-200", bg: "bg-purple-50" },
-  "qwen/qwen3-coder:free": { name: "Qwen 3 Coder", color: "text-purple-700", border: "border-purple-300", bg: "bg-purple-100" },
-  "qwen/qwen3-4b:free": { name: "Qwen 3 4B", color: "text-purple-500", border: "border-purple-200", bg: "bg-purple-50" },
-  "alibaba/tongyi-deepresearch-30b-a3b:free": { name: "Tongyi Research", color: "text-violet-600", border: "border-violet-200", bg: "bg-violet-50" },
-
-  // --- DEEPSEEK & NOUS / TNG ---
-  "deepseek/deepseek-r1-0528:free": { name: "DeepSeek R1", color: "text-cyan-700", border: "border-cyan-200", bg: "bg-cyan-50" },
-  "nex-agi/deepseek-v3.1-nex-n1:free": { name: "DeepSeek V3.1 Nex", color: "text-cyan-600", border: "border-cyan-200", bg: "bg-cyan-50" },
-  "tngtech/tng-r1t-chimera:free": { name: "TNG R1T", color: "text-cyan-800", border: "border-cyan-300", bg: "bg-cyan-100" },
-  "tngtech/deepseek-r1t2-chimera:free": { name: "TNG R1T2", color: "text-cyan-800", border: "border-cyan-300", bg: "bg-cyan-100" },
-  "tngtech/deepseek-r1t-chimera:free": { name: "TNG R1T", color: "text-cyan-800", border: "border-cyan-300", bg: "bg-cyan-100" },
-  "nousresearch/hermes-3-llama-3.1-405b:free": { name: "Hermes 3 405B", color: "text-teal-700", border: "border-teal-300", bg: "bg-teal-100" },
-  
-  // --- NVIDIA ---
-  "nvidia/nemotron-3-nano-30b-a3b:free": { name: "Nvidia Nemotron 30B", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
-  "nvidia/nemotron-nano-12b-v2-vl:free": { name: "Nvidia Nano 12B", color: "text-emerald-500", border: "border-emerald-200", bg: "bg-emerald-50" },
-  "nvidia/nemotron-nano-9b-v2:free": { name: "Nvidia Nano 9B", color: "text-emerald-500", border: "border-emerald-200", bg: "bg-emerald-50" },
-
-  // --- ALLEN AI (OLMO) ---
-  "allenai/olmo-3.1-32b-think:free": { name: "Olmo 3.1", color: "text-slate-600", border: "border-slate-300", bg: "bg-slate-100" },
-  "allenai/olmo-3-32b-think:free": { name: "Olmo 3", color: "text-slate-600", border: "border-slate-300", bg: "bg-slate-100" },
-
-  // --- OPENAI (OSS & Paid Fallback) ---
-  "openai/gpt-oss-120b:free": { name: "GPT OSS 120B", color: "text-green-700", border: "border-green-300", bg: "bg-green-100" },
-  "openai/gpt-oss-20b:free": { name: "GPT OSS 20B", color: "text-green-600", border: "border-green-200", bg: "bg-green-50" },
-  "openai/gpt-5-mini": { name: "GPT-5 Mini", color: "text-green-500", border: "border-green-200", bg: "bg-green-50" }, 
-
-  // --- XIAOMI / BYTEDANCE / SOURCEFUL / OTHERS ---
-  "xiaomi/mimo-v2-flash:free": { name: "Xiaomi MiMo", color: "text-orange-600", border: "border-orange-300", bg: "bg-orange-50" },
-  "bytedance-seed/seedream-4.5": { name: "Seedream 4.5", color: "text-pink-600", border: "border-pink-200", bg: "bg-pink-50" },
-  "sourceful/riverflow-v2-max-preview": { name: "Riverflow Max", color: "text-blue-500", border: "border-blue-200", bg: "bg-blue-50" },
-  "sourceful/riverflow-v2-standard-preview": { name: "Riverflow Std", color: "text-blue-500", border: "border-blue-200", bg: "bg-blue-50" },
-  "sourceful/riverflow-v2-fast-preview": { name: "Riverflow Fast", color: "text-blue-500", border: "border-blue-200", bg: "bg-blue-50" },
-  "arcee-ai/trinity-mini:free": { name: "Trinity Mini", color: "text-fuchsia-600", border: "border-fuchsia-200", bg: "bg-fuchsia-50" },
-  "kwaipilot/kat-coder-pro:free": { name: "Kat Coder Pro", color: "text-yellow-600", border: "border-yellow-200", bg: "bg-yellow-50" },
-  "z-ai/glm-4.5-air:free": { name: "GLM 4.5 Air", color: "text-indigo-500", border: "border-indigo-200", bg: "bg-indigo-50" },
-  "moonshotai/kimi-k2:free": { name: "Kimi K2", color: "text-rose-500", border: "border-rose-200", bg: "bg-rose-50" },
-  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free": { name: "Dolphin Mistral", color: "text-teal-600", border: "border-teal-200", bg: "bg-teal-50" },
-
-  // --- CEREBRAS (Paid Fallback) ---
-  "cerebras/llama3.1-70b": { name: "🚀 Cerebras Llama", color: "text-red-600", border: "border-red-300", bg: "bg-red-50" },
-  
-  // --- Default ---
   "default": { name: "AI Model", color: "text-slate-600", border: "border-slate-200", bg: "bg-slate-50" }
 };
 
@@ -236,14 +145,10 @@ async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: st
   return { text: result.response.text(), provider: 'gemini', modelName: modelName };
 }
 
-// VERSIÓN MEJORADA: Usa Batching para evitar el error 400
 async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter'; modelName: string }> {
   const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-  
-  // Tamaño del lote: 3 modelos máximo por petición para evitar error 400
   const BATCH_SIZE = 3; 
 
-  // Función auxiliar para crear chunks
   const chunkArray = (arr: string[], size: number) => {
     const chunks = [];
     for (let i = 0; i < arr.length; i += size) {
@@ -254,7 +159,6 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
 
   const modelBatches = chunkArray(OPENROUTER_MODEL_CHAIN, BATCH_SIZE);
 
-  // Iteramos sobre los lotes secuencialmente
   for (let i = 0; i < modelBatches.length; i++) {
     const currentBatch = modelBatches[i];
     console.log(`🟣 [OpenRouter] Probando lote ${i + 1}/${modelBatches.length}:`, currentBatch);
@@ -269,16 +173,12 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
           "X-Title": "Timeboxing App"
         },
         body: JSON.stringify({
-          // OpenRouter permite 'models' (array) para auto-fallback, pero limitado a 3 items
           models: currentBatch,
-          // Opcional: define el primario explicitamente si la API lo prefiere, aunque 'models' suele bastar
-          // model: currentBatch[0], 
           messages: [{ role: "user", content: prompt }],
           temperature: 0.7,
         }),
       });
 
-      // Si falla con 429 (rate limit) o 5xx, lanzamos error para que el catch continue el bucle
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Status ${response.status}: ${errorText}`);
@@ -296,16 +196,13 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
         };
       }
       
-      // Si la respuesta es 200 pero vacía, seguimos intentando
       console.warn(`⚠️ Respuesta vacía en lote ${i+1}, probando siguiente...`);
 
     } catch (error: any) {
       console.warn(`⚠️ Fallo en lote ${i + 1} de OpenRouter: ${error.message}`);
-      // Continuamos al siguiente ciclo del bucle for
     }
   }
 
-  // Si llegamos aquí, todos los lotes fallaron
   throw new Error("Todos los intentos y lotes de OpenRouter han fallado.");
 }
 
@@ -388,7 +285,7 @@ export default function DashboardAI() {
     {
       id: '1',
       role: 'assistant',
-      text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: desviaciones, bloqueos por vacaciones y proyectos quemados. Pregunta lo que quieras.',
+      text: 'Que pasa? Soy **Minguito**, Project Manager. Accedo a los datos para detectar cuellos de botella reales, tareas arrastradas de semanas anteriores y desviaciones de ejecución. Al lío.',
       timestamp: new Date(),
       provider: 'gemini',
       modelName: 'gemini-2.0-flash'
@@ -408,7 +305,7 @@ export default function DashboardAI() {
   // CEREBRO DE MINGUITO: Análisis completo de datos
   // ============================================================
   const analysisData = useMemo(() => {
-    // Calculamos solo datos básicos para el encabezado visual si es necesario
+    // Datos básicos visuales
     const now = new Date();
     return { 
         month: format(now, "MMMM yyyy", { locale: es }),
@@ -422,6 +319,10 @@ export default function DashboardAI() {
   // ============================================================
   const buildDynamicContext = (userQuestion: string) => {
     const now = new Date();
+    const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 }); // La semana empieza el lunes
+    const currentMonthDays = getDaysInMonth(now);
+    const monthProgress = now.getDate() / currentMonthDays;
+
     const safeEmployees = employees || [];
     const safeAllocations = allocations || [];
     const safeProjects = projects || [];
@@ -430,47 +331,70 @@ export default function DashboardAI() {
     // Filtros temporales
     const monthAllocations = safeAllocations.filter(a => isSameMonth(parseISO(a.weekStartDate), now));
     
-    // 1. DETECCIÓN DE TAREAS ZOMBIE (Antiguas y sin completar)
-    const zombieTasks = safeAllocations.filter(a => 
-      a.status !== 'completed' && 
-      differenceInDays(now, parseISO(a.weekStartDate)) > 14 // Más de 2 semanas
-    ).map(t => ({
+    // 1. DETECCIÓN DE TAREAS ZOMBIE (Semanas Anteriores y NO completadas)
+    // Lógica: Si weekStartDate < currentWeekStart Y status != completed
+    const zombieTasks = safeAllocations.filter(a => {
+      const taskDate = parseISO(a.weekStartDate);
+      return a.status !== 'completed' && isBefore(taskDate, currentWeekStart);
+    }).map(t => ({
       tarea: t.taskName || 'Sin nombre',
       empleado: safeEmployees.find(e => e.id === t.employeeId)?.name,
       proyecto: safeProjects.find(p => p.id === t.projectId)?.name,
-      dias_retraso: differenceInDays(now, parseISO(t.weekStartDate))
+      semana_origen: t.weekStartDate
     }));
 
-    // 2. DETECCIÓN DE DESVIACIONES (Horas Reales > Asignadas)
-    const inefficientTasks = monthAllocations.filter(a => 
-      a.status === 'completed' && (a.hoursActual || 0) > a.hoursAssigned
-    ).map(t => ({
-      tarea: t.taskName,
-      empleado: safeEmployees.find(e => e.id === t.employeeId)?.name,
-      horas_presupuestadas: t.hoursAssigned,
-      horas_reales: t.hoursActual,
-      desviacion: ((t.hoursActual! - t.hoursAssigned) / t.hoursAssigned * 100).toFixed(0) + '%'
-    }));
+    // 2. DETECCIÓN DE DEPENDENCIAS (BLOQUEOS REALES)
+    // Buscamos tareas que son dependencyId de otras tareas pendientes
+    const blockingTasks: any[] = [];
+    const pendingTasks = safeAllocations.filter(a => a.status !== 'completed');
+    
+    pendingTasks.forEach(waitingTask => {
+        if (waitingTask.dependencyId) {
+            const blocker = safeAllocations.find(a => a.id === waitingTask.dependencyId);
+            if (blocker && blocker.status !== 'completed') {
+                blockingTasks.push({
+                    ESTADO: "BLOQUEO ACTIVO",
+                    bloqueador: {
+                        empleado: safeEmployees.find(e => e.id === blocker.employeeId)?.name,
+                        tarea: blocker.taskName || "Tarea sin nombre",
+                        proyecto: safeProjects.find(p => p.id === blocker.projectId)?.name
+                    },
+                    esperando: {
+                        empleado: safeEmployees.find(e => e.id === waitingTask.employeeId)?.name,
+                        tarea: waitingTask.taskName || "Tarea sin nombre",
+                        proyecto: safeProjects.find(p => p.id === waitingTask.projectId)?.name
+                    }
+                });
+            }
+        }
+    });
 
-    // 3. ANÁLISIS DE PACING DE PROYECTOS (Burn Rate)
-    const daysInMonth = getDaysInMonth(now);
-    const currentDay = now.getDate();
-    const monthProgressPct = currentDay / daysInMonth;
-
-    const riskyProjects = safeProjects.filter(p => p.status === 'active' && p.budgetHours > 0).map(p => {
+    // 3. ANÁLISIS DE PACING DE PROYECTOS (Ejecución vs Tiempo)
+    // No solo dinero, sino ritmo de trabajo.
+    const projectPacing = safeProjects.filter(p => p.status === 'active' && p.budgetHours > 0).map(p => {
       const projTasks = monthAllocations.filter(a => a.projectId === p.id);
-      const consumed = projTasks.reduce((acc, t) => acc + (t.status === 'completed' ? (t.hoursActual || t.hoursAssigned) : t.hoursAssigned), 0); // Estimamos consumo con asignado si no está completa
-      const burnPct = consumed / p.budgetHours;
+      // Consumo Real: Horas reales de completadas + Horas asignadas de pendientes (estimación)
+      const hoursExecuted = projTasks.reduce((acc, t) => acc + (t.status === 'completed' ? (t.hoursActual || t.hoursAssigned) : 0), 0);
+      const hoursPlanned = projTasks.reduce((acc, t) => acc + t.hoursAssigned, 0);
       
-      // Es arriesgado si el consumo supera al progreso del mes en un 20% margen
-      if (burnPct > (monthProgressPct + 0.15)) {
+      const executionPct = hoursExecuted / p.budgetHours;
+      const plannedPct = hoursPlanned / p.budgetHours;
+
+      let status = "Normal";
+      // Riesgo de No Entrega: Mes avanzado (>80%) pero ejecución baja (<50%)
+      if (monthProgress > 0.8 && executionPct < 0.5) status = "RIESGO DE NO ENTREGA (Lento)";
+      // Riesgo de Desviación: Ejecución supera presupuesto
+      if (executionPct > 1) status = "PRESUPUESTO EXCEDIDO";
+      // Riesgo de Quemado Rápido: Mes iniciando (<30%) pero ejecución muy alta (>60%)
+      if (monthProgress < 0.3 && executionPct > 0.6) status = "CONSUMO ACELERADO (Posible falta de horas a fin de mes)";
+
+      if (status !== "Normal") {
         return {
           proyecto: p.name,
-          presupuesto: p.budgetHours,
-          consumido: consumed.toFixed(1),
-          porcentaje_gasto: (burnPct * 100).toFixed(0) + '%',
-          porcentaje_mes: (monthProgressPct * 100).toFixed(0) + '%',
-          estado: 'QUEMANDO PRESUPUESTO RÁPIDO 🔥'
+          presupuesto_total: p.budgetHours,
+          ejecutado: hoursExecuted.toFixed(1),
+          progreso_mes: (monthProgress * 100).toFixed(0) + '%',
+          estado: status
         };
       }
       return null;
@@ -483,22 +407,25 @@ export default function DashboardAI() {
       const empTasks = safeAllocations.filter(a => a.employeeId === emp.id && a.status !== 'completed');
       
       empTasks.forEach(task => {
-        const taskDate = parseISO(task.weekStartDate);
+        const taskWeekStart = parseISO(task.weekStartDate);
+        // Aproximación: Si la semana de la tarea choca con vacaciones
+        const taskWeekEnd = addDays(taskWeekStart, 5); 
+        
         const conflict = empAbsences.find(abs => {
-          const start = parseISO(abs.startDate);
-          const end = parseISO(abs.endDate);
-          return taskDate >= start && taskDate <= end;
+          const absStart = parseISO(abs.startDate);
+          const absEnd = parseISO(abs.endDate);
+          // Simple overlap check
+          return (taskWeekStart <= absEnd && taskWeekEnd >= absStart);
         });
 
         if (conflict) {
           vacationConflicts.push({
             empleado: emp.name,
             tarea: task.taskName || 'Tarea sin nombre',
-            proyecto: safeProjects.find(p => p.id === task.projectId)?.name || 'Sin proyecto',
-            horas: task.hoursAssigned,
-            fecha_tarea: task.weekStartDate,
+            proyecto: safeProjects.find(p => p.id === task.projectId)?.name,
+            semana_tarea: task.weekStartDate,
             vacaciones: `${conflict.startDate} a ${conflict.endDate}`,
-            tipo: conflict.type
+            tipo_ausencia: conflict.type
           });
         }
       });
@@ -512,44 +439,42 @@ export default function DashboardAI() {
     if (mentionedEmployees.length > 0) {
       specificContext = "\n*** DATOS DE EMPLEADOS MENCIONADOS ***\n";
       mentionedEmployees.forEach(emp => {
-        // FIX CRÍTICO: Usar defaultWeeklyCapacity en lugar de capacity (que no existe)
         const capacity = Number(emp.defaultWeeklyCapacity) || 0;
         const empTasks = monthAllocations.filter(a => a.employeeId === emp.id);
         const assigned = empTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
         
         specificContext += `Empleado: ${emp.name}\n`;
-        specificContext += `Capacidad Base: ${capacity}h\n`;
-        specificContext += `Asignado Mes: ${assigned}h\n`;
-        // Detectar si está en vacaciones AHORA
+        specificContext += `Capacidad Semanal: ${capacity}h\n`;
+        specificContext += `Total Asignado Mes: ${assigned}h\n`;
+        
         const isOnVacation = safeAbsences.some(a => {
             const start = parseISO(a.startDate);
             const end = parseISO(a.endDate);
             return a.employeeId === emp.id && now >= start && now <= end;
         });
-        if (isOnVacation) specificContext += "ESTADO ACTUAL: DE VACACIONES (Ausencia activa hoy)\n";
+        if (isOnVacation) specificContext += "⚠️ ESTADO ACTUAL: DE VACACIONES HOY\n";
       });
     }
 
-    // FIX CRÍTICO: Calcular capacidad total usando la propiedad correcta
     const totalCapacity = safeEmployees.filter(e => e.isActive).reduce((sum, e) => sum + (Number(e.defaultWeeklyCapacity) || 0), 0);
     const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
 
     return `
-REPORTE DE INTELIGENCIA DE NEGOCIO (MINGUITO AI):
-Fecha: ${format(now, "dd/MM/yyyy")}
-Capacidad Total Real (Semanal): ${totalCapacity}h | Asignado Total Mes: ${totalAssigned}h
+REPORTE DE GESTIÓN (MINGUITO AI):
+Fecha: ${format(now, "dd/MM/yyyy")} (Semana empieza: ${format(currentWeekStart, "dd/MM/yyyy")})
+Capacidad Semanal Equipo: ${totalCapacity}h | Total Asignado Mes: ${totalAssigned}h
 
-🚨 ALERTAS DE GESTIÓN (Prioridad Alta - Conflictos Vacacionales):
-${vacationConflicts.length > 0 ? JSON.stringify(vacationConflicts, null, 2) : "Ningún conflicto de vacaciones detectado."}
+🚨 BLOQUEOS (Dependencias Activas):
+${blockingTasks.length > 0 ? JSON.stringify(blockingTasks, null, 2) : "No hay bloqueos activos registrados."}
 
-🔥 PROYECTOS EN RIESGO (Overburn - Gastando más de lo debido):
-${riskyProjects.length > 0 ? JSON.stringify(riskyProjects, null, 2) : "El ritmo de gasto parece saludable."}
+🧟 TAREAS ZOMBIE (Semanas Pasadas y NO Completadas):
+${zombieTasks.length > 0 ? JSON.stringify(zombieTasks.slice(0, 7), null, 2) : "Al día. No se arrastran tareas de semanas anteriores."}
 
-🧟 TAREAS ZOMBIE (>14 días sin cerrar):
-${zombieTasks.length > 0 ? JSON.stringify(zombieTasks.slice(0, 5), null, 2) : "No hay tareas estancadas."}
+🏝️ CONFLICTOS VACACIONALES (Tareas asignadas durante ausencia):
+${vacationConflicts.length > 0 ? JSON.stringify(vacationConflicts, null, 2) : "Planificación correcta respecto a ausencias."}
 
-📉 INEFICIENCIAS (Horas Reales > Asignadas):
-${inefficientTasks.length > 0 ? JSON.stringify(inefficientTasks.slice(0, 5), null, 2) : "Las tareas completadas están en presupuesto."}
+📊 PACING DE PROYECTOS (Ritmo de Ejecución vs Tiempo):
+${projectPacing.length > 0 ? JSON.stringify(projectPacing, null, 2) : "El ritmo de ejecución parece alineado con el mes."}
 
 ${specificContext}
 `;
@@ -573,22 +498,26 @@ ${specificContext}
       const dataContext = buildDynamicContext(input);
       
       const systemPrompt = `
-ACTÚA COMO: Minguito, un Project Manager Senior, sarcástico, mordaz y obsesionado con la eficiencia y el dinero.
-NO ERES UNA CALCULADORA. ERES UN ANALISTA DE NEGOCIO QUE DETECTA PROBLEMAS.
+ACTÚA COMO: Minguito, un Project Manager Senior, sarcástico pero extremadamente útil y analítico.
+TU OBJETIVO: Detectar ineficiencias de gestión, no solo dar datos.
 
-CONTEXTO DE DATOS PROCESADOS:
+CONTEXTO DE DATOS (JSON):
 ${dataContext}
 
-TU TRABAJO:
-1. **CONFLICTOS VACACIONALES**: Si ves datos en "ALERTAS DE GESTIÓN", destrózalos. Es inaceptable asignar tareas a gente de vacaciones. Di nombres, PROYECTO y TAREA exacta.
-2. **DINERO (Overburn)**: Si hay proyectos en "PROYECTOS EN RIESGO", avisa que nos vamos a quedar sin presupuesto antes de fin de mes.
-3. **INEFICIENCIA**: Si ves tareas donde Horas Reales > Asignadas, pregunta qué pasó. ¿Se durmieron?
-4. **NO INVENTES**: Usa solo los datos del JSON. Si está vacío, di que todo va sospechosamente bien.
+INSTRUCCIONES CLAVE:
+1. **TAREAS ZOMBIE**: Si ves tareas en "TAREAS ZOMBIE", critica que se arrastren de semanas pasadas. Eso ensucia el sprint actual. Pregunta por qué no se cerraron.
+2. **PACING**: Usa la sección "PACING DE PROYECTOS". Si estamos a fin de mes y hay proyectos con poca ejecución, avisa del riesgo de no entrega ("Under-delivery"). Si es principio de mes y van muy rápido, avisa de agotamiento de recursos.
+3. **DEPENDENCIAS**: Si hay "BLOQUEOS", sé muy claro: "X está bloqueando a Y en la tarea Z". Es prioritario resolverlo.
+4. **VACACIONES**: Si alguien tiene tareas y está de vacaciones, es un error de planificación grave. Señálalo.
+
+FORMATO:
+- Markdown limpio.
+- Negritas para nombres y proyectos.
+- Sé conciso. Ve al grano del problema.
 
 PREGUNTA DEL USUARIO: "${input}"
       `;
 
-      // Asegúrate de importar y usar la función callAI real que incluye el fix de OpenRouter
       const response = await callAI(systemPrompt);
 
       const assistantMessage: Message = {
