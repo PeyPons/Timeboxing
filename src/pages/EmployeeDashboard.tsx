@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { MyWeekView } from '@/components/employee/MyWeekView';
+import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/DashboardWidgets'; 
 import { ReliabilityIndexCard } from '@/components/employee/ReliabilityIndexCard';
 import { WelcomeTour, useWelcomeTour } from '@/components/employee/WelcomeTour';
 import { Card } from '@/components/ui/card';
@@ -341,7 +342,7 @@ export default function EmployeeDashboard() {
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6 pb-20 animate-in fade-in duration-500">
       
-      {/* CABECERA */}
+      {/* 1. CABECERA + ACCIONES */}
       <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">
@@ -413,7 +414,7 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      {/* CONTROL MES */}
+      {/* 2. CONTROL MES */}
       <div className="flex items-center gap-4 bg-white p-2 rounded-lg border shadow-sm w-fit">
         <h2 className="text-lg font-bold capitalize text-slate-900 flex items-center gap-2 ml-2">
           {getMonthName(currentMonth)} <Badge variant="outline" className="text-xs font-normal">{currentMonth.getFullYear()}</Badge>
@@ -426,7 +427,7 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      {/* CALENDARIO */}
+      {/* 3. CALENDARIO */}
       <Card className="overflow-hidden border-slate-200 shadow-sm bg-white" data-tour="calendar">
         <div className="overflow-x-auto custom-scrollbar">
           <div style={{ minWidth: '1000px' }}>
@@ -454,17 +455,25 @@ export default function EmployeeDashboard() {
         </div>
       </Card>
 
-      {/* ÍNDICE DE FIABILIDAD - Widget independiente */}
+      {/* 4. ALERTAS Y MÉTRICAS - Reorganizado: Urgentes + Fiabilidad arriba, Dependencias abajo */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          <ReliabilityIndexCard employeeId={myEmployeeProfile.id} />
+        {/* Columna izquierda: Alertas urgentes (bloqueos) */}
+        <div className="lg:col-span-1" data-tour="priority-widget">
+          <PriorityInsights employeeId={myEmployeeProfile.id} />
         </div>
+        
+        {/* Columna derecha: Índice de fiabilidad */}
         <div className="lg:col-span-2">
-          {/* Espacio reservado para futuros widgets o se puede dejar vacío */}
+          <ReliabilityIndexCard employeeId={myEmployeeProfile.id} />
         </div>
       </div>
 
-      {/* PROYECTOS DEL MES - Con colaboradores y ayuda integrados */}
+      {/* 5. DEPENDENCIAS - Panel completo */}
+      <div data-tour="dependencies-widget">
+        <ProjectTeamPulse employeeId={myEmployeeProfile.id} />
+      </div>
+
+      {/* 6. PROYECTOS DEL MES - Con colaboradores y ayuda integrados */}
       <div data-tour="projects-summary">
         <MyWeekView employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
       </div>
