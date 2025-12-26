@@ -13,6 +13,51 @@ import { startOfMonth, endOfMonth, parseISO, isSameMonth, max, min, format } fro
 import { es } from 'date-fns/locale';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// ============================================================
+// SISTEMA DE IA CON FALLBACK
+// ============================================================
+async function callGeminiAPI(prompt: string, apiKey: string): Promise<string> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+
+async function callCocoAPI(prompt: string): Promise<string> {
+  const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
+  
+  const response = await fetch(COCO_API_URL, {
+    method: 'POST',
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: prompt,
+      noAuth: "true",
+      action: "text/generateResume",
+      app: "CHATBOT",
+      rol: "user",
+      method: "POST",
+      language: "es",
+    }),
+  });
+
+  if (!response.ok) throw new Error(`Coco API error: ${response.status}`);
+  const data = await response.json();
+  if (data?.data) return data.data;
+  throw new Error('Respuesta inesperada de Coco API');
+}
+
+async function callAI(prompt: string, geminiApiKey?: string): Promise<string> {
+  if (geminiApiKey) {
+    try {
+      return await callGeminiAPI(prompt, geminiApiKey);
+    } catch (error: any) {
+      console.warn('Gemini falló, usando Coco:', error.message);
+      return await callCocoAPI(prompt);
+    }
+  }
+  return await callCocoAPI(prompt);
+}
+
 export function PlannerGrid() {
   // AÑADIDO: currentUser para filtrar correctamente
   const { employees, getEmployeeMonthlyLoad, projects, allocations, absences, teamEvents, currentUser } = useApp();
@@ -73,13 +118,7 @@ export function PlannerGrid() {
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setInsights(null);
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    
-    if (!apiKey) {
-        setInsights([{ type: 'warning', text: '⚠️ Minguito necesita su API Key para hablar.' }]);
-        setIsAnalyzing(false);
-        return;
-    }
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY; // Opcional, usará Coco si no hay
 
     try {
         // Recopilar datos completos del mes
@@ -172,10 +211,8 @@ Responde SOLO con JSON válido:
 [{"type":"warning"|"success"|"info", "text":"Frase aquí"}]
 `;
 
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        const result = await model.generateContent(prompt);
-        const text = result.response.text();
+        // Usar sistema de fallback: Gemini primero, Coco si falla
+        const text = await callAI(prompt, apiKey);
         
         const jsonMatch = text.match(/\[[\s\S]*?\]/); 
         
@@ -183,7 +220,8 @@ Responde SOLO con JSON válido:
             const jsonString = jsonMatch[0];
             setInsights(JSON.parse(jsonString));
         } else {
-            setInsights([{ type: 'info', text: 'Minguito está procesando los datos...' }]);
+            // Si no devuelve JSON, crear un insight con el texto
+            setInsights([{ type: 'info', text: text.slice(0, 100) }]);
         }
 
     } catch (e: any) {
