@@ -14,16 +14,61 @@ import { es } from 'date-fns/locale';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ============================================================
-// SISTEMA DE IA CON FALLBACK
+// SISTEMA DE IA CON FALLBACK EN CASCADA
+// Orden: 1) Gemini → 2) OpenRouter → 3) Coco
 // ============================================================
-async function callGeminiAPI(prompt: string, apiKey: string): Promise<string> {
+
+type AIProvider = 'gemini' | 'openrouter' | 'coco';
+
+interface AIResponse {
+  text: string;
+  provider: AIProvider;
+}
+
+async function callGeminiAPI(prompt: string, apiKey: string): Promise<AIResponse> {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
   const result = await model.generateContent(prompt);
-  return result.response.text();
+  return { text: result.response.text(), provider: 'gemini' };
 }
 
-async function callCocoAPI(prompt: string): Promise<string> {
+async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<AIResponse> {
+  const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+  
+  const response = await fetch(OPENROUTER_API_URL, {
+    method: 'POST',
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": window.location.origin,
+      "X-Title": "Timeboxing App"
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.0-flash-exp:free",
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(errorData)}`);
+  }
+
+  const responseData = await response.json();
+  
+  if (responseData?.choices?.[0]?.message?.content) {
+    return { text: responseData.choices[0].message.content, provider: 'openrouter' };
+  } else {
+    throw new Error('Respuesta inesperada de OpenRouter API');
+  }
+}
+
+async function callCocoAPI(prompt: string): Promise<AIResponse> {
   const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
   
   const response = await fetch(COCO_API_URL, {
@@ -42,20 +87,48 @@ async function callCocoAPI(prompt: string): Promise<string> {
 
   if (!response.ok) throw new Error(`Coco API error: ${response.status}`);
   const data = await response.json();
-  if (data?.data) return data.data;
+  if (data?.data) return { text: data.data, provider: 'coco' };
   throw new Error('Respuesta inesperada de Coco API');
 }
 
-async function callAI(prompt: string, geminiApiKey?: string): Promise<string> {
+async function callAI(prompt: string): Promise<AIResponse> {
+  const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+
+  // Intento 1: Gemini
   if (geminiApiKey) {
     try {
-      return await callGeminiAPI(prompt, geminiApiKey);
+      console.log('🔵 [Insights] Intentando con Gemini...');
+      const result = await callGeminiAPI(prompt, geminiApiKey);
+      console.log('✅ [Insights] Gemini respondió correctamente');
+      return result;
     } catch (error: any) {
-      console.warn('Gemini falló, usando Coco:', error.message);
-      return await callCocoAPI(prompt);
+      console.warn('⚠️ [Insights] Gemini falló:', error.message);
     }
   }
-  return await callCocoAPI(prompt);
+
+  // Intento 2: OpenRouter
+  if (openRouterApiKey) {
+    try {
+      console.log('🟣 [Insights] Intentando con OpenRouter...');
+      const result = await callOpenRouterAPI(prompt, openRouterApiKey);
+      console.log('✅ [Insights] OpenRouter respondió correctamente');
+      return result;
+    } catch (error: any) {
+      console.warn('⚠️ [Insights] OpenRouter falló:', error.message);
+    }
+  }
+
+  // Intento 3: Coco Solution (fallback final)
+  try {
+    console.log('🥥 [Insights] Intentando con Coco Solution (fallback)...');
+    const result = await callCocoAPI(prompt);
+    console.log('✅ [Insights] Coco Solution respondió correctamente');
+    return result;
+  } catch (error: any) {
+    console.error('❌ [Insights] Todos los proveedores fallaron');
+    throw new Error('No se pudo generar el análisis. Todos los proveedores de IA fallaron.');
+  }
 }
 
 export function PlannerGrid() {
@@ -75,6 +148,7 @@ export function PlannerGrid() {
   const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: Date } | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [insights, setInsights] = useState<{ type: 'warning' | 'success' | 'info', text: string }[] | null>(null);
+  const [lastProvider, setLastProvider] = useState<AIProvider | null>(null);
 
   useEffect(() => { localStorage.setItem('planner_date', currentMonth.toISOString()); }, [currentMonth]);
   useEffect(() => { localStorage.setItem('planner_only_me', String(showOnlyMe)); }, [showOnlyMe]);
@@ -86,7 +160,7 @@ export function PlannerGrid() {
   const monthEnd = endOfMonth(currentMonth);
 
   const filteredEmployees = useMemo(() => {
-    return employees.filter(e => {
+    return (employees || []).filter(e => {
         if (!e.isActive) return false;
         
         // CORRECCIÓN: Usar el ID del usuario logueado en lugar de buscar "alex"
@@ -98,15 +172,19 @@ export function PlannerGrid() {
         if (selectedEmployeeId !== 'all' && e.id !== selectedEmployeeId) return false;
         
         if (selectedProjectId !== 'all') {
-            const hasAllocationInProject = allocations.some(a => {
-                const allocDate = parseISO(a.weekStartDate);
-                return a.projectId === selectedProjectId && a.employeeId === e.id && isSameMonth(allocDate, currentMonth);
+            const hasAllocationInProject = (allocations || []).some(a => {
+                try {
+                    const allocDate = parseISO(a.weekStartDate);
+                    return a.projectId === selectedProjectId && a.employeeId === e.id && isSameMonth(allocDate, currentMonth);
+                } catch {
+                    return false;
+                }
             });
             if (!hasAllocationInProject) return false;
         }
         return true;
     });
-  }, [employees, showOnlyMe, selectedEmployeeId, selectedProjectId, allocations, currentMonth, currentUser]); // Añadido currentUser a dependencias
+  }, [employees, showOnlyMe, selectedEmployeeId, selectedProjectId, allocations, currentMonth, currentUser]);
 
   const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
@@ -114,50 +192,74 @@ export function PlannerGrid() {
   
   const handleCellClick = (employeeId: string, weekStart: Date) => setSelectedCell({ employeeId, weekStart });
 
-  // --- LÓGICA MINGUITO MEJORADA ---
+  // --- LÓGICA MINGUITO MEJORADA CON OPENROUTER ---
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setInsights(null);
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY; // Opcional, usará Coco si no hay
+    setLastProvider(null);
 
     try {
+        // Protección de arrays
+        const safeAllocations = allocations || [];
+        const safeProjects = projects || [];
+
         // Recopilar datos completos del mes
-        const monthAllocations = allocations.filter(a => 
-            isSameMonth(parseISO(a.weekStartDate), currentMonth)
-        );
+        const monthAllocations = safeAllocations.filter(a => {
+            try {
+                return isSameMonth(parseISO(a.weekStartDate), currentMonth);
+            } catch {
+                return false;
+            }
+        });
         
         const completedTasks = monthAllocations.filter(a => a.status === 'completed');
         const pendingTasks = monthAllocations.filter(a => a.status !== 'completed');
         
         // Análisis por empleado
         const employeeData = filteredEmployees.map(e => {
-            const load = getEmployeeMonthlyLoad(e.id, year, month);
-            const empTasks = monthAllocations.filter(a => a.employeeId === e.id);
-            const empCompleted = empTasks.filter(a => a.status === 'completed');
-            const empPending = empTasks.filter(a => a.status !== 'completed');
-            
-            // Eficiencia
-            const totalReal = empCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
-            const totalComp = empCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
-            const balance = totalComp - totalReal;
-            
-            // Dependencias: ¿bloquea a otros?
-            const blocking = empPending.filter(task => 
-                allocations.some(other => other.dependencyId === task.id && other.status !== 'completed')
-            ).length;
-            
-            return {
-                name: e.name,
-                department: e.department || 'N/A',
-                loadPercentage: load.percentage,
-                loadStatus: load.status,
-                tasksTotal: empTasks.length,
-                tasksPending: empPending.length,
-                hoursReal: Math.round(totalReal * 10) / 10,
-                hoursComputed: Math.round(totalComp * 10) / 10,
-                balance: Math.round(balance * 10) / 10,
-                blockingOthers: blocking
-            };
+            try {
+                const load = getEmployeeMonthlyLoad(e.id, year, month);
+                const empTasks = monthAllocations.filter(a => a.employeeId === e.id);
+                const empCompleted = empTasks.filter(a => a.status === 'completed');
+                const empPending = empTasks.filter(a => a.status !== 'completed');
+                
+                // Eficiencia
+                const totalReal = empCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
+                const totalComp = empCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
+                const balance = totalComp - totalReal;
+                
+                // Dependencias: ¿bloquea a otros?
+                const blocking = empPending.filter(task => 
+                    safeAllocations.some(other => other.dependencyId === task.id && other.status !== 'completed')
+                ).length;
+                
+                return {
+                    name: e.name || 'Sin nombre',
+                    department: e.department || 'N/A',
+                    loadPercentage: load?.percentage || 0,
+                    loadStatus: load?.status || 'empty',
+                    tasksTotal: empTasks.length,
+                    tasksPending: empPending.length,
+                    hoursReal: Math.round(totalReal * 10) / 10,
+                    hoursComputed: Math.round(totalComp * 10) / 10,
+                    balance: Math.round(balance * 10) / 10,
+                    blockingOthers: blocking
+                };
+            } catch (error) {
+                console.error(`Error analyzing employee ${e.id}:`, error);
+                return {
+                    name: e.name || 'Sin nombre',
+                    department: 'N/A',
+                    loadPercentage: 0,
+                    loadStatus: 'empty',
+                    tasksTotal: 0,
+                    tasksPending: 0,
+                    hoursReal: 0,
+                    hoursComputed: 0,
+                    balance: 0,
+                    blockingOthers: 0
+                };
+            }
         });
         
         // Métricas globales
@@ -166,19 +268,24 @@ export function PlannerGrid() {
         const globalBalance = globalComp - globalReal;
         
         // Proyectos problemáticos
-        const activeProjects = projects.filter(p => p.status === 'active');
+        const activeProjects = safeProjects.filter(p => p.status === 'active');
         const projectIssues = activeProjects.map(p => {
-            const projTasks = monthAllocations.filter(a => a.projectId === p.id);
-            const hoursUsed = projTasks.reduce((sum, a) => {
-                if (a.status === 'completed') return sum + (a.hoursActual || a.hoursAssigned);
-                return sum + a.hoursAssigned;
-            }, 0);
-            const percentage = p.budgetHours > 0 ? (hoursUsed / p.budgetHours * 100) : 0;
-            
-            if (percentage > 90) {
-                return { name: p.name, percentage: Math.round(percentage), budget: p.budgetHours };
+            try {
+                const projTasks = monthAllocations.filter(a => a.projectId === p.id);
+                const hoursUsed = projTasks.reduce((sum, a) => {
+                    if (a.status === 'completed') return sum + (a.hoursActual || a.hoursAssigned || 0);
+                    return sum + (a.hoursAssigned || 0);
+                }, 0);
+                const budget = p.budgetHours || 0;
+                const percentage = budget > 0 ? (hoursUsed / budget * 100) : 0;
+                
+                if (percentage > 90) {
+                    return { name: p.name, percentage: Math.round(percentage), budget };
+                }
+                return null;
+            } catch {
+                return null;
             }
-            return null;
         }).filter(Boolean);
         
         // FILTRAR: Solo empleados con tareas para el análisis
@@ -229,17 +336,18 @@ Responde SOLO JSON válido:
 [{"type":"warning"|"success"|"info", "text":"Frase aquí"}]
 `;
 
-        // Usar sistema de fallback: Gemini primero, Coco si falla
-        const text = await callAI(prompt, apiKey);
+        // Usar sistema de fallback en cascada: Gemini → OpenRouter → Coco
+        const response = await callAI(prompt);
+        setLastProvider(response.provider);
         
-        const jsonMatch = text.match(/\[[\s\S]*?\]/); 
+        const jsonMatch = response.text.match(/\[[\s\S]*?\]/); 
         
         if (jsonMatch) {
             const jsonString = jsonMatch[0];
             setInsights(JSON.parse(jsonString));
         } else {
             // Si no devuelve JSON, crear un insight con el texto
-            setInsights([{ type: 'info', text: text.slice(0, 100) }]);
+            setInsights([{ type: 'info', text: response.text.slice(0, 100) }]);
         }
 
     } catch (e: any) {
@@ -251,8 +359,26 @@ Responde SOLO JSON válido:
   };
 
   const gridTemplate = `250px repeat(${weeks.length}, minmax(0, 1fr)) 100px`;
-  const sortedProjects = useMemo(() => [...projects].sort((a,b) => a.name.localeCompare(b.name)), [projects]);
-  const sortedEmployees = useMemo(() => [...employees].filter(e=>e.isActive).sort((a,b) => a.name.localeCompare(b.name)), [employees]);
+  const sortedProjects = useMemo(() => [...(projects || [])].sort((a,b) => a.name.localeCompare(b.name)), [projects]);
+  const sortedEmployees = useMemo(() => [...(employees || [])].filter(e=>e.isActive).sort((a,b) => a.name.localeCompare(b.name)), [employees]);
+
+  // Helper para obtener el badge del proveedor
+  const getProviderBadge = () => {
+    if (!lastProvider) return null;
+    
+    const config = {
+      gemini: { label: '✨ Gemini', className: 'bg-blue-100 text-blue-600' },
+      openrouter: { label: '🟣 OpenRouter', className: 'bg-purple-100 text-purple-600' },
+      coco: { label: '🥥 Coco', className: 'bg-orange-100 text-orange-600' }
+    };
+    
+    const { label, className } = config[lastProvider];
+    return (
+      <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-medium", className)}>
+        {label}
+      </span>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 rounded-lg border shadow-sm overflow-hidden">
@@ -275,9 +401,12 @@ Responde SOLO JSON válido:
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-80 p-0" align="end">
-                    <div className="bg-indigo-50 dark:bg-indigo-900/30 p-3 border-b flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-indigo-600" />
-                        <span className="font-semibold text-sm">Insights</span>
+                    <div className="bg-indigo-50 dark:bg-indigo-900/30 p-3 border-b flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-indigo-600" />
+                            <span className="font-semibold text-sm">Insights</span>
+                        </div>
+                        {lastProvider && getProviderBadge()}
                     </div>
                     <div className="p-4">
                         {!isAnalyzing && !insights && (
@@ -317,11 +446,11 @@ Responde SOLO JSON válido:
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
              <Popover open={openEmployeeCombo} onOpenChange={setOpenEmployeeCombo}>
-                <PopoverTrigger asChild><Button variant="outline" role="combobox" className="h-8 w-[200px] justify-between text-xs bg-white"><span className="truncate">{selectedEmployeeId==='all'?"Todos":employees.find(e=>e.id===selectedEmployeeId)?.name}</span><ChevronsUpDown className="ml-2 h-3 w-3 opacity-50" /></Button></PopoverTrigger>
+                <PopoverTrigger asChild><Button variant="outline" role="combobox" className="h-8 w-[200px] justify-between text-xs bg-white"><span className="truncate">{selectedEmployeeId==='all'?"Todos":(employees || []).find(e=>e.id===selectedEmployeeId)?.name}</span><ChevronsUpDown className="ml-2 h-3 w-3 opacity-50" /></Button></PopoverTrigger>
                 <PopoverContent className="w-[200px] p-0"><Command><CommandInput placeholder="Empleado..." /><CommandList><CommandGroup><CommandItem onSelect={()=>{setSelectedEmployeeId('all');setOpenEmployeeCombo(false)}}>Todos</CommandItem>{sortedEmployees.map(e=><CommandItem key={e.id} onSelect={()=>{setSelectedEmployeeId(e.id);setOpenEmployeeCombo(false)}}>{e.name}</CommandItem>)}</CommandGroup></CommandList></Command></PopoverContent>
             </Popover>
             <Popover open={openProjectCombo} onOpenChange={setOpenProjectCombo}>
-                <PopoverTrigger asChild><Button variant="outline" role="combobox" className="h-8 w-[200px] justify-between text-xs bg-white"><span className="truncate">{selectedProjectId==='all'?"Todos":projects.find(p=>p.id===selectedProjectId)?.name}</span><ChevronsUpDown className="ml-2 h-3 w-3 opacity-50" /></Button></PopoverTrigger>
+                <PopoverTrigger asChild><Button variant="outline" role="combobox" className="h-8 w-[200px] justify-between text-xs bg-white"><span className="truncate">{selectedProjectId==='all'?"Todos":(projects || []).find(p=>p.id===selectedProjectId)?.name}</span><ChevronsUpDown className="ml-2 h-3 w-3 opacity-50" /></Button></PopoverTrigger>
                 <PopoverContent className="w-[250px] p-0"><Command><CommandInput placeholder="Proyecto..." /><CommandList><CommandGroup><CommandItem onSelect={()=>{setSelectedProjectId('all');setOpenProjectCombo(false)}}>Todos</CommandItem>{sortedProjects.filter(p=>p.status==='active').map(p=><CommandItem key={p.id} onSelect={()=>{setSelectedProjectId(p.id);setOpenProjectCombo(false)}}>{p.name}</CommandItem>)}</CommandGroup></CommandList></Command></PopoverContent>
             </Popover>
             <Button variant={showOnlyMe?"secondary":"outline"} size="sm" onClick={()=>setShowOnlyMe(!showOnlyMe)} className={cn("h-8 text-xs gap-2", showOnlyMe && "bg-indigo-100 text-indigo-700")}><User className="h-3.5 w-3.5" /> Solo Yo</Button>
