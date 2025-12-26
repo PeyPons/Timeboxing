@@ -108,12 +108,35 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
             
             if (error) {
                 console.error('[EmployeeDialog] Error en create-user:', error);
-                throw new Error(error.message || 'Error al crear cuenta de acceso');
+                
+                // Intentar obtener más detalles del error
+                let errorMessage = 'Error al crear cuenta de acceso';
+                if (error.message) {
+                    errorMessage = error.message;
+                } else if (error.context) {
+                    errorMessage = error.context.message || errorMessage;
+                }
+                
+                // Si el error viene de la función, intentar parsear el body
+                if (error.context?.body) {
+                    try {
+                        const errorBody = typeof error.context.body === 'string' 
+                            ? JSON.parse(error.context.body) 
+                            : error.context.body;
+                        if (errorBody.error) {
+                            errorMessage = errorBody.error;
+                        }
+                    } catch (e) {
+                        // Ignorar error de parsing
+                    }
+                }
+                
+                throw new Error(errorMessage);
             }
             
             if (!data?.user?.id) {
-                console.error('[EmployeeDialog] No se recibió user.id:', data);
-                throw new Error('No se pudo crear la cuenta de acceso. Verifica que la Edge Function esté desplegada.');
+                console.error('[EmployeeDialog] No se recibió user.id. Respuesta completa:', data);
+                throw new Error('No se pudo crear la cuenta de acceso. La función no devolvió un ID de usuario. Verifica que la Edge Function "create-user" esté desplegada en Supabase.');
             }
             
             authUserId = data.user.id;
@@ -144,13 +167,39 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                 
                 if (error) {
                     console.error('[EmployeeDialog] Error en create-user:', error);
-                    throw new Error(error.message || 'Error al crear cuenta de acceso');
+                    
+                    // Intentar obtener más detalles del error
+                    let errorMessage = 'Error al crear cuenta de acceso';
+                    if (error.message) {
+                        errorMessage = error.message;
+                    } else if (error.context) {
+                        errorMessage = error.context.message || errorMessage;
+                    }
+                    
+                    // Si el error viene de la función, intentar parsear el body
+                    if (error.context?.body) {
+                        try {
+                            const errorBody = typeof error.context.body === 'string' 
+                                ? JSON.parse(error.context.body) 
+                                : error.context.body;
+                            if (errorBody.error) {
+                                errorMessage = errorBody.error;
+                            }
+                        } catch (e) {
+                            // Ignorar error de parsing
+                        }
+                    }
+                    
+                    throw new Error(errorMessage);
                 }
                 
-                if (data?.user?.id) {
-                    authUserId = data.user.id;
-                    authMessage = "Cuenta de acceso creada.";
+                if (!data?.user?.id) {
+                    console.error('[EmployeeDialog] No se recibió user.id. Respuesta completa:', data);
+                    throw new Error('No se pudo crear la cuenta de acceso. La función no devolvió un ID de usuario.');
                 }
+                
+                authUserId = data.user.id;
+                authMessage = "Cuenta de acceso creada.";
             }
         }
 
@@ -179,10 +228,28 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         onOpenChange(false);
 
     } catch (error: any) {
-        console.error("Error:", error);
-        const errorMsg = error?.message || "Error al guardar";
-        if (errorMsg.includes("already been registered")) {
-            toast.error("Este email ya tiene una cuenta. Usa otro email o deja la contraseña vacía.");
+        console.error("Error completo:", error);
+        
+        // Intentar extraer el mensaje de error más descriptivo
+        let errorMsg = "Error al guardar";
+        
+        if (error?.message) {
+            errorMsg = error.message;
+        } else if (error?.error?.message) {
+            errorMsg = error.error.message;
+        } else if (typeof error === 'string') {
+            errorMsg = error;
+        }
+        
+        // Mensajes específicos para errores comunes
+        if (errorMsg.includes("already been registered") || errorMsg.includes("already exists") || errorMsg.includes("duplicate")) {
+            toast.error("Este email ya tiene una cuenta. Usa otro email.");
+        } else if (errorMsg.includes("invalid email") || errorMsg.includes("email")) {
+            toast.error("El formato del email no es válido.");
+        } else if (errorMsg.includes("password") && errorMsg.includes("weak")) {
+            toast.error("La contraseña es demasiado débil. Usa al menos 6 caracteres.");
+        } else if (errorMsg.includes("Edge Function") || errorMsg.includes("desplegada")) {
+            toast.error("Error: La función 'create-user' no está desplegada. Contacta al administrador.");
         } else {
             toast.error(errorMsg);
         }

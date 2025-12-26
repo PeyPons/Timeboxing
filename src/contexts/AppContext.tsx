@@ -170,9 +170,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchData();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-       if (event === 'SIGNED_OUT') setCurrentUser(undefined);
+    
+    // Escuchar cambios de autenticación para refrescar datos automáticamente
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[AppContext] Auth state changed:', event, session?.user?.email);
+      
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(undefined);
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        // Refrescar datos cuando el usuario hace login o se actualiza
+        console.log('[AppContext] Refrescando datos después de', event);
+        await fetchData();
+      }
     });
+    
     return () => subscription.unsubscribe();
   }, [fetchData]);
 
