@@ -57,7 +57,7 @@ export default function DeadlinesPage() {
   }>({ employeeHours: {}, notes: '', isHidden: false });
   const [isSaving, setIsSaving] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const [formData, setFormData] = useState({
     projectId: '',
@@ -140,6 +140,125 @@ export default function DeadlinesPage() {
   useEffect(() => {
     loadDeadlines();
     loadGlobalAssignments();
+  }, [selectedMonth]);
+
+  // Suscripción en tiempo real para deadlines
+  useEffect(() => {
+    const channel = supabase
+      .channel('deadlines-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'deadlines',
+          filter: `month=eq.${selectedMonth}`
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const newDeadline = payload.new as any;
+            setDeadlines(prev => {
+              const existing = prev.find(d => d.id === newDeadline.id);
+              if (existing) {
+                return prev.map(d => 
+                  d.id === newDeadline.id 
+                    ? {
+                        id: newDeadline.id,
+                        projectId: newDeadline.project_id,
+                        month: newDeadline.month,
+                        notes: newDeadline.notes,
+                        employeeHours: newDeadline.employee_hours || {},
+                        isHidden: newDeadline.is_hidden || false
+                      }
+                    : d
+                );
+              } else {
+                return [...prev, {
+                  id: newDeadline.id,
+                  projectId: newDeadline.project_id,
+                  month: newDeadline.month,
+                  notes: newDeadline.notes,
+                  employeeHours: newDeadline.employee_hours || {},
+                  isHidden: newDeadline.is_hidden || false
+                }];
+              }
+            });
+            
+            // Actualizar proyectos ocultos
+            if (newDeadline.is_hidden) {
+              setHiddenProjects(prev => new Set([...prev, newDeadline.project_id]));
+            } else {
+              setHiddenProjects(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(newDeadline.project_id);
+                return newSet;
+              });
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old.id;
+            setDeadlines(prev => prev.filter(d => d.id !== deletedId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedMonth]);
+
+  // Suscripción en tiempo real para global assignments
+  useEffect(() => {
+    const channel = supabase
+      .channel('global-assignments-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'global_assignments',
+          filter: `month=eq.${selectedMonth}`
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const newAssignment = payload.new as any;
+            setGlobalAssignments(prev => {
+              const existing = prev.find(a => a.id === newAssignment.id);
+              if (existing) {
+                return prev.map(a => 
+                  a.id === newAssignment.id 
+                    ? {
+                        id: newAssignment.id,
+                        name: newAssignment.name,
+                        hours: newAssignment.hours,
+                        affectsAll: newAssignment.affects_all,
+                        affectedEmployeeIds: (newAssignment.affected_employee_ids || []) as string[],
+                        month: newAssignment.month
+                      }
+                    : a
+                );
+              } else {
+                return [...prev, {
+                  id: newAssignment.id,
+                  name: newAssignment.name,
+                  hours: newAssignment.hours,
+                  affectsAll: newAssignment.affects_all,
+                  affectedEmployeeIds: (newAssignment.affected_employee_ids || []) as string[],
+                  month: newAssignment.month
+                }];
+              }
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old.id;
+            setGlobalAssignments(prev => prev.filter(a => a.id !== deletedId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [selectedMonth]);
 
   const activeEmployees = useMemo(() => {
@@ -577,7 +696,7 @@ export default function DeadlinesPage() {
     });
   };
 
-  const updateInlineEmployeeHours = (employeeId: string, hours: number, projectId: string) => {
+  const updateInlineEmployeeHours = (employeeId: string, hours: number, projectId: string, immediate = false) => {
     const newFormData = {
       ...inlineFormData,
       employeeHours: {
@@ -587,14 +706,23 @@ export default function DeadlinesPage() {
     };
     setInlineFormData(newFormData);
     
-    // Disparar autoguardado con debounce
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    setAutoSaveStatus('idle');
-    autoSaveTimeoutRef.current = setTimeout(() => {
+    // Si es guardado inmediato, cancelar timeout y guardar ahora
+    if (immediate) {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+        autoSaveTimeoutRef.current = null;
+      }
       autoSaveDeadline(projectId, newFormData);
-    }, 800);
+    } else {
+      // Disparar autoguardado con debounce
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+      setAutoSaveStatus('idle');
+      autoSaveTimeoutRef.current = setTimeout(() => {
+        autoSaveDeadline(projectId, newFormData);
+      }, 800);
+    }
   };
 
   const autoSaveDeadline = async (projectId: string, formData: typeof inlineFormData) => {
@@ -616,12 +744,7 @@ export default function DeadlinesPage() {
           .eq('id', existingDeadline.id);
 
         if (error) throw error;
-
-        setDeadlines(prev => prev.map(d => 
-          d.id === existingDeadline.id 
-            ? { ...d, projectId, month: selectedMonth, notes: formData.notes, employeeHours: formData.employeeHours, isHidden: formData.isHidden }
-            : d
-        ));
+        // No actualizamos el estado local aquí - Realtime lo hará automáticamente
       } else {
         const { data, error } = await supabase
           .from('deadlines')
@@ -630,17 +753,10 @@ export default function DeadlinesPage() {
           .single();
 
         if (error) throw error;
-
-        setDeadlines(prev => [...prev, {
-          id: data.id,
-          projectId: data.project_id,
-          month: data.month,
-          notes: data.notes,
-          employeeHours: data.employee_hours || {},
-          isHidden: data.is_hidden || false
-        }]);
+        // No actualizamos el estado local aquí - Realtime lo hará automáticamente
       }
 
+      // Actualizar proyectos ocultos localmente (no se sincroniza por Realtime)
       if (formData.isHidden) {
         setHiddenProjects(prev => new Set([...prev, projectId]));
       } else {
@@ -1147,6 +1263,18 @@ export default function DeadlinesPage() {
                                       step="0.5"
                                       value={inlineFormData.employeeHours[emp.id] || ''}
                                       onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0, project.id)}
+                                      onBlur={() => {
+                                        const currentHours = inlineFormData.employeeHours[emp.id] || 0;
+                                        updateInlineEmployeeHours(emp.id, currentHours, project.id, true);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          const currentHours = inlineFormData.employeeHours[emp.id] || 0;
+                                          updateInlineEmployeeHours(emp.id, currentHours, project.id, true);
+                                          (e.target as HTMLInputElement).blur();
+                                        }
+                                      }}
                                       className="h-7 w-20 text-center font-mono text-sm px-2"
                                       placeholder="0"
                                     />
@@ -1166,6 +1294,24 @@ export default function DeadlinesPage() {
                                     autoSaveTimeoutRef.current = setTimeout(() => {
                                       autoSaveDeadline(project.id, newFormData);
                                     }, 800);
+                                  }}
+                                  onBlur={() => {
+                                    if (autoSaveTimeoutRef.current) {
+                                      clearTimeout(autoSaveTimeoutRef.current);
+                                      autoSaveTimeoutRef.current = null;
+                                    }
+                                    autoSaveDeadline(project.id, inlineFormData);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      if (autoSaveTimeoutRef.current) {
+                                        clearTimeout(autoSaveTimeoutRef.current);
+                                        autoSaveTimeoutRef.current = null;
+                                      }
+                                      autoSaveDeadline(project.id, inlineFormData);
+                                      (e.target as HTMLInputElement).blur();
+                                    }
                                   }}
                                   className="h-7 text-xs flex-1 min-w-[150px]"
                                 />
