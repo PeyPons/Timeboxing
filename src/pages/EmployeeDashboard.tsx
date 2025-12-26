@@ -333,7 +333,17 @@ export default function EmployeeDashboard() {
   const handleToday = () => setCurrentMonth(new Date());
 
   if (isGlobalLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">Cargando...</div>;
-  if (!myEmployeeProfile) return null;
+  if (!myEmployeeProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center space-y-4">
+          <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto" />
+          <h2 className="text-xl font-semibold text-slate-700">No se encontró tu perfil de empleado</h2>
+          <p className="text-slate-500">Contacta con un administrador para vincular tu cuenta de usuario con un perfil de empleado.</p>
+        </div>
+      </div>
+    );
+  }
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);

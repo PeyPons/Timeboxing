@@ -15,7 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   Plus, Pencil, Trash2, Save, Search, Eye, EyeOff, ChevronDown, ChevronRight,
-  Calendar, Users, AlertTriangle, CheckCircle2, XCircle, Copy, Filter, Sparkles
+  Calendar, Users, AlertTriangle, CheckCircle2, XCircle, Copy, Filter, Sparkles, Edit
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
@@ -27,7 +27,7 @@ import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 
 export default function DeadlinesPage() {
-  const { projects, clients, employees, absences, teamEvents } = useApp();
+  const { projects, clients, employees, absences, teamEvents, currentUser } = useApp();
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [globalAssignments, setGlobalAssignments] = useState<GlobalAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,6 +58,10 @@ export default function DeadlinesPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Estado para rastrear quién está editando qué proyecto
+  const [editingLocks, setEditingLocks] = useState<Record<string, { employeeId: string; employeeName: string; lockedAt: string }>>({});
+  const lockRefreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   const [formData, setFormData] = useState({
     projectId: '',
@@ -282,6 +286,92 @@ export default function DeadlinesPage() {
       supabase.removeChannel(channel);
     };
   }, [selectedMonth]);
+
+  // Cargar locks de edición existentes
+  useEffect(() => {
+    const loadEditingLocks = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('project_editing_locks')
+          .select(`
+            *,
+            employees!inner(id, first_name, name)
+          `)
+          .eq('month', selectedMonth)
+          .gt('expires_at', new Date().toISOString());
+        
+        if (error) throw error;
+        
+        if (data) {
+          const locksMap: Record<string, { employeeId: string; employeeName: string; lockedAt: string }> = {};
+          data.forEach((lock: any) => {
+            const employee = employees.find(e => e.id === lock.employee_id);
+            if (employee && lock.expires_at > new Date().toISOString()) {
+              locksMap[lock.project_id] = {
+                employeeId: lock.employee_id,
+                employeeName: employee.first_name || employee.name || 'Desconocido',
+                lockedAt: lock.locked_at
+              };
+            }
+          });
+          setEditingLocks(locksMap);
+        }
+      } catch (error) {
+        console.error('Error cargando locks:', error);
+      }
+    };
+    
+    loadEditingLocks();
+  }, [selectedMonth, employees]);
+
+  // Suscripción en tiempo real para locks de edición
+  useEffect(() => {
+    const channelName = `editing-locks-${selectedMonth}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'project_editing_locks',
+          filter: `month=eq.${selectedMonth}`
+        },
+        (payload) => {
+          console.log('🔔 Realtime editing lock change:', payload.eventType, payload);
+          
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const lock = payload.new as any;
+            // Solo mostrar si no es nuestro propio lock
+            if (lock.employee_id !== currentUser?.id && lock.expires_at > new Date().toISOString()) {
+              const employee = employees.find(e => e.id === lock.employee_id);
+              setEditingLocks(prev => ({
+                ...prev,
+                [lock.project_id]: {
+                  employeeId: lock.employee_id,
+                  employeeName: employee?.first_name || employee?.name || 'Alguien',
+                  lockedAt: lock.locked_at
+                }
+              }));
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const deletedLock = payload.old as any;
+            setEditingLocks(prev => {
+              const newLocks = { ...prev };
+              delete newLocks[deletedLock.project_id];
+              return newLocks;
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Realtime editing locks subscription status:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedMonth, currentUser, employees]);
 
   const activeEmployees = useMemo(() => {
     return employees.filter(e => e.isActive).sort((a, b) => 
@@ -686,8 +776,95 @@ export default function DeadlinesPage() {
     }
   };
 
+  // Funciones para gestionar locks de edición
+  const acquireEditLock = async (projectId: string) => {
+    if (!currentUser) return false;
+    
+    try {
+      // Limpiar locks expirados primero
+      await supabase
+        .from('project_editing_locks')
+        .delete()
+        .lt('expires_at', new Date().toISOString());
+      
+      // Intentar adquirir el lock
+      const { data, error } = await supabase
+        .from('project_editing_locks')
+        .upsert({
+          project_id: projectId,
+          employee_id: currentUser.id,
+          month: selectedMonth,
+          expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 minutos
+        }, {
+          onConflict: 'project_id,month',
+          ignoreDuplicates: false
+        })
+        .select()
+        .single();
+      
+      if (error) {
+        // Si hay un lock existente, verificar si es nuestro
+        const { data: existing } = await supabase
+          .from('project_editing_locks')
+          .select('*, employees!inner(id, first_name, name)')
+          .eq('project_id', projectId)
+          .eq('month', selectedMonth)
+          .single();
+        
+        if (existing && existing.employee_id !== currentUser.id) {
+          const editor = employees.find(e => e.id === existing.employee_id);
+          toast.warning(`${editor?.first_name || editor?.name || 'Alguien'} está editando este proyecto`);
+          return false;
+        }
+        // Si es nuestro lock, continuar
+        return true;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error adquiriendo lock:', error);
+      return true; // Continuar de todas formas
+    }
+  };
+
+  const renewEditLock = async (projectId: string) => {
+    if (!currentUser || !editingProjectId) return;
+    
+    try {
+      await supabase
+        .from('project_editing_locks')
+        .update({
+          expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+        })
+        .eq('project_id', projectId)
+        .eq('employee_id', currentUser.id)
+        .eq('month', selectedMonth);
+    } catch (error) {
+      console.error('Error renovando lock:', error);
+    }
+  };
+
+  const releaseEditLock = async (projectId: string) => {
+    if (!currentUser) return;
+    
+    try {
+      await supabase
+        .from('project_editing_locks')
+        .delete()
+        .eq('project_id', projectId)
+        .eq('employee_id', currentUser.id)
+        .eq('month', selectedMonth);
+    } catch (error) {
+      console.error('Error liberando lock:', error);
+    }
+  };
+
   // Funciones de edición inline
-  const startEditingProject = (projectId: string) => {
+  const startEditingProject = async (projectId: string) => {
+    // Intentar adquirir el lock
+    const lockAcquired = await acquireEditLock(projectId);
+    if (!lockAcquired) return;
+    
     const deadline = getProjectDeadline(projectId);
     setEditingProjectId(projectId);
     setInlineFormData({
@@ -696,9 +873,26 @@ export default function DeadlinesPage() {
       isHidden: deadline?.isHidden || hiddenProjects.has(projectId)
     });
     setExpandedProjects(prev => new Set([...prev, projectId]));
+    
+    // Renovar el lock cada 2 minutos mientras se edita
+    if (lockRefreshIntervalRef.current) {
+      clearInterval(lockRefreshIntervalRef.current);
+    }
+    lockRefreshIntervalRef.current = setInterval(() => {
+      if (editingProjectId === projectId) {
+        renewEditLock(projectId);
+      }
+    }, 2 * 60 * 1000);
   };
 
-  const cancelEditingProject = () => {
+  const cancelEditingProject = async () => {
+    if (editingProjectId) {
+      await releaseEditLock(editingProjectId);
+    }
+    if (lockRefreshIntervalRef.current) {
+      clearInterval(lockRefreshIntervalRef.current);
+      lockRefreshIntervalRef.current = null;
+    }
     setEditingProjectId(null);
     setInlineFormData({ employeeHours: {}, notes: '', isHidden: false });
   };
@@ -1209,6 +1403,13 @@ export default function DeadlinesPage() {
                               <div className="flex items-center gap-1.5">
                                 <span className="text-sm font-medium text-slate-800">{project.name}</span>
                                 {isHidden && <EyeOff className="h-3 w-3 text-slate-400 flex-shrink-0" />}
+                                {/* Indicador de edición concurrente */}
+                                {!isEditing && editingLocks[project.id] && editingLocks[project.id].employeeId !== currentUser?.id && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 border-amber-200 text-amber-700">
+                                    <Edit className="h-2.5 w-2.5 mr-1" />
+                                    {editingLocks[project.id].employeeName}
+                                  </Badge>
+                                )}
                               </div>
                               <div className="text-[11px] text-slate-400 font-mono mt-0.5">
                                 {project.minimumHours != null && project.minimumHours > 0 && (
@@ -1366,7 +1567,7 @@ export default function DeadlinesPage() {
                                     className="h-7 text-xs text-slate-500"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setEditingProjectId(null);
+                                      cancelEditingProject();
                                     }}
                                   >
                                     Cerrar
