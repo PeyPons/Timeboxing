@@ -107,3 +107,10 @@ export interface ProfessionalGoal {
   dueDate?: string;
   progress: number;
 }
+
+export interface Deadline {
+  id: string;
+  projectId: string;
+  notes?: string;
+  employeeHours: Record<string, number>; // employeeId -> hours
+}

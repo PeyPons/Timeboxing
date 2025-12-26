@@ -24,6 +24,7 @@ import SettingsPage from "./pages/SettingsPage";
 import MetaAdsPage from './pages/MetaAdsPage';
 import AdsPage from '@/pages/AdsPage';
 import AdsReportGenerator from './pages/AdsReportGenerator';
+import DeadlinesPage from './pages/DeadlinesPage';
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const App = () => (
                   
                   {/* Resto de rutas */}
                   <Route path="/planner" element={<Index />} />
+                  <Route path="/deadlines" element={<DeadlinesPage />} />
                   <Route path="/team" element={<TeamPage />} />
                   <Route path="/clients" element={<ClientsPage />} />
                   <Route path="/projects" element={<ProjectsPage />} />

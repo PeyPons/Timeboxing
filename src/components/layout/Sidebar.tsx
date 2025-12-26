@@ -14,7 +14,8 @@ import {
   Facebook,
   FileDown,
   LogOut,
-  Home
+  Home,
+  Calendar
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -54,6 +55,10 @@ export function Sidebar() {
         
         <NavLink to="/planner" icon={LayoutDashboard} active={location.pathname === '/planner'}>
           Planificador
+        </NavLink>
+
+        <NavLink to="/deadlines" icon={Calendar} active={location.pathname === '/deadlines'}>
+          Deadlines
         </NavLink>
 
         <NavLink to="/projects" icon={FolderKanban} active={location.pathname === '/projects'}>
