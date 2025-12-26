@@ -1,70 +1,787 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { ClientCard } from '@/components/clients/ClientCard';
-import { Briefcase, Plus } from 'lucide-react';
+import { Client } from '@/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { 
+  Briefcase, Plus, Search, LayoutGrid, List, ChevronLeft, ChevronRight,
+  AlertTriangle, TrendingUp, TrendingDown, Pencil, Trash2, Users, 
+  FolderOpen, Clock, CalendarDays, Building2, ArrowUpRight, ArrowDownRight,
+  Minus, Eye, X, ChevronDown, ChevronUp
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
+import { format, subMonths, addMonths, isSameMonth, parseISO } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 const colorOptions = [
   '#0d9488', '#dc2626', '#7c3aed', '#ea580c', '#0284c7', '#16a34a',
   '#db2777', '#9333ea', '#f59e0b', '#06b6d4', '#84cc16', '#6366f1'
 ];
 
-export default function ClientsPage() {
-  const { clients, addClient } = useApp();
-  const [isAdding, setIsAdding] = useState(false);
-  const [newClient, setNewClient] = useState({
-    name: '',
-    color: colorOptions[0],
-  });
+// Componente para estadísticas del header
+function StatCard({ 
+  icon: Icon, 
+  label, 
+  value, 
+  subValue, 
+  trend,
+  color = 'slate'
+}: { 
+  icon: any; 
+  label: string; 
+  value: string | number; 
+  subValue?: string;
+  trend?: 'up' | 'down' | 'neutral';
+  color?: 'slate' | 'emerald' | 'amber' | 'red';
+}) {
+  const colorClasses = {
+    slate: 'bg-slate-50 border-slate-200 text-slate-700',
+    emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+    amber: 'bg-amber-50 border-amber-200 text-amber-700',
+    red: 'bg-red-50 border-red-200 text-red-700',
+  };
 
-  const handleAdd = () => {
+  return (
+    <div className={cn("rounded-xl border p-4 transition-all hover:shadow-md", colorClasses[color])}>
+      <div className="flex items-center justify-between">
+        <div className={cn(
+          "p-2 rounded-lg",
+          color === 'slate' && "bg-slate-200/50",
+          color === 'emerald' && "bg-emerald-200/50",
+          color === 'amber' && "bg-amber-200/50",
+          color === 'red' && "bg-red-200/50",
+        )}>
+          <Icon className="h-4 w-4" />
+        </div>
+        {trend && (
+          <div className={cn(
+            "flex items-center gap-0.5 text-xs font-medium",
+            trend === 'up' && "text-emerald-600",
+            trend === 'down' && "text-red-600",
+            trend === 'neutral' && "text-slate-400"
+          )}>
+            {trend === 'up' && <ArrowUpRight className="h-3 w-3" />}
+            {trend === 'down' && <ArrowDownRight className="h-3 w-3" />}
+            {trend === 'neutral' && <Minus className="h-3 w-3" />}
+          </div>
+        )}
+      </div>
+      <div className="mt-3">
+        <p className="text-2xl font-bold">{value}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+        {subValue && <p className="text-[10px] text-muted-foreground/70 mt-1">{subValue}</p>}
+      </div>
+    </div>
+  );
+}
+
+// Componente de tarjeta de cliente mejorada
+function EnhancedClientCard({ 
+  client, 
+  stats,
+  prevStats,
+  employees,
+  onEdit, 
+  onDelete,
+  onViewDetails
+}: { 
+  client: Client;
+  stats: { used: number; budget: number; percentage: number; projects: any[] };
+  prevStats: { used: number; budget: number };
+  employees: string[];
+  onEdit: () => void;
+  onDelete: () => void;
+  onViewDetails: () => void;
+}) {
+  const isOverBudget = stats.percentage > 100;
+  const isNearLimit = stats.percentage > 85 && stats.percentage <= 100;
+  const trend = stats.used > prevStats.used ? 'up' : stats.used < prevStats.used ? 'down' : 'neutral';
+  const trendDiff = stats.used - prevStats.used;
+
+  return (
+    <Card className={cn(
+      "overflow-hidden transition-all hover:shadow-lg group relative",
+      isOverBudget && "ring-2 ring-red-200",
+      isNearLimit && "ring-2 ring-amber-200"
+    )}>
+      {/* Barra de color superior */}
+      <div 
+        className="h-1.5 w-full"
+        style={{ backgroundColor: client.color }}
+      />
+      
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div 
+              className="h-11 w-11 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm shrink-0"
+              style={{ backgroundColor: client.color }}
+            >
+              {client.name.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="text-base truncate">{client.name}</CardTitle>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <FolderOpen className="h-3 w-3" />
+                  {stats.projects.length} proyecto{stats.projects.length !== 1 ? 's' : ''}
+                </span>
+                {employees.length > 0 && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Users className="h-3 w-3" />
+                    {employees.length}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onViewDetails}>
+                  <Eye className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Ver detalles</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Editar</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600" onClick={onDelete}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Eliminar</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      </CardHeader>
+      
+      <CardContent className="space-y-4">
+        {/* Horas y progreso */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Horas del mes</span>
+            <div className="flex items-center gap-2">
+              {trend !== 'neutral' && (
+                <span className={cn(
+                  "text-[10px] font-medium flex items-center gap-0.5 px-1.5 py-0.5 rounded",
+                  trend === 'up' ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                )}>
+                  {trend === 'up' ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                  {Math.abs(trendDiff).toFixed(1)}h
+                </span>
+              )}
+              <span className={cn(
+                "font-bold text-sm",
+                isOverBudget && "text-red-600",
+                isNearLimit && "text-amber-600"
+              )}>
+                {stats.used.toFixed(1)}h / {stats.budget}h
+              </span>
+            </div>
+          </div>
+          
+          <div className="relative">
+            <Progress 
+              value={Math.min(stats.percentage, 100)} 
+              className={cn(
+                "h-2.5 rounded-full",
+                isOverBudget && "[&>div]:bg-red-500",
+                isNearLimit && "[&>div]:bg-amber-500",
+                !isOverBudget && !isNearLimit && "[&>div]:bg-emerald-500"
+              )}
+            />
+            {isOverBudget && (
+              <div 
+                className="absolute top-0 h-2.5 bg-red-300/50 rounded-r-full"
+                style={{ 
+                  left: '100%',
+                  width: `${Math.min(stats.percentage - 100, 50)}%`
+                }}
+              />
+            )}
+          </div>
+          
+          <div className="flex items-center justify-between text-xs">
+            <span className={cn(
+              "font-medium",
+              isOverBudget && "text-red-600",
+              isNearLimit && "text-amber-600",
+              !isOverBudget && !isNearLimit && "text-emerald-600"
+            )}>
+              {stats.percentage.toFixed(0)}% utilizado
+            </span>
+            {isOverBudget && (
+              <Badge variant="destructive" className="text-[10px] h-5 gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                +{(stats.percentage - 100).toFixed(0)}% excedido
+              </Badge>
+            )}
+            {isNearLimit && (
+              <Badge className="text-[10px] h-5 gap-1 bg-amber-100 text-amber-700 border-amber-200">
+                <TrendingUp className="h-3 w-3" />
+                Casi lleno
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Lista de proyectos compacta */}
+        {stats.projects.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Proyectos</p>
+            <div className="space-y-1 max-h-[120px] overflow-y-auto">
+              {stats.projects.slice(0, 4).map((project) => (
+                <div 
+                  key={project.id}
+                  className="flex items-center justify-between gap-2 text-xs py-1.5 px-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div 
+                      className="h-1.5 w-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: client.color }}
+                    />
+                    <span className="truncate text-slate-700">{project.name.split('[')[0].trim()}</span>
+                  </div>
+                  <span className={cn(
+                    "font-medium shrink-0",
+                    project.percentage > 100 && "text-red-600",
+                    project.percentage > 85 && project.percentage <= 100 && "text-amber-600",
+                    project.percentage <= 85 && "text-slate-600"
+                  )}>
+                    {project.used.toFixed(1)}h
+                  </span>
+                </div>
+              ))}
+              {stats.projects.length > 4 && (
+                <p className="text-[10px] text-center text-muted-foreground py-1">
+                  +{stats.projects.length - 4} más
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Empleados asignados */}
+        {employees.length > 0 && (
+          <div className="pt-2 border-t">
+            <div className="flex items-center gap-1 flex-wrap">
+              {employees.slice(0, 3).map((name, i) => (
+                <span 
+                  key={i}
+                  className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full"
+                >
+                  {name.split(' ')[0]}
+                </span>
+              ))}
+              {employees.length > 3 && (
+                <span className="text-[10px] text-muted-foreground">
+                  +{employees.length - 3}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Componente principal
+export default function ClientsPage() {
+  const { clients, projects, allocations, employees, addClient, updateClient, deleteClient, getClientTotalHoursForMonth, getProjectHoursForMonth } = useApp();
+  
+  // Estados
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [deletingClient, setDeletingClient] = useState<Client | null>(null);
+  const [detailClient, setDetailClient] = useState<Client | null>(null);
+  const [sortBy, setSortBy] = useState<'name' | 'hours' | 'percentage'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [newClient, setNewClient] = useState({ name: '', color: colorOptions[0] });
+
+  // Mes anterior para comparación
+  const prevMonth = subMonths(currentMonth, 1);
+
+  // Calcular estadísticas para cada cliente
+  const clientsWithStats = useMemo(() => {
+    return clients.map(client => {
+      const { used, budget, percentage } = getClientTotalHoursForMonth(client.id, currentMonth);
+      const prevStats = getClientTotalHoursForMonth(client.id, prevMonth);
+      
+      // Proyectos del cliente
+      const clientProjects = projects
+        .filter(p => p.clientId === client.id && p.status === 'active')
+        .map(p => {
+          const hours = getProjectHoursForMonth(p.id, currentMonth);
+          return {
+            id: p.id,
+            name: p.name,
+            used: hours.used,
+            budget: hours.budget,
+            percentage: hours.percentage
+          };
+        });
+      
+      // Empleados asignados este mes
+      const monthAllocations = allocations.filter(a => 
+        isSameMonth(parseISO(a.weekStartDate), currentMonth) &&
+        clientProjects.some(p => p.id === a.projectId)
+      );
+      const assignedEmployeeIds = [...new Set(monthAllocations.map(a => a.employeeId))];
+      const assignedEmployees = assignedEmployeeIds
+        .map(id => employees.find(e => e.id === id)?.name || '')
+        .filter(Boolean);
+
+      return {
+        client,
+        stats: { used, budget, percentage, projects: clientProjects },
+        prevStats: { used: prevStats.used, budget: prevStats.budget },
+        employees: assignedEmployees
+      };
+    });
+  }, [clients, projects, allocations, employees, currentMonth, prevMonth, getClientTotalHoursForMonth, getProjectHoursForMonth]);
+
+  // Filtrar y ordenar
+  const filteredClients = useMemo(() => {
+    let result = clientsWithStats.filter(c => 
+      c.client.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    // Ordenar
+    result.sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'name') {
+        comparison = a.client.name.localeCompare(b.client.name);
+      } else if (sortBy === 'hours') {
+        comparison = a.stats.used - b.stats.used;
+      } else if (sortBy === 'percentage') {
+        comparison = a.stats.percentage - b.stats.percentage;
+      }
+      return sortDir === 'asc' ? comparison : -comparison;
+    });
+
+    return result;
+  }, [clientsWithStats, searchQuery, sortBy, sortDir]);
+
+  // Estadísticas globales
+  const globalStats = useMemo(() => {
+    const totalClients = clients.length;
+    const totalHours = clientsWithStats.reduce((sum, c) => sum + c.stats.used, 0);
+    const totalBudget = clientsWithStats.reduce((sum, c) => sum + c.stats.budget, 0);
+    const prevTotalHours = clientsWithStats.reduce((sum, c) => sum + c.prevStats.used, 0);
+    const atRisk = clientsWithStats.filter(c => c.stats.percentage > 85).length;
+    const overBudget = clientsWithStats.filter(c => c.stats.percentage > 100).length;
+
+    return {
+      totalClients,
+      totalHours,
+      totalBudget,
+      prevTotalHours,
+      atRisk,
+      overBudget,
+      trend: totalHours > prevTotalHours ? 'up' : totalHours < prevTotalHours ? 'down' : 'neutral'
+    };
+  }, [clients, clientsWithStats]);
+
+  // Handlers
+  const handleAddClient = () => {
     if (!newClient.name.trim()) {
-      toast({ title: "Error", description: "El nombre es obligatorio", variant: "destructive" });
+      toast.error("El nombre es obligatorio");
       return;
     }
     addClient(newClient);
     setNewClient({ name: '', color: colorOptions[0] });
     setIsAdding(false);
-    toast({ title: "Cliente creado", description: `${newClient.name} ha sido añadido` });
+    toast.success(`${newClient.name} creado`);
+  };
+
+  const handleUpdateClient = () => {
+    if (!editingClient || !editingClient.name.trim()) {
+      toast.error("El nombre es obligatorio");
+      return;
+    }
+    updateClient(editingClient);
+    setEditingClient(null);
+    toast.success(`${editingClient.name} actualizado`);
+  };
+
+  const handleDeleteClient = () => {
+    if (!deletingClient) return;
+    deleteClient(deletingClient.id);
+    setDeletingClient(null);
+    toast.success(`${deletingClient.name} eliminado`);
+  };
+
+  const toggleSort = (field: 'name' | 'hours' | 'percentage') => {
+    if (sortBy === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortDir('asc');
+    }
   };
 
   return (
-    <div className="p-4 sm:p-6">
-      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="p-4 sm:p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Briefcase className="h-5 w-5 text-primary" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-200">
+            <Building2 className="h-5 w-5 text-white" />
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-foreground">Clientes</h1>
-            <p className="text-muted-foreground">
-              Horas totales calculadas desde los proyectos
+            <p className="text-sm text-muted-foreground">
+              Gestiona tus clientes y su consumo de horas
             </p>
           </div>
         </div>
 
-        <Dialog open={isAdding} onOpenChange={setIsAdding}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              Nuevo cliente
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Selector de mes */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8"
+              onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Nuevo cliente</DialogTitle>
-            </DialogHeader>
+            <span className="text-sm font-medium px-2 min-w-[120px] text-center capitalize">
+              {format(currentMonth, 'MMMM yyyy', { locale: es })}
+            </span>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8"
+              onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Toggle vista */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <Button
+              variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setViewMode('grid')}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setViewMode('table')}
+            >
+              <List className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Botón añadir */}
+          <Dialog open={isAdding} onOpenChange={setIsAdding}>
+            <DialogTrigger asChild>
+              <Button className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-md">
+                <Plus className="h-4 w-4" />
+                Nuevo cliente
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nuevo cliente</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Nombre</Label>
+                  <Input
+                    value={newClient.name}
+                    onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
+                    placeholder="Nombre del cliente"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddClient()}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Color</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {colorOptions.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setNewClient({ ...newClient, color })}
+                        className={cn(
+                          "h-9 w-9 rounded-lg transition-all hover:scale-110",
+                          newClient.color === color && "ring-2 ring-offset-2 ring-indigo-500"
+                        )}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAdding(false)}>Cancelar</Button>
+                <Button onClick={handleAddClient} className="bg-gradient-to-r from-indigo-500 to-purple-600">
+                  Crear cliente
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* Estadísticas globales */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard 
+          icon={Building2}
+          label="Total clientes"
+          value={globalStats.totalClients}
+          color="slate"
+        />
+        <StatCard 
+          icon={Clock}
+          label="Horas este mes"
+          value={`${globalStats.totalHours.toFixed(0)}h`}
+          subValue={`de ${globalStats.totalBudget}h presupuestadas`}
+          trend={globalStats.trend as any}
+          color="emerald"
+        />
+        <StatCard 
+          icon={AlertTriangle}
+          label="En riesgo"
+          value={globalStats.atRisk}
+          subValue=">85% del presupuesto"
+          color={globalStats.atRisk > 0 ? 'amber' : 'slate'}
+        />
+        <StatCard 
+          icon={TrendingUp}
+          label="Excedidos"
+          value={globalStats.overBudget}
+          subValue=">100% del presupuesto"
+          color={globalStats.overBudget > 0 ? 'red' : 'slate'}
+        />
+      </div>
+
+      {/* Buscador */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar cliente..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+              onClick={() => setSearchQuery('')}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {filteredClients.length} de {clients.length} clientes
+        </p>
+      </div>
+
+      {/* Vista Grid */}
+      {viewMode === 'grid' && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filteredClients.map(({ client, stats, prevStats, employees: assignedEmployees }) => (
+            <EnhancedClientCard
+              key={client.id}
+              client={client}
+              stats={stats}
+              prevStats={prevStats}
+              employees={assignedEmployees}
+              onEdit={() => setEditingClient({ ...client })}
+              onDelete={() => setDeletingClient(client)}
+              onViewDetails={() => setDetailClient(client)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Vista Tabla */}
+      {viewMode === 'table' && (
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead 
+                  className="cursor-pointer hover:bg-slate-50"
+                  onClick={() => toggleSort('name')}
+                >
+                  <div className="flex items-center gap-1">
+                    Cliente
+                    {sortBy === 'name' && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+                  </div>
+                </TableHead>
+                <TableHead>Proyectos</TableHead>
+                <TableHead 
+                  className="cursor-pointer hover:bg-slate-50"
+                  onClick={() => toggleSort('hours')}
+                >
+                  <div className="flex items-center gap-1">
+                    Horas
+                    {sortBy === 'hours' && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+                  </div>
+                </TableHead>
+                <TableHead 
+                  className="cursor-pointer hover:bg-slate-50"
+                  onClick={() => toggleSort('percentage')}
+                >
+                  <div className="flex items-center gap-1">
+                    % Usado
+                    {sortBy === 'percentage' && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+                  </div>
+                </TableHead>
+                <TableHead>Tendencia</TableHead>
+                <TableHead>Equipo</TableHead>
+                <TableHead className="w-[100px]">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredClients.map(({ client, stats, prevStats, employees: assignedEmployees }) => {
+                const trend = stats.used - prevStats.used;
+                return (
+                  <TableRow key={client.id} className="group">
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-sm"
+                          style={{ backgroundColor: client.color }}
+                        >
+                          {client.name.charAt(0)}
+                        </div>
+                        <span className="font-medium">{client.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{stats.projects.length}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className={cn(
+                        "font-medium",
+                        stats.percentage > 100 && "text-red-600",
+                        stats.percentage > 85 && stats.percentage <= 100 && "text-amber-600"
+                      )}>
+                        {stats.used.toFixed(1)}h / {stats.budget}h
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Progress 
+                          value={Math.min(stats.percentage, 100)} 
+                          className={cn(
+                            "h-2 w-20",
+                            stats.percentage > 100 && "[&>div]:bg-red-500",
+                            stats.percentage > 85 && stats.percentage <= 100 && "[&>div]:bg-amber-500"
+                          )}
+                        />
+                        <span className="text-xs text-muted-foreground w-10">
+                          {stats.percentage.toFixed(0)}%
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {trend !== 0 && (
+                        <span className={cn(
+                          "flex items-center gap-0.5 text-xs font-medium",
+                          trend > 0 ? "text-emerald-600" : "text-red-600"
+                        )}>
+                          {trend > 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                          {Math.abs(trend).toFixed(1)}h
+                        </span>
+                      )}
+                      {trend === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {assignedEmployees.slice(0, 2).map((name, i) => (
+                          <span key={i} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
+                            {name.split(' ')[0]}
+                          </span>
+                        ))}
+                        {assignedEmployees.length > 2 && (
+                          <span className="text-[10px] text-muted-foreground">+{assignedEmployees.length - 2}</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailClient(client)}>
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingClient({ ...client })}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-600" onClick={() => setDeletingClient(client)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Empty state */}
+      {filteredClients.length === 0 && (
+        <div className="text-center py-12">
+          <Building2 className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+          <h3 className="text-lg font-medium text-muted-foreground">
+            {searchQuery ? 'No se encontraron clientes' : 'Sin clientes'}
+          </h3>
+          <p className="text-sm text-muted-foreground/70 mt-1">
+            {searchQuery ? 'Prueba con otro término de búsqueda' : 'Crea tu primer cliente para empezar'}
+          </p>
+        </div>
+      )}
+
+      {/* Dialog editar cliente */}
+      <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar cliente</DialogTitle>
+          </DialogHeader>
+          {editingClient && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Nombre</Label>
                 <Input
-                  value={newClient.name}
-                  onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
+                  value={editingClient.name}
+                  onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
                   placeholder="Nombre del cliente"
                 />
               </div>
@@ -75,10 +792,10 @@ export default function ClientsPage() {
                     <button
                       key={color}
                       type="button"
-                      onClick={() => setNewClient({ ...newClient, color })}
+                      onClick={() => setEditingClient({ ...editingClient, color })}
                       className={cn(
-                        "h-8 w-8 rounded-lg transition-all",
-                        newClient.color === color && "ring-2 ring-offset-2 ring-primary"
+                        "h-9 w-9 rounded-lg transition-all hover:scale-110",
+                        editingClient.color === color && "ring-2 ring-offset-2 ring-indigo-500"
                       )}
                       style={{ backgroundColor: color }}
                     />
@@ -86,19 +803,132 @@ export default function ClientsPage() {
                 </div>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAdding(false)}>Cancelar</Button>
-              <Button onClick={handleAdd}>Crear cliente</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingClient(null)}>Cancelar</Button>
+            <Button onClick={handleUpdateClient}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {clients.map((client) => (
-          <ClientCard key={client.id} client={client} />
-        ))}
-      </div>
+      {/* Dialog eliminar cliente */}
+      <Dialog open={!!deletingClient} onOpenChange={(open) => !open && setDeletingClient(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Eliminar cliente?</DialogTitle>
+          </DialogHeader>
+          <p className="text-muted-foreground">
+            Esta acción eliminará a <strong>{deletingClient?.name}</strong> y todos sus proyectos asociados. Esta acción no se puede deshacer.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingClient(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteClient}>Eliminar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog detalle cliente */}
+      <Dialog open={!!detailClient} onOpenChange={(open) => !open && setDetailClient(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              {detailClient && (
+                <>
+                  <div 
+                    className="h-10 w-10 rounded-lg flex items-center justify-center text-white font-bold"
+                    style={{ backgroundColor: detailClient.color }}
+                  >
+                    {detailClient.name.charAt(0)}
+                  </div>
+                  {detailClient.name}
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {detailClient && (() => {
+            const data = clientsWithStats.find(c => c.client.id === detailClient.id);
+            if (!data) return null;
+            
+            return (
+              <div className="space-y-6 py-4">
+                {/* Resumen */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-slate-50 rounded-xl">
+                    <p className="text-2xl font-bold">{data.stats.projects.length}</p>
+                    <p className="text-xs text-muted-foreground">Proyectos activos</p>
+                  </div>
+                  <div className="text-center p-4 bg-slate-50 rounded-xl">
+                    <p className="text-2xl font-bold">{data.stats.used.toFixed(1)}h</p>
+                    <p className="text-xs text-muted-foreground">Horas este mes</p>
+                  </div>
+                  <div className="text-center p-4 bg-slate-50 rounded-xl">
+                    <p className={cn(
+                      "text-2xl font-bold",
+                      data.stats.percentage > 100 && "text-red-600",
+                      data.stats.percentage > 85 && data.stats.percentage <= 100 && "text-amber-600"
+                    )}>
+                      {data.stats.percentage.toFixed(0)}%
+                    </p>
+                    <p className="text-xs text-muted-foreground">Presupuesto usado</p>
+                  </div>
+                </div>
+
+                {/* Proyectos */}
+                <div>
+                  <h4 className="text-sm font-medium mb-3">Proyectos</h4>
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {data.stats.projects.map(project => (
+                      <div key={project.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                        <div>
+                          <p className="font-medium text-sm">{project.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {project.used.toFixed(1)}h de {project.budget}h
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Progress 
+                            value={Math.min(project.percentage, 100)} 
+                            className={cn(
+                              "h-2 w-16",
+                              project.percentage > 100 && "[&>div]:bg-red-500",
+                              project.percentage > 85 && project.percentage <= 100 && "[&>div]:bg-amber-500"
+                            )}
+                          />
+                          <span className="text-xs font-medium w-10 text-right">
+                            {project.percentage.toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    {data.stats.projects.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Sin proyectos activos
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Equipo asignado */}
+                {data.employees.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-3">Equipo asignado este mes</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {data.employees.map((name, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs">
+                          {name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailClient(null)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
