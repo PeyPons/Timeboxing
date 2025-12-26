@@ -381,12 +381,49 @@ export default function DeadlinesPage() {
       if (lockRefreshIntervalRef.current) {
         clearInterval(lockRefreshIntervalRef.current);
       }
+      if (lockCleanupIntervalRef.current) {
+        clearInterval(lockCleanupIntervalRef.current);
+      }
+      // Remover listener de beforeunload
+      if ((window as any).__deadlineBeforeUnload) {
+        window.removeEventListener('beforeunload', (window as any).__deadlineBeforeUnload);
+        delete (window as any).__deadlineBeforeUnload;
+      }
       // Liberar lock si estamos editando
       if (editingProjectId && currentUser) {
         releaseEditLock(editingProjectId);
       }
     };
   }, [editingProjectId, currentUser, selectedMonth]);
+
+  // Limpiar locks huérfanos periódicamente (cada minuto)
+  useEffect(() => {
+    const cleanupOrphanedLocks = async () => {
+      try {
+        // Eliminar locks expirados (sin heartbeat en los últimos 2 minutos)
+        const { error } = await supabase
+          .from('project_editing_locks')
+          .delete()
+          .lt('expires_at', new Date().toISOString());
+        
+        if (error) {
+          console.error('Error limpiando locks huérfanos:', error);
+        }
+      } catch (error) {
+        console.error('Error en limpieza de locks:', error);
+      }
+    };
+    
+    // Ejecutar inmediatamente y luego cada minuto
+    cleanupOrphanedLocks();
+    lockCleanupIntervalRef.current = setInterval(cleanupOrphanedLocks, 60 * 1000);
+    
+    return () => {
+      if (lockCleanupIntervalRef.current) {
+        clearInterval(lockCleanupIntervalRef.current);
+      }
+    };
+  }, []);
 
   const activeEmployees = useMemo(() => {
     return employees.filter(e => e.isActive).sort((a, b) => 
@@ -835,7 +872,7 @@ export default function DeadlinesPage() {
           project_id: projectId,
           employee_id: currentUser.id,
           month: selectedMonth,
-          expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+          expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString() // 2 minutos
         });
       
       if (error) {
