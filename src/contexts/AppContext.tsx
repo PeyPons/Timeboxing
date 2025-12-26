@@ -92,8 +92,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           email: e.email,
           user_id: e.user_id,
           crmUserId: e.crm_user_id,
-          welcomeTourCompleted: e.welcome_tour_completed || false,
-          deadlinesTourCompleted: e.deadlines_tour_completed || false
+          welcomeTourCompleted: e.welcome_tour_completed === true,
+          deadlinesTourCompleted: e.deadlines_tour_completed === true
         }));
         setEmployees(mappedEmployees);
 

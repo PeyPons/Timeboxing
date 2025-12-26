@@ -150,10 +150,13 @@ export function DeadlinesTour({ onComplete, forceShow = false }: DeadlinesTourPr
     // Verificar desde la base de datos si el usuario está logueado
     if (currentUser) {
       // Si deadlinesTourCompleted es null/undefined, tratarlo como false
-      const isCompleted = (currentUser as any).deadlinesTourCompleted === true;
+      const isCompleted = currentUser.deadlinesTourCompleted === true;
       if (!isCompleted) {
         const timer = setTimeout(() => setIsVisible(true), 500);
         return () => clearTimeout(timer);
+      } else {
+        // Asegurarse de que el tour no se muestre si ya está completado
+        setIsVisible(false);
       }
     } else {
       // Fallback a localStorage si no hay usuario
@@ -580,7 +583,7 @@ export function useDeadlinesTour() {
 
   const isTourCompleted = () => {
     if (currentUser) {
-      return (currentUser as any).deadlinesTourCompleted || false;
+      return currentUser.deadlinesTourCompleted === true;
     }
     return localStorage.getItem('timeboxing_deadlines_tour_completed') === 'true';
   };
