@@ -862,7 +862,7 @@ export default function DeadlinesPage() {
         .eq('project_id', projectId)
         .eq('month', selectedMonth)
         .gt('expires_at', new Date().toISOString())
-        .single();
+        .maybeSingle();
       
       if (existingLock) {
         // Si el lock es de otro usuario, rechazar
@@ -900,7 +900,7 @@ export default function DeadlinesPage() {
           .eq('project_id', projectId)
           .eq('month', selectedMonth)
           .gt('expires_at', new Date().toISOString())
-          .single();
+          .maybeSingle();
         
         if (conflictLock && conflictLock.employee_id !== currentUser.id) {
           const editor = employees.find(e => e.id === conflictLock.employee_id);
