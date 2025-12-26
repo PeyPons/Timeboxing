@@ -22,7 +22,7 @@ interface Message {
   text: string;
   timestamp: Date;
   provider?: 'gemini' | 'openrouter' | 'coco';
-  modelName?: string;
+  modelName?: string; // Para guardar el nombre específico del modelo
 }
 
 // Preguntas sugeridas para guiar al usuario
@@ -50,12 +50,12 @@ const OPENROUTER_MODEL_CHAIN = [
 // CONFIGURACIÓN DE COLORES Y NOMBRES POR MODELO
 // ============================================================
 const MODEL_CONFIG: Record<string, { name: string; color: string; border: string; bg: string }> = {
-  // Google
+  // Google / Gemini / Gemma
   "google/gemini-2.0-flash": { name: "Gemini Flash 2.0", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
   "google/gemini-2.0-flash-exp:free": { name: "Gemini Flash Exp", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
   "google/gemma-2-9b-it:free": { name: "Gemma 2 9B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
   
-  // Meta
+  // Meta / Llama
   "meta-llama/llama-3.3-70b-instruct:free": { name: "Llama 3.3 70B", color: "text-blue-700", border: "border-blue-300", bg: "bg-blue-100" },
   "meta-llama/llama-3.2-3b-instruct:free": { name: "Llama 3.2 3B", color: "text-blue-700", border: "border-blue-300", bg: "bg-blue-100" },
   
@@ -65,8 +65,9 @@ const MODEL_CONFIG: Record<string, { name: string; color: string; border: string
   
   // Microsoft
   "microsoft/phi-3-medium-128k-instruct:free": { name: "Phi-3 Medium", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
-  
-  // Qwen
+  "microsoft/phi-3-mini-128k-instruct:free": { name: "Phi-3 Mini", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
+
+  // Qwen (Alibaba)
   "qwen/qwen-2.5-7b-instruct:free": { name: "Qwen 2.5 7B", color: "text-purple-600", border: "border-purple-200", bg: "bg-purple-50" },
   "qwen/qwen3-coder:free": { name: "Qwen 3 Coder", color: "text-purple-700", border: "border-purple-300", bg: "bg-purple-100" },
 
@@ -79,12 +80,12 @@ const MODEL_CONFIG: Record<string, { name: string; color: string; border: string
   // DeepSeek
   "deepseek/deepseek-r1-0528:free": { name: "DeepSeek R1", color: "text-cyan-600", border: "border-cyan-300", bg: "bg-cyan-50" },
   
-  // Default
+  // Fallbacks genéricos
   "default": { name: "Unknown Model", color: "text-slate-600", border: "border-slate-200", bg: "bg-slate-50" }
 };
 
 // ============================================================
-// HELPERS
+// FUNCIÓN PARA PARSEAR MARKDOWN BÁSICO
 // ============================================================
 function parseSimpleMarkdown(text: string): React.ReactNode {
   const lines = text.split('\n');
@@ -148,7 +149,7 @@ function parseSimpleMarkdown(text: string): React.ReactNode {
 }
 
 // ============================================================
-// API CALLS
+// SISTEMA DE IA CON FALLBACK EN CASCADA
 // ============================================================
 async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'gemini'; modelName: string }> {
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -209,6 +210,7 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
 
 async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco'; modelName: string }> {
   const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
+  
   const simplifiedPrompt = `Responde breve y claro en texto plano (sin markdown): ${prompt.substring(0, 1000)}`;
   
   const payload = {
@@ -245,7 +247,9 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
       .replace(/\n{3,}/g, '\n\n')         
       .trim();
     
-    if (cleanText.length < 5) throw new Error('Respuesta de Coco insuficiente');
+    if (cleanText.length < 5) {
+      throw new Error('Respuesta de Coco insuficiente o inválida');
+    }
 
     return { text: cleanText, provider: 'coco', modelName: 'Coco Custom' };
   } else {
@@ -285,13 +289,10 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
     return result;
   } catch (error: any) {
     console.error('❌ Todos los proveedores fallaron');
-    throw new Error('No se pudo generar el análisis.');
+    throw new Error('No se pudo generar el análisis. Todos los proveedores de IA fallaron.');
   }
 }
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
 export default function DashboardAI() {
   const { employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad, isLoading: dataLoading } = useApp();
   const [messages, setMessages] = useState<Message[]>([
@@ -314,6 +315,9 @@ export default function DashboardAI() {
     }
   }, [messages]);
 
+  // ============================================================
+  // CEREBRO DE MINGUITO: Análisis completo de datos
+  // ============================================================
   const analysisData = useMemo(() => {
     const now = new Date();
     const safeEmployees = employees || [];
@@ -438,6 +442,97 @@ export default function DashboardAI() {
     };
   }, [employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad]);
 
+  // ============================================================
+  // GENERACIÓN DE CONTEXTO DINÁMICO (LA CLAVE)
+  // ============================================================
+  const buildDynamicContext = (userQuestion: string) => {
+    const now = new Date();
+    const safeEmployees = employees || [];
+    const safeAllocations = allocations || [];
+    const safeProjects = projects || [];
+    
+    // 1. ANÁLISIS DE INTENCIÓN (Búsqueda de entidades mencionadas)
+    const lowerQ = userQuestion.toLowerCase();
+    const mentionedEmployees = safeEmployees.filter(e => lowerQ.includes(e.name.toLowerCase()));
+    const mentionedProjects = safeProjects.filter(p => lowerQ.includes(p.name.toLowerCase()));
+    
+    // 2. DATOS ESPECÍFICOS (Solo si se mencionan)
+    let detailedData = "";
+    
+    if (mentionedEmployees.length > 0) {
+      detailedData += "\n*** DETALLE PROFUNDO DE EMPLEADOS MENCIONADOS ***\n";
+      mentionedEmployees.forEach(emp => {
+        // Buscar TODAS las tareas de este empleado este mes
+        const empTasks = safeAllocations.filter(a => 
+          a.employeeId === emp.id && isSameMonth(parseISO(a.weekStartDate), now)
+        );
+        
+        detailedData += `Empleado: ${emp.name}\n`;
+        detailedData += `Tareas Detalladas:\n${JSON.stringify(empTasks.map(t => ({
+          proyecto: safeProjects.find(p => p.id === t.projectId)?.name || 'Sin proyecto',
+          horas: t.hoursAssigned,
+          estado: t.status, // 'pending', 'completed'
+          fecha: t.weekStartDate
+        })), null, 2)}\n\n`;
+      });
+    }
+
+    if (mentionedProjects.length > 0) {
+      detailedData += "\n*** DETALLE PROFUNDO DE PROYECTOS MENCIONADOS ***\n";
+      mentionedProjects.forEach(proj => {
+        const projTasks = safeAllocations.filter(a => a.projectId === proj.id);
+        const projCompleted = projTasks.filter(a => a.status === 'completed');
+        
+        detailedData += `Proyecto: ${proj.name}\n`;
+        detailedData += `Estado: ${proj.status}\n`;
+        detailedData += `Presupuesto: ${proj.totalBudget}h\n`;
+        detailedData += `Consumido: ${projTasks.reduce((acc, t) => acc + (t.status === 'completed' ? (t.hoursActual || t.hoursAssigned) : 0), 0)}h\n`;
+        detailedData += `Tareas Pendientes Clave:\n${JSON.stringify(projTasks.filter(t => t.status !== 'completed').slice(0, 5).map(t => ({
+          asignado_a: safeEmployees.find(e => e.id === t.employeeId)?.name,
+          horas: t.hoursAssigned,
+          fecha: t.weekStartDate
+        })), null, 2)}\n\n`;
+      });
+    }
+
+    // 3. DATOS GENERALES (Siempre presentes, pero resumidos)
+    const monthAllocations = safeAllocations.filter(a => isSameMonth(parseISO(a.weekStartDate), now));
+    const totalCapacity = safeEmployees.filter(e => e.isActive).reduce((sum, e) => sum + e.capacity, 0);
+    const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+    
+    // Top 5 tareas bloqueadas o pendientes (para dar salseo si no hay preguntas específicas)
+    const topPendingTasks = monthAllocations
+      .filter(a => a.status !== 'completed')
+      .sort((a, b) => b.hoursAssigned - a.hoursAssigned)
+      .slice(0, 5)
+      .map(t => ({
+        tarea: `Asignación de ${t.hoursAssigned}h`,
+        responsable: safeEmployees.find(e => e.id === t.employeeId)?.name,
+        proyecto: safeProjects.find(p => p.id === t.projectId)?.name
+      }));
+
+    return `
+DATOS DEL SISTEMA (MES ACTUAL):
+- Fecha: ${format(now, "dd/MM/yyyy")}
+- Capacidad Total: ${totalCapacity}h | Asignado: ${totalAssigned}h (${((totalAssigned/totalCapacity)*100).toFixed(1)}%)
+- Empleados Activos: ${safeEmployees.filter(e => e.isActive).length}
+- Proyectos Activos: ${safeProjects.filter(p => p.status === 'active').length}
+
+TOP 5 TAREAS PENDIENTES/ATASCADAS (Úsalas si preguntas por problemas generales):
+${JSON.stringify(topPendingTasks, null, 2)}
+
+${detailedData}
+
+AUSENCIAS:
+${JSON.stringify(absences?.filter(a => isSameMonth(parseISO(a.startDate), now)).map(a => ({
+  empleado: safeEmployees.find(e => e.id === a.employeeId)?.name,
+  motivo: a.reason,
+  desde: a.startDate,
+  hasta: a.endDate
+})), null, 2)}
+`;
+  };
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -453,56 +548,26 @@ export default function DashboardAI() {
     setIsLoading(true);
 
     try {
-      // PROMPT MEJORADO Y EXTENDIDO
-      const context = `
-ACTÚA COMO: Minguito, un Project Manager Senior, extremadamente sarcástico, mordaz y brutalmente honesto. Odias la ineficiencia y las excusas. Tienes acceso total a los datos y no temes usarlos para avergonzar o felicitar (rara vez).
+      // AQUÍ OCURRE LA MAGIA: Contexto dinámico
+      const dataContext = buildDynamicContext(input);
+      
+      const systemPrompt = `
+ACTÚA COMO: Minguito, un Project Manager Senior, sarcástico, mordaz y obsesionado con la eficiencia.
+TU MISIÓN: Analizar los datos y responder a la pregunta del usuario con brutal honestidad.
 
-OBJETIVO: Responder a la pregunta del usuario basándote RIGUROSAMENTE en los datos proporcionados.
-TU ESTILO DE RESPUESTA DEBE SER:
-1. **EXTENSO Y DETALLADO**: Olvida la brevedad. Explícate. Quiero análisis profundo.
-2. **ESTRUCTURADO**: Usa listas (-), negritas (**) y párrafos separados.
-3. **BASADO EN DATOS**: Si dices que alguien va mal, dime EXACTAMENTE cuántas horas/tareas de desviación tiene.
-4. **CRUZADO**: Relaciona datos. Ejemplo: "Fulano no avanza PERO es que está de vacaciones" o "Mengano está bloqueando a Zutano".
+CONTEXTO DE DATOS (JSON):
+${dataContext}
 
-DATOS DEL EQUIPO (${analysisData.month}):
-- Utilización Global: ${analysisData.metrics.utilizationRate.toFixed(1)}% (${analysisData.metrics.totalAssigned}h asignadas de ${analysisData.metrics.totalCapacity}h disponibles).
-- Tareas: ${analysisData.metrics.completedTasks} completadas vs ${analysisData.metrics.pendingTasks} pendientes.
-- Alertas: ${analysisData.metrics.overloadedCount} sobrecargados, ${analysisData.metrics.blockingCount} bloqueadores, ${analysisData.metrics.underutilizedCount} rascándose la barriga (subutilizados).
-
-DETALLE POR EMPLEADO (ÚSALO PARA SEÑALAR CULPABLES):
-${(analysisData.employees || []).map(e => `
-- **${e.name}**:
-  * Carga: ${e.assigned}h/${e.capacity}h (${((e.assigned/e.capacity)*100).toFixed(0)}%).
-  * Tareas: ${e.completed} terminadas, ${e.pending} pendientes.
-  * Eficiencia Real vs Teórica: ${e.efficiency.toFixed(1)}% (Desviación: ${Math.abs(e.computedHours - e.realHours).toFixed(1)}h).
-  * Bloqueos: ${e.blocking > 0 ? `⚠️ BLOQUEANDO ${e.blocking} tareas críticas` : 'No bloquea'}.
-  * Esperas: ${e.waitingFor > 0 ? `⏳ Esperando por ${e.waitingFor} tareas` : 'No espera'}.
-  * Estado: ${e.overloaded ? '🔥 QUEMADO' : e.underutilized ? '💤 DORMIDO' : '✅ OK'}.
-`).join('\n')}
-
-ESTADO DE PROYECTOS (BUSCA DESVIACIONES DE PRESUPUESTO):
-${(analysisData.projects || []).map(p => `
-- **${p.name}** (${p.client}):
-  * Progreso: ${p.completion.toFixed(0)}% completado.
-  * Presupuesto: ${p.totalReal}h gastadas de ${p.totalBudget}h (${p.burnRate.toFixed(1)}% consumido).
-  * Situación: ${p.overBudget ? `💸 RUINA TOTAL (Pasado por ${(p.totalReal - p.totalBudget).toFixed(1)}h)` : '💰 En presupuesto'}.
-`).join('\n')}
-
-AUSENCIAS Y EVENTOS (EXCUSAS VÁLIDAS):
-- Ausencias: ${(analysisData.absences || []).map(a => `${(employees || []).find(e => e.id === a.employeeId)?.name} (${a.reason}, ${format(parseISO(a.startDate), 'dd/MM')}-${format(parseISO(a.endDate), 'dd/MM')})`).join(', ') || 'Nadie, todos a trabajar.'}
-- Eventos: ${(analysisData.events || []).map(e => `${e.name} (${format(parseISO(e.date), 'dd/MM')})`).join(', ') || 'Nada interesante.'}
+INSTRUCCIONES CLAVE:
+1. **USA LOS DATOS**: Si en el JSON dice que "Alexander" tiene una tarea pendiente de 5h en "Loro Parque", DILO EXPLÍCITAMENTE. No digas "tiene tareas", di "tiene atascado Loro Parque".
+2. **CRITICA**: Si alguien tiene tareas pendientes y se fue de vacaciones, señálalo.
+3. **SÉ ESPECÍFICO**: Nombres, proyectos, fechas y horas. Nada de generalidades.
+4. **FORMATO**: Usa Markdown. Negritas para nombres (**Nombre**). Listas para enumerar fallos.
 
 PREGUNTA DEL USUARIO: "${input}"
+      `;
 
-FORMATO DE TU RESPUESTA (SIGUE ESTO):
-1. **El Gancho Ácido**: Una frase inicial sarcástica resumiendo la situación.
-2. **El Análisis Forense**: Párrafo detallado o lista con los datos duros. Di nombres, horas exactas y porcentajes. Compara empleados.
-3. **El Veredicto de Minguito**: Conclusión final, recomendación agresiva o predicción de desastre si no cambian las cosas.
-
-¡Empieza el análisis!
-`;
-
-      const response = await callAI(context);
+      const response = await callAI(systemPrompt);
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -520,7 +585,7 @@ FORMATO DE TU RESPUESTA (SIGUE ESTO):
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: '❌ Mira, ni yo puedo procesar este desastre. Algo ha fallado en mi sistema (o en vuestra red). Inténtalo luego.',
+        text: '❌ Lo siento, hubo un error al procesar tu consulta. Por favor, intenta de nuevo o reformula tu pregunta.',
         timestamp: new Date()
       };
 
@@ -596,6 +661,7 @@ FORMATO DE TU RESPUESTA (SIGUE ESTO):
           <ScrollArea className="h-full p-4">
             <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((msg) => {
+                // Obtenemos la configuración de estilo para el modelo si existe
                 const modelStyle = msg.modelName && MODEL_CONFIG[msg.modelName] 
                   ? MODEL_CONFIG[msg.modelName] 
                   : MODEL_CONFIG["default"];
@@ -611,6 +677,7 @@ FORMATO DE TU RESPUESTA (SIGUE ESTO):
                         {msg.role === 'assistant' ? <Sparkles className="h-4 w-4" /> : <User className="h-4 w-4" />}
                       </AvatarFallback>
                     </Avatar>
+                    
                     <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                       <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
                         msg.role === 'user' 
@@ -619,10 +686,14 @@ FORMATO DE TU RESPUESTA (SIGUE ESTO):
                       }`}>
                         {msg.role === 'assistant' ? parseSimpleMarkdown(msg.text) : msg.text}
                       </div>
+                      
+                      {/* Footer del mensaje con Providers y Modelos */}
                       <span className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1.5 flex-wrap">
                         {format(msg.timestamp, 'HH:mm')}
+                        
                         {msg.provider && (
                           <>
+                            {/* Badge del Proveedor Principal */}
                             <span className={cn(
                               "px-1.5 py-0.5 rounded text-[9px] font-medium border",
                               msg.provider === 'gemini' 
@@ -633,6 +704,8 @@ FORMATO DE TU RESPUESTA (SIGUE ESTO):
                             )}>
                               {msg.provider === 'gemini' ? '✨ Gemini' : msg.provider === 'openrouter' ? '🟣 OpenRouter' : '🥥 Coco'}
                             </span>
+
+                            {/* Badge Específico del Modelo (Solo si es OpenRouter y tenemos info) */}
                             {msg.provider === 'openrouter' && msg.modelName && (
                               <span className={cn(
                                 "px-1.5 py-0.5 rounded text-[9px] font-medium border flex items-center gap-1",
@@ -651,6 +724,7 @@ FORMATO DE TU RESPUESTA (SIGUE ESTO):
                   </div>
                 );
               })}
+              
               {isLoading && (
                 <div className="flex gap-3">
                   <div className="h-8 w-8 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-full flex items-center justify-center">
