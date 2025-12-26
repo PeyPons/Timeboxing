@@ -111,6 +111,17 @@ export interface ProfessionalGoal {
 export interface Deadline {
   id: string;
   projectId: string;
+  month: string; // Formato: 'YYYY-MM' (ej: '2024-03')
   notes?: string;
   employeeHours: Record<string, number>; // employeeId -> hours
+  isHidden?: boolean; // Si el proyecto está oculto este mes
+}
+
+export interface GlobalAssignment {
+  id: string;
+  month: string; // Formato: 'YYYY-MM'
+  name: string; // Ej: "Deadline afecta a todos", "Creación timeboxing"
+  hours: number;
+  affectsAll: boolean; // Si afecta a todos los empleados
+  affectedEmployeeIds?: string[]; // Si no afecta a todos, lista de IDs
 }
