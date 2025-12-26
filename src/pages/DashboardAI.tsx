@@ -37,7 +37,6 @@ const SUGGESTED_QUESTIONS = [
 // ============================================================
 // LISTA DE MODELOS OPENROUTER (TODOS LOS GRATUITOS + FALLBACKS)
 // ============================================================
-// Ordenados para intentar calidad primero, pero incluye los 39 gratuitos + fallbacks.
 const OPENROUTER_MODEL_CHAIN = [
   // --- TIER S: LOS PESOS PESADOS (Gratis) ---
   "google/gemini-2.0-flash-exp:free",
@@ -64,7 +63,7 @@ const OPENROUTER_MODEL_CHAIN = [
   "mistralai/mistral-7b-instruct:free",
   "meta-llama/llama-3.2-3b-instruct:free",
   "qwen/qwen-2.5-vl-7b-instruct:free",
-  "microsoft/phi-3-medium-128k-instruct:free", // Mantenemos compatibilidad aunque no esté en la lista nueva explícita, suele ser free
+  "microsoft/phi-3-medium-128k-instruct:free",
   
   // --- TIER C: RESTO DE LA LISTA DE 39 (Experimentales / Específicos) ---
   "bytedance-seed/seedream-4.5",
@@ -89,7 +88,7 @@ const OPENROUTER_MODEL_CHAIN = [
 
   // --- TIER Z: FALLBACKS DE PAGO (ÚLTIMO RECURSO) ---
   "cerebras/llama3.1-70b", // Velocidad extrema
-  "openai/gpt-5-mini"      // El "GPT-5" solicitado (probablemente mapeado a 4o-mini o future preview)
+  "openai/gpt-5-mini"      // Fallback
 ];
 
 // ============================================================
@@ -141,7 +140,7 @@ const MODEL_CONFIG: Record<string, { name: string; color: string; border: string
   // --- OPENAI (OSS & Paid Fallback) ---
   "openai/gpt-oss-120b:free": { name: "GPT OSS 120B", color: "text-green-700", border: "border-green-300", bg: "bg-green-100" },
   "openai/gpt-oss-20b:free": { name: "GPT OSS 20B", color: "text-green-600", border: "border-green-200", bg: "bg-green-50" },
-  "openai/gpt-5-mini": { name: "GPT-5 Mini", color: "text-green-500", border: "border-green-200", bg: "bg-green-50" }, // Paid Fallback
+  "openai/gpt-5-mini": { name: "GPT-5 Mini", color: "text-green-500", border: "border-green-200", bg: "bg-green-50" }, 
 
   // --- XIAOMI / BYTEDANCE / SOURCEFUL / OTHERS ---
   "xiaomi/mimo-v2-flash:free": { name: "Xiaomi MiMo", color: "text-orange-600", border: "border-orange-300", bg: "bg-orange-50" },
@@ -237,54 +236,77 @@ async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: st
   return { text: result.response.text(), provider: 'gemini', modelName: modelName };
 }
 
-// VERSIÓN NATIVA: Usa el sistema de fallback integrado de OpenRouter
+// VERSIÓN MEJORADA: Usa Batching para evitar el error 400
 async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter'; modelName: string }> {
   const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+  
+  // Tamaño del lote: 3 modelos máximo por petición para evitar error 400
+  const BATCH_SIZE = 3; 
 
-  try {
-    console.log(`🟣 [OpenRouter] Iniciando petición con cadena masiva (${OPENROUTER_MODEL_CHAIN.length} modelos)...`);
-    
-    const response = await fetch(OPENROUTER_API_URL, {
-      method: 'POST',
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": window.location.origin,
-        "X-Title": "Timeboxing App"
-      },
-      // Pasamos la lista completa a 'models' para que OpenRouter gestione el fallback
-      body: JSON.stringify({
-        models: OPENROUTER_MODEL_CHAIN, 
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Status ${response.status}: ${errorText}`);
+  // Función auxiliar para crear chunks
+  const chunkArray = (arr: string[], size: number) => {
+    const chunks = [];
+    for (let i = 0; i < arr.length; i += size) {
+      chunks.push(arr.slice(i, i + size));
     }
+    return chunks;
+  };
 
-    const responseData = await response.json();
-    
-    // Obtenemos qué modelo respondió realmente
-    const usedModel = responseData.model || "unknown-model";
+  const modelBatches = chunkArray(OPENROUTER_MODEL_CHAIN, BATCH_SIZE);
 
-    if (responseData?.choices?.[0]?.message?.content) {
-      console.log(`✅ [OpenRouter] Éxito. Respondió: ${usedModel}`);
-      return { 
-        text: responseData.choices[0].message.content, 
-        provider: 'openrouter', 
-        modelName: usedModel // Devolvemos el modelo exacto que usó OpenRouter
-      };
-    } else {
-      throw new Error(`Estructura incorrecta en respuesta OpenRouter`);
+  // Iteramos sobre los lotes secuencialmente
+  for (let i = 0; i < modelBatches.length; i++) {
+    const currentBatch = modelBatches[i];
+    console.log(`🟣 [OpenRouter] Probando lote ${i + 1}/${modelBatches.length}:`, currentBatch);
+
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "Timeboxing App"
+        },
+        body: JSON.stringify({
+          // OpenRouter permite 'models' (array) para auto-fallback, pero limitado a 3 items
+          models: currentBatch,
+          // Opcional: define el primario explicitamente si la API lo prefiere, aunque 'models' suele bastar
+          // model: currentBatch[0], 
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.7,
+        }),
+      });
+
+      // Si falla con 429 (rate limit) o 5xx, lanzamos error para que el catch continue el bucle
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Status ${response.status}: ${errorText}`);
+      }
+
+      const responseData = await response.json();
+      const usedModel = responseData.model || "unknown-model";
+
+      if (responseData?.choices?.[0]?.message?.content) {
+        console.log(`✅ [OpenRouter] Éxito en lote ${i + 1}. Respondió: ${usedModel}`);
+        return { 
+          text: responseData.choices[0].message.content, 
+          provider: 'openrouter', 
+          modelName: usedModel 
+        };
+      }
+      
+      // Si la respuesta es 200 pero vacía, seguimos intentando
+      console.warn(`⚠️ Respuesta vacía en lote ${i+1}, probando siguiente...`);
+
+    } catch (error: any) {
+      console.warn(`⚠️ Fallo en lote ${i + 1} de OpenRouter: ${error.message}`);
+      // Continuamos al siguiente ciclo del bucle for
     }
-
-  } catch (error: any) {
-    console.warn(`⚠️ Error crítico en OpenRouter: ${error.message}`);
-    throw error;
   }
+
+  // Si llegamos aquí, todos los lotes fallaron
+  throw new Error("Todos los intentos y lotes de OpenRouter han fallado.");
 }
 
 async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco'; modelName: string }> {
@@ -307,13 +329,13 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
   if (responseData && responseData.data) {
     let cleanText = responseData.data
       .replace(/```/g, '')                
-      .replace(/<[^>]*>/g, '')            
-      .replace(/^\s*[\*\-]\s*$/gm, '')    
-      .replace(/\*\*/g, '')               
-      .replace(/\*\s*\n/g, '\n')          
-      .replace(/^\*\s*/gm, '- ')          
-      .replace(/<br\s*\/?>/gi, '\n')      
-      .replace(/\n{3,}/g, '\n\n')         
+      .replace(/<[^>]*>/g, '')             
+      .replace(/^\s*[\*\-]\s*$/gm, '')     
+      .replace(/\*\*/g, '')                
+      .replace(/\*\s*\n/g, '\n')           
+      .replace(/^\*\s*/gm, '- ')           
+      .replace(/<br\s*\/?>/gi, '\n')       
+      .replace(/\n{3,}/g, '\n\n')          
       .trim();
     
     if (cleanText.length < 5) throw new Error('Respuesta de Coco insuficiente');
@@ -341,7 +363,7 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
 
   if (openRouterApiKey) {
     try {
-      console.log('🟣 Intentando con OpenRouter (Nativo)...');
+      console.log('🟣 Intentando con OpenRouter (Estrategia por Lotes)...');
       const result = await callOpenRouterAPI(prompt, openRouterApiKey);
       return result;
     } catch (error: any) {
