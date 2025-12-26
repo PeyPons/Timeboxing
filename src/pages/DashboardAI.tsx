@@ -21,7 +21,7 @@ interface Message {
   role: 'user' | 'assistant';
   text: string;
   timestamp: Date;
-  provider?: 'gemini' | 'coco';
+  provider?: 'gemini' | 'openrouter' | 'coco';
 }
 
 // Preguntas sugeridas para guiar al usuario
@@ -113,13 +113,49 @@ function parseSimpleMarkdown(text: string): React.ReactNode {
 }
 
 // ============================================================
-// SISTEMA DE IA CON FALLBACK
+// SISTEMA DE IA CON FALLBACK EN CASCADA
 // ============================================================
 async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'gemini' }> {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
   const result = await model.generateContent(prompt);
   return { text: result.response.text(), provider: 'gemini' };
+}
+
+async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter' }> {
+  const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+  
+  const response = await fetch(OPENROUTER_API_URL, {
+    method: 'POST',
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": window.location.origin,
+      "X-Title": "Timeboxing App"
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.0-flash-exp:free",
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(errorData)}`);
+  }
+
+  const responseData = await response.json();
+  
+  if (responseData?.choices?.[0]?.message?.content) {
+    return { text: responseData.choices[0].message.content, provider: 'openrouter' };
+  } else {
+    throw new Error('Respuesta inesperada de OpenRouter API');
+  }
 }
 
 async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco' }> {
@@ -156,28 +192,46 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
   }
 }
 
-async function callAI(prompt: string, geminiApiKey?: string): Promise<{ text: string; provider: 'gemini' | 'coco' }> {
-  // Intentar primero con Gemini si hay API key
+async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini' | 'openrouter' | 'coco' }> {
+  const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+
+  // Intento 1: Gemini
   if (geminiApiKey) {
     try {
-      return await callGeminiAPI(prompt, geminiApiKey);
+      console.log('🔵 Intentando con Gemini...');
+      const result = await callGeminiAPI(prompt, geminiApiKey);
+      console.log('✅ Gemini respondió correctamente');
+      return result;
     } catch (error: any) {
-      console.warn('Gemini falló, usando Coco como fallback:', error.message);
-      // Si es error de quota, usar fallback
-      if (error.message?.includes('429') || error.message?.includes('quota')) {
-        return await callCocoAPI(prompt);
-      }
-      // Para otros errores, también intentar fallback
-      try {
-        return await callCocoAPI(prompt);
-      } catch {
-        throw error; // Si ambos fallan, lanzar el error original de Gemini
-      }
+      console.warn('⚠️ Gemini falló:', error.message);
+      // Continuar con el siguiente proveedor
     }
   }
-  
-  // Si no hay API key de Gemini, usar Coco directamente
-  return await callCocoAPI(prompt);
+
+  // Intento 2: OpenRouter
+  if (openRouterApiKey) {
+    try {
+      console.log('🟣 Intentando con OpenRouter...');
+      const result = await callOpenRouterAPI(prompt, openRouterApiKey);
+      console.log('✅ OpenRouter respondió correctamente');
+      return result;
+    } catch (error: any) {
+      console.warn('⚠️ OpenRouter falló:', error.message);
+      // Continuar con el siguiente proveedor
+    }
+  }
+
+  // Intento 3: Coco Solution (fallback final)
+  try {
+    console.log('🥥 Intentando con Coco Solution (fallback)...');
+    const result = await callCocoAPI(prompt);
+    console.log('✅ Coco Solution respondió correctamente');
+    return result;
+  } catch (error: any) {
+    console.error('❌ Todos los proveedores fallaron');
+    throw new Error('No se pudo generar el análisis. Todos los proveedores de IA fallaron.');
+  }
 }
 
 export default function DashboardAI() {
@@ -248,38 +302,18 @@ export default function DashboardAI() {
       return {
         id: emp.id,
         name: emp.name,
-        department: emp.department || 'Sin departamento',
-        load: {
-          hours: load.hours,
-          capacity: load.capacity,
-          percentage: load.percentage,
-          status: load.status
-        },
-        tasks: {
-          total: empTasks.length,
-          completed: empCompleted.length,
-          pending: empPending.length
-        },
-        efficiency: {
-          hoursReal: Math.round(totalReal * 10) / 10,
-          hoursComputed: Math.round(totalComp * 10) / 10,
-          hoursEstimated: Math.round(totalEst * 10) / 10,
-          balance: Math.round((totalComp - totalReal) * 10) / 10,
-          percentageGain: Math.round(efficiency)
-        },
-        dependencies: {
-          blocking: blocking.map(t => ({ 
-            taskName: t.taskName || 'Sin nombre',
-            blockedUsers: allocations
-              .filter(o => o.dependencyId === t.id && o.status !== 'completed')
-              .map(o => employees.find(e => e.id === o.employeeId)?.name || 'Desconocido')
-          })),
-          waitingFor: waitingFor.map(t => {
-            const dep = allocations.find(a => a.id === t.dependencyId);
-            const owner = employees.find(e => e.id === dep?.employeeId);
-            return { taskName: t.taskName || 'Sin nombre', waitingForUser: owner?.name || 'Desconocido' };
-          })
-        }
+        capacity: emp.capacity,
+        assigned: load.totalAssigned,
+        completed: empCompleted.length,
+        pending: empPending.length,
+        realHours: totalReal,
+        computedHours: totalComp,
+        estimatedHours: totalEst,
+        efficiency: efficiency,
+        blocking: blocking.length,
+        waitingFor: waitingFor.length,
+        overloaded: load.totalAssigned > emp.capacity,
+        underutilized: load.totalAssigned < emp.capacity * 0.7
       };
     });
 
@@ -287,241 +321,233 @@ export default function DashboardAI() {
     // 2. ANÁLISIS DE PROYECTOS
     // ==================
     const projectAnalysis = activeProjects.map(proj => {
-      const client = clients.find(c => c.id === proj.clientId);
       const projTasks = monthAllocations.filter(a => a.projectId === proj.id);
       const projCompleted = projTasks.filter(a => a.status === 'completed');
+      const projPending = projTasks.filter(a => a.status !== 'completed');
       
-      const hoursUsed = projTasks.reduce((sum, a) => {
-        if (a.status === 'completed') {
-          return sum + (a.hoursActual || a.hoursAssigned);
-        }
-        return sum + a.hoursAssigned;
-      }, 0);
+      const totalAssigned = projTasks.reduce((sum, a) => sum + a.hoursAssigned, 0);
+      const totalReal = projCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
+      const totalBudget = proj.totalBudget || 0;
       
-      const hoursCompleted = projCompleted.reduce((sum, a) => sum + (a.hoursActual || a.hoursAssigned), 0);
-      const budgetPercentage = proj.budgetHours > 0 ? (hoursUsed / proj.budgetHours * 100) : 0;
-      
-      // Empleados asignados
-      const assignedEmployees = [...new Set(projTasks.map(t => t.employeeId))]
-        .map(id => employees.find(e => e.id === id)?.name || 'Desconocido');
+      const burnRate = totalBudget > 0 ? (totalReal / totalBudget * 100) : 0;
 
       return {
         id: proj.id,
         name: proj.name,
-        clientName: client?.name || 'Sin cliente',
-        budget: proj.budgetHours,
-        hoursUsed: Math.round(hoursUsed * 10) / 10,
-        hoursCompleted: Math.round(hoursCompleted * 10) / 10,
-        budgetPercentage: Math.round(budgetPercentage),
-        isOverBudget: budgetPercentage > 100,
-        isAtRisk: budgetPercentage > 80 && budgetPercentage <= 100,
-        tasksCount: projTasks.length,
-        completedCount: projCompleted.length,
-        assignedEmployees
+        client: clients.find(c => c.id === proj.clientId)?.name || 'Sin cliente',
+        totalTasks: projTasks.length,
+        completed: projCompleted.length,
+        pending: projPending.length,
+        totalAssigned,
+        totalReal,
+        totalBudget,
+        burnRate,
+        overBudget: totalReal > totalBudget,
+        completion: projTasks.length > 0 ? (projCompleted.length / projTasks.length * 100) : 0
       };
     });
 
     // ==================
     // 3. MÉTRICAS GLOBALES
     // ==================
-    const globalMetrics = {
-      // Eficiencia global
-      totalHoursReal: Math.round(completedTasks.reduce((s, a) => s + (a.hoursActual || 0), 0) * 10) / 10,
-      totalHoursComputed: Math.round(completedTasks.reduce((s, a) => s + (a.hoursComputed || 0), 0) * 10) / 10,
-      totalHoursEstimated: Math.round(completedTasks.reduce((s, a) => s + a.hoursAssigned, 0) * 10) / 10,
-      
-      // Tareas
-      totalTasks: monthAllocations.length,
-      completedTasks: completedTasks.length,
-      pendingTasks: pendingTasks.length,
-      
-      // Dependencias problemáticas
-      totalBlockingTasks: employeeAnalysis.reduce((s, e) => s + e.dependencies.blocking.length, 0),
-      totalWaitingTasks: employeeAnalysis.reduce((s, e) => s + e.dependencies.waitingFor.length, 0),
-      
-      // Carga
-      overloadedEmployees: employeeAnalysis.filter(e => e.load.status === 'overload').map(e => e.name),
-      underloadedEmployees: employeeAnalysis.filter(e => e.load.percentage < 50 && e.load.percentage > 0).map(e => e.name),
-      emptyEmployees: employeeAnalysis.filter(e => e.tasks.total === 0).map(e => e.name),
-      
-      // Proyectos
-      overBudgetProjects: projectAnalysis.filter(p => p.isOverBudget).map(p => ({ name: p.name, percentage: p.budgetPercentage })),
-      atRiskProjects: projectAnalysis.filter(p => p.isAtRisk).map(p => ({ name: p.name, percentage: p.budgetPercentage })),
-      
-      // Eventos del mes
-      teamEventsCount: teamEvents.filter(te => isSameMonth(parseISO(te.date), now)).length
-    };
-
-    // Balance global
-    const globalBalance = globalMetrics.totalHoursComputed - globalMetrics.totalHoursReal;
-
-    // ==================
-    // 4. ALERTAS AUTOMÁTICAS
-    // ==================
-    const alerts: { type: 'critical' | 'warning' | 'info', message: string }[] = [];
+    const totalCapacity = activeEmployees.reduce((sum, e) => sum + e.capacity, 0);
+    const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+    const utilizationRate = totalCapacity > 0 ? (totalAssigned / totalCapacity * 100) : 0;
     
-    if (globalMetrics.totalBlockingTasks > 0) {
-      alerts.push({ type: 'critical', message: `Hay ${globalMetrics.totalBlockingTasks} tarea(s) bloqueando a otros compañeros` });
-    }
-    if (globalMetrics.overloadedEmployees.length > 0) {
-      alerts.push({ type: 'warning', message: `${globalMetrics.overloadedEmployees.length} empleado(s) sobrecargado(s): ${globalMetrics.overloadedEmployees.join(', ')}` });
-    }
-    if (globalMetrics.emptyEmployees.length > 0) {
-      alerts.push({ type: 'info', message: `${globalMetrics.emptyEmployees.length} empleado(s) sin tareas: ${globalMetrics.emptyEmployees.join(', ')}` });
-    }
-    if (globalMetrics.overBudgetProjects.length > 0) {
-      alerts.push({ type: 'critical', message: `${globalMetrics.overBudgetProjects.length} proyecto(s) por encima del presupuesto` });
-    }
-    if (globalBalance < -10) {
-      alerts.push({ type: 'warning', message: `Balance negativo de ${Math.abs(globalBalance).toFixed(1)}h este mes` });
-    }
+    const overloadedEmployees = employeeAnalysis.filter(e => e.overloaded);
+    const underutilizedEmployees = employeeAnalysis.filter(e => e.underutilized);
+    const blockingEmployees = employeeAnalysis.filter(e => e.blocking > 0);
+
+    // ==================
+    // 4. AUSENCIAS Y EVENTOS
+    // ==================
+    const monthAbsences = absences.filter(a => 
+      isSameMonth(parseISO(a.startDate), now) || isSameMonth(parseISO(a.endDate), now)
+    );
+    
+    const monthEvents = teamEvents.filter(e => 
+      isSameMonth(parseISO(e.date), now)
+    );
 
     return {
-      month: format(now, 'MMMM yyyy', { locale: es }),
+      month: format(now, "MMMM yyyy", { locale: es }),
       employees: employeeAnalysis,
       projects: projectAnalysis,
-      global: globalMetrics,
-      globalBalance: Math.round(globalBalance * 10) / 10,
-      alerts
+      metrics: {
+        totalCapacity,
+        totalAssigned,
+        utilizationRate,
+        completedTasks: completedTasks.length,
+        pendingTasks: pendingTasks.length,
+        overloadedCount: overloadedEmployees.length,
+        underutilizedCount: underutilizedEmployees.length,
+        blockingCount: blockingEmployees.length
+      },
+      absences: monthAbsences,
+      events: monthEvents,
+      alerts: {
+        critical: overloadedEmployees.length + blockingEmployees.length,
+        warning: underutilizedEmployees.length + projectAnalysis.filter(p => p.overBudget).length
+      }
     };
   }, [employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad]);
 
   // ============================================================
-  // MANEJO DEL CHAT
+  // HANDLERS
   // ============================================================
-  const handleSend = async (customInput?: string) => {
-    const messageText = customInput || input;
-    if (!messageText.trim()) return;
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
 
-    const userMsg: Message = { 
-      id: crypto.randomUUID(), 
-      role: 'user', 
-      text: messageText, 
-      timestamp: new Date() 
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: input,
+      timestamp: new Date()
     };
-    setMessages(prev => [...prev, userMsg]);
+
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
 
     try {
-      // Construir el contexto completo para Minguito
-      const contextPrompt = `
-Eres Minguito, el analista de gestión de una agencia digital. 
-
-PERSONALIDAD:
-- Eres directo, cercano y un poco brusco pero siempre con cariño
-- Usas expresiones coloquiales españolas ("ojo", "cuidadín", "menudo marrón", "crack", "tela marinera")
-- NO uses emojis
-- NO uses formato Markdown (ni **, ni *, ni #)
-- Eres constructivo: cuando señalas problemas, sugieres soluciones
-- No te enrollas: respuestas concisas pero útiles (máximo 4-5 frases)
-
-DATOS DEL MES (${analysisData.month}):
+      // Construir contexto enriquecido
+      const context = `
+CONTEXTO ACTUAL DEL EQUIPO (${analysisData.month}):
 
 MÉTRICAS GLOBALES:
-- Tareas totales: ${analysisData.global.totalTasks} (${analysisData.global.completedTasks} completadas, ${analysisData.global.pendingTasks} pendientes)
-- Horas estimadas: ${analysisData.global.totalHoursEstimated}h
-- Horas reales trabajadas: ${analysisData.global.totalHoursReal}h  
-- Horas computadas/facturables: ${analysisData.global.totalHoursComputed}h
-- BALANCE: ${analysisData.globalBalance}h (${analysisData.globalBalance >= 0 ? 'POSITIVO' : 'NEGATIVO'})
+- Capacidad Total: ${analysisData.metrics.totalCapacity}h
+- Horas Asignadas: ${analysisData.metrics.totalAssigned}h
+- Tasa de Utilización: ${analysisData.metrics.utilizationRate.toFixed(1)}%
+- Tareas Completadas: ${analysisData.metrics.completedTasks}
+- Tareas Pendientes: ${analysisData.metrics.pendingTasks}
+- Empleados Sobrecargados: ${analysisData.metrics.overloadedCount}
+- Empleados Subutilizados: ${analysisData.metrics.underutilizedCount}
+- Empleados Bloqueando Tareas: ${analysisData.metrics.blockingCount}
 
-ALERTAS ACTIVAS:
-${analysisData.alerts.length > 0 ? analysisData.alerts.map(a => `- [${a.type.toUpperCase()}] ${a.message}`).join('\n') : '- Sin alertas críticas'}
+ANÁLISIS POR EMPLEADO:
+${analysisData.employees.map(e => `
+- ${e.name}:
+  * Capacidad: ${e.capacity}h | Asignado: ${e.assigned}h
+  * Tareas: ${e.completed} completadas, ${e.pending} pendientes
+  * Eficiencia: ${e.efficiency.toFixed(1)}% (Real: ${e.realHours}h vs Computado: ${e.computedHours}h)
+  * Bloqueos: ${e.blocking > 0 ? `⚠️ Bloqueando ${e.blocking} tarea(s)` : '✓ Sin bloqueos'}
+  * Dependencias: ${e.waitingFor > 0 ? `⏳ Esperando ${e.waitingFor} tarea(s)` : '✓ Sin esperas'}
+  * Estado: ${e.overloaded ? '🔴 SOBRECARGADO' : e.underutilized ? '🟡 SUBUTILIZADO' : '🟢 ÓPTIMO'}
+`).join('\n')}
 
-EMPLEADOS CON TAREAS ESTE MES:
-${analysisData.employees.filter(e => e.tasks.total > 0).map(e => `
-${e.name} (${e.department}):
-  - Carga: ${e.load.hours}h asignadas / ${e.load.capacity}h capacidad (${e.load.percentage}%)
-  - Tareas: ${e.tasks.completed} completadas de ${e.tasks.total} totales
-  - Eficiencia: trabajó ${e.efficiency.hoursReal}h reales, computó ${e.efficiency.hoursComputed}h (balance: ${e.efficiency.balance >= 0 ? '+' : ''}${e.efficiency.balance}h)
-  - Bloquea a otros: ${e.dependencies.blocking.length > 0 ? 'SÍ - ' + e.dependencies.blocking.map(b => `tarea "${b.taskName}" bloquea a ${b.blockedUsers.join(', ')}`).join('; ') : 'No'}
-  - Esperando por otros: ${e.dependencies.waitingFor.length > 0 ? 'SÍ - ' + e.dependencies.waitingFor.map(w => `"${w.taskName}" espera por ${w.waitingForUser}`).join('; ') : 'No'}
-`).join('') || 'Ningún empleado tiene tareas asignadas este mes.'}
+ANÁLISIS DE PROYECTOS:
+${analysisData.projects.map(p => `
+- ${p.name} (Cliente: ${p.client}):
+  * Tareas: ${p.completed}/${p.totalTasks} (${p.completion.toFixed(0)}% completado)
+  * Horas: ${p.totalReal}h de ${p.totalBudget}h (${p.burnRate.toFixed(1)}% consumido)
+  * Estado: ${p.overBudget ? '🔴 SOBRE PRESUPUESTO' : '🟢 DENTRO DE PRESUPUESTO'}
+`).join('\n')}
 
-EMPLEADOS SIN TAREAS ESTE MES:
-${analysisData.employees.filter(e => e.tasks.total === 0).map(e => e.name).join(', ') || 'Todos tienen tareas asignadas.'}
+AUSENCIAS DEL MES:
+${analysisData.absences.length > 0 ? analysisData.absences.map(a => {
+  const emp = employees.find(e => e.id === a.employeeId);
+  return `- ${emp?.name}: ${a.reason} (${format(parseISO(a.startDate), 'dd/MM')} - ${format(parseISO(a.endDate), 'dd/MM')})`;
+}).join('\n') : '- Sin ausencias registradas'}
 
-PROYECTOS CON ACTIVIDAD ESTE MES (solo los que tienen tareas):
-${analysisData.projects.filter(p => p.tasksCount > 0).slice(0, 15).map(p => `
-${p.name} [${p.clientName}]:
-  - Presupuesto: ${p.hoursUsed}h usadas de ${p.budget}h (${p.budgetPercentage}%) ${p.isOverBudget ? 'EXCEDIDO' : p.isAtRisk ? 'EN RIESGO' : 'OK'}
-  - Tareas: ${p.completedCount} completadas de ${p.tasksCount}
-  - Equipo asignado: ${p.assignedEmployees.join(', ') || 'Nadie'}
-`).join('') || 'Ningún proyecto tiene tareas este mes.'}
+EVENTOS DEL MES:
+${analysisData.events.length > 0 ? analysisData.events.map(e => 
+  `- ${e.name} (${format(parseISO(e.date), 'dd/MM')}): ${e.attendees.length} asistentes`
+).join('\n') : '- Sin eventos programados'}
 
-PREGUNTA DEL USUARIO: "${messageText}"
+PREGUNTA DEL USUARIO: ${input}
 
-Responde basándote SOLO en los datos proporcionados. Si no hay información suficiente, dilo claramente. No inventes datos.
+INSTRUCCIONES:
+- Responde de forma directa y concisa
+- Usa datos específicos del contexto
+- Usa formato Markdown para énfasis (**negrita**)
+- Sé profesional pero cercano
+- Si detectas problemas críticos, menciónalos con prioridad
 `;
 
-      // Usar el sistema de fallback: Gemini primero, Coco si falla
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      const { text: responseText, provider } = await callAI(contextPrompt, apiKey);
+      const response = await callAI(context);
 
-      setMessages(prev => [...prev, { 
-        id: crypto.randomUUID(), 
-        role: 'assistant', 
-        text: responseText, 
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        text: response.text,
         timestamp: new Date(),
-        provider
-      }]);
-    } catch (error) {
-      console.error('Error Minguito:', error);
-      setMessages(prev => [...prev, { 
-        id: crypto.randomUUID(), 
-        role: 'assistant', 
-        text: 'Uf, me he quedado frito. Ni Gemini ni la API de respaldo han funcionado. Inténtalo de nuevo en un momento.', 
-        timestamp: new Date() 
-      }]);
+        provider: response.provider
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error: any) {
+      console.error('Error al generar respuesta:', error);
+      
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        text: '❌ Lo siento, hubo un error al procesar tu consulta. Por favor, intenta de nuevo o reformula tu pregunta.',
+        timestamp: new Date()
+      };
+
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleSuggestedQuestion = (question: string) => {
-    handleSend(question);
+    setInput(question);
   };
 
   const clearChat = () => {
-    setMessages([{
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      text: 'Chat limpio. ¿En qué te puedo ayudar?',
-      timestamp: new Date()
-    }]);
+    setMessages([
+      {
+        id: '1',
+        role: 'assistant',
+        text: '¡Ey! Soy Minguito, tu analista de cabecera. Tengo acceso a todo: cargas, dependencias, presupuestos, eficiencia... Pregúntame lo que quieras o usa las sugerencias de abajo. ¿Por dónde empezamos?',
+        timestamp: new Date()
+      }
+    ]);
   };
 
-  // Resumen rápido de estado (sin IA)
-  const quickStats = useMemo(() => {
-    const { global, globalBalance, alerts } = analysisData;
-    return {
-      tasksCompletion: global.totalTasks > 0 
-        ? Math.round((global.completedTasks / global.totalTasks) * 100) 
-        : 0,
-      balance: globalBalance,
-      criticalAlerts: alerts.filter(a => a.type === 'critical').length,
-      warningAlerts: alerts.filter(a => a.type === 'warning').length
-    };
-  }, [analysisData]);
+  // ============================================================
+  // QUICK STATS (Visualización rápida de métricas)
+  // ============================================================
+  const quickStats = {
+    utilization: analysisData.metrics.utilizationRate,
+    balance: analysisData.metrics.totalCapacity - analysisData.metrics.totalAssigned,
+    criticalAlerts: analysisData.alerts.critical,
+    warningAlerts: analysisData.alerts.warning
+  };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] max-w-6xl mx-auto p-4 md:p-6 w-full gap-4">
-      
-      {/* Stats rápidos */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="p-3 bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
+    <div className="h-[calc(100vh-4rem)] flex flex-col gap-4 p-4">
+      {/* Quick Stats Cards */}
+      <div className="grid grid-cols-4 gap-3">
+        <Card className={cn(
+          "p-3 border",
+          quickStats.utilization > 90 
+            ? "bg-gradient-to-br from-red-50 to-red-100 border-red-200" 
+            : quickStats.utilization > 70
+            ? "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200"
+            : "bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200"
+        )}>
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span className="text-xs text-slate-600">Completado</span>
+            <BarChart3 className={cn(
+              "w-4 h-4",
+              quickStats.utilization > 90 ? "text-red-600" : quickStats.utilization > 70 ? "text-emerald-600" : "text-amber-600"
+            )} />
+            <span className="text-xs text-slate-600">Utilización</span>
           </div>
-          <p className="text-xl font-bold text-slate-900 mt-1">{quickStats.tasksCompletion}%</p>
+          <p className={cn(
+            "text-xl font-bold mt-1",
+            quickStats.utilization > 90 ? "text-red-700" : quickStats.utilization > 70 ? "text-emerald-700" : "text-amber-700"
+          )}>
+            {quickStats.utilization.toFixed(0)}%
+          </p>
         </Card>
         
         <Card className={cn(
           "p-3 border",
-          quickStats.balance >= 0 
-            ? "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200" 
-            : "bg-gradient-to-br from-red-50 to-red-100 border-red-200"
+          quickStats.balance < 0 
+            ? "bg-gradient-to-br from-red-50 to-red-100 border-red-200" 
+            : "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200"
         )}>
           <div className="flex items-center gap-2">
             {quickStats.balance >= 0 ? (
@@ -640,9 +666,11 @@ Responde basándote SOLO en los datos proporcionados. Si no hay información suf
                           "px-1.5 py-0.5 rounded text-[9px] font-medium",
                           msg.provider === 'gemini' 
                             ? "bg-blue-100 text-blue-600" 
+                            : msg.provider === 'openrouter'
+                            ? "bg-purple-100 text-purple-600"
                             : "bg-orange-100 text-orange-600"
                         )}>
-                          {msg.provider === 'gemini' ? '✨ Gemini' : '🥥 Coco'}
+                          {msg.provider === 'gemini' ? '✨ Gemini' : msg.provider === 'openrouter' ? '🟣 OpenRouter' : '🥥 Coco'}
                         </span>
                       )}
                     </span>
