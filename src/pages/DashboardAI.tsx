@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { 
   Send, Bot, User, Sparkles, Trash2, TrendingUp, TrendingDown, 
   AlertTriangle, Users, Calendar, Target, Clock, Zap, HelpCircle,
-  BarChart3, UserX, Link, CheckCircle2, XCircle
+  BarChart3, UserX, Link, CheckCircle2, XCircle, Cpu
 } from 'lucide-react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { format, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInDays, addDays } from 'date-fns';
@@ -22,6 +22,7 @@ interface Message {
   text: string;
   timestamp: Date;
   provider?: 'gemini' | 'openrouter' | 'coco';
+  modelName?: string; // Para guardar el nombre específico del modelo
 }
 
 // Preguntas sugeridas para guiar al usuario
@@ -34,41 +35,61 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 // ============================================================
-// LISTA DE MODELOS OPENROUTER (Orden de prioridad)
+// LISTA DE MODELOS OPENROUTER (DEFINITIVA Y ESTABLE)
 // ============================================================
 const OPENROUTER_MODEL_CHAIN = [
-  // 1. Google: Alta capacidad (si falla por cuota 429, saltará al siguiente)
-  "google/gemini-2.0-flash-exp:free", 
-  
-  // 2. Xiaomi: Modelo Flash rápido
-  "xiaomi/mimo-v2-flash:free",
-  
-  // 3. Qwen Coder: Excelente para lógica y seguir instrucciones estrictas
-  "qwen/qwen3-coder:free", 
-  
-  // 4. Mistral Dev: Versión de desarrollo de Mistral
-  "mistralai/devstral-2512:free", 
-  
-  // 5. Nvidia: Modelo equilibrado
-  "nvidia/nemotron-3-nano-30b-a3b:free", 
-  
-  // 6. DeepSeek R1: Muy bueno razonando (si está disponible)
-  "deepseek/deepseek-r1-0528:free", 
-  
-  // 7. Otros modelos de respaldo detectados por la API
-  "kwaipilot/kat-coder-pro:free",
-  "tngtech/tng-r1t-chimera:free",
-  "tngtech/deepseek-r1t2-chimera:free",
-  "tngtech/deepseek-r1t-chimera:free"
+  "google/gemma-2-9b-it:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "mistralai/mistral-7b-instruct:free",
+  "microsoft/phi-3-medium-128k-instruct:free",
+  "qwen/qwen-2.5-7b-instruct:free",
+  "google/gemini-2.0-flash-exp:free"
 ];
+
+// ============================================================
+// CONFIGURACIÓN DE COLORES Y NOMBRES POR MODELO
+// ============================================================
+// Esto permite mapear el ID del modelo a colores y nombres bonitos
+const MODEL_CONFIG: Record<string, { name: string; color: string; border: string; bg: string }> = {
+  // Google / Gemini / Gemma
+  "google/gemini-2.0-flash": { name: "Gemini Flash 2.0", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
+  "google/gemini-2.0-flash-exp:free": { name: "Gemini Flash Exp", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
+  "google/gemma-2-9b-it:free": { name: "Gemma 2 9B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
+  
+  // Meta / Llama
+  "meta-llama/llama-3.3-70b-instruct:free": { name: "Llama 3.3 70B", color: "text-blue-700", border: "border-blue-300", bg: "bg-blue-100" },
+  "meta-llama/llama-3.2-3b-instruct:free": { name: "Llama 3.2 3B", color: "text-blue-700", border: "border-blue-300", bg: "bg-blue-100" },
+  
+  // Mistral
+  "mistralai/mistral-7b-instruct:free": { name: "Mistral 7B", color: "text-orange-500", border: "border-orange-200", bg: "bg-orange-50" },
+  "mistralai/devstral-2512:free": { name: "Mistral Dev", color: "text-orange-600", border: "border-orange-300", bg: "bg-orange-100" },
+  
+  // Microsoft
+  "microsoft/phi-3-medium-128k-instruct:free": { name: "Phi-3 Medium", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
+  "microsoft/phi-3-mini-128k-instruct:free": { name: "Phi-3 Mini", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
+
+  // Qwen (Alibaba)
+  "qwen/qwen-2.5-7b-instruct:free": { name: "Qwen 2.5 7B", color: "text-purple-600", border: "border-purple-200", bg: "bg-purple-50" },
+  "qwen/qwen3-coder:free": { name: "Qwen 3 Coder", color: "text-purple-700", border: "border-purple-300", bg: "bg-purple-100" },
+
+  // Xiaomi
+  "xiaomi/mimo-v2-flash:free": { name: "Xiaomi MiMo", color: "text-orange-600", border: "border-orange-300", bg: "bg-orange-50" },
+  
+  // Nvidia
+  "nvidia/nemotron-3-nano-30b-a3b:free": { name: "Nvidia Nemotron", color: "text-green-600", border: "border-green-300", bg: "bg-green-50" },
+
+  // DeepSeek
+  "deepseek/deepseek-r1-0528:free": { name: "DeepSeek R1", color: "text-cyan-600", border: "border-cyan-300", bg: "bg-cyan-50" },
+  
+  // Fallbacks genéricos
+  "default": { name: "Unknown Model", color: "text-slate-600", border: "border-slate-200", bg: "bg-slate-50" }
+};
 
 // ============================================================
 // FUNCIÓN PARA PARSEAR MARKDOWN BÁSICO
 // ============================================================
 function parseSimpleMarkdown(text: string): React.ReactNode {
-  // Dividir por líneas
   const lines = text.split('\n');
-  
   const elements: React.ReactNode[] = [];
   let listItems: string[] = [];
   
@@ -86,13 +107,11 @@ function parseSimpleMarkdown(text: string): React.ReactNode {
   };
   
   const parseLine = (line: string): React.ReactNode => {
-    // Parsear **bold** y *italic*
     const parts: React.ReactNode[] = [];
     let remaining = line;
     let key = 0;
     
     while (remaining.length > 0) {
-      // Buscar **bold**
       const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
       if (boldMatch && boldMatch.index !== undefined) {
         if (boldMatch.index > 0) {
@@ -102,32 +121,23 @@ function parseSimpleMarkdown(text: string): React.ReactNode {
         remaining = remaining.slice(boldMatch.index + boldMatch[0].length);
         continue;
       }
-      
-      // Si no hay más matches, añadir el resto
       parts.push(<span key={key++}>{remaining}</span>);
       break;
     }
-    
     return parts.length > 0 ? parts : line;
   };
   
   lines.forEach((line, index) => {
     const trimmedLine = line.trim();
-    
-    // Línea vacía
     if (!trimmedLine) {
       flushList();
       elements.push(<br key={`br-${index}`} />);
       return;
     }
-    
-    // Lista con * o -
     if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
       listItems.push(trimmedLine.slice(2));
       return;
     }
-    
-    // Párrafo normal
     flushList();
     elements.push(
       <p key={`p-${index}`} className="mb-1">
@@ -135,30 +145,24 @@ function parseSimpleMarkdown(text: string): React.ReactNode {
       </p>
     );
   });
-  
   flushList();
-  
   return <div className="space-y-1">{elements}</div>;
 }
 
 // ============================================================
 // SISTEMA DE IA CON FALLBACK EN CASCADA
 // ============================================================
-async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'gemini' }> {
+async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'gemini'; modelName: string }> {
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const modelName = "gemini-2.0-flash";
+  const model = genAI.getGenerativeModel({ model: modelName });
   const result = await model.generateContent(prompt);
-  return { text: result.response.text(), provider: 'gemini' };
+  return { text: result.response.text(), provider: 'gemini', modelName: modelName };
 }
 
-/**
- * Función mejorada: Itera por la lista de modelos hasta que uno responde.
- * Evita errores 404/429 probando alternativas automáticamente.
- */
-async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter' }> {
+async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter'; modelName: string }> {
   const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-  // Iteramos sobre la lista de modelos uno por uno
   for (const modelId of OPENROUTER_MODEL_CHAIN) {
     console.log(`🟣 [OpenRouter] Intentando con modelo: ${modelId}...`);
 
@@ -168,22 +172,16 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
         headers: {
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": window.location.origin, // Necesario para ranking free
+          "HTTP-Referer": window.location.origin,
           "X-Title": "Timeboxing App"
         },
         body: JSON.stringify({
           model: modelId, 
-          messages: [
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
+          messages: [{ role: "user", content: prompt }],
           temperature: 0.7,
         }),
       });
 
-      // Si el servidor responde con error (404, 429, 500), lanzamos excepción para ir al catch y probar el siguiente
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Status ${response.status}: ${errorText}`);
@@ -191,29 +189,30 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
 
       const responseData = await response.json();
       
-      // Validación de la respuesta
       if (responseData?.choices?.[0]?.message?.content) {
         console.log(`✅ [OpenRouter] Éxito con ${modelId}`);
-        return { text: responseData.choices[0].message.content, provider: 'openrouter' };
+        // Devolvemos el provider y el nombre específico del modelo que funcionó
+        return { 
+          text: responseData.choices[0].message.content, 
+          provider: 'openrouter', 
+          modelName: modelId // Guardamos el ID del modelo usado
+        };
       } else {
         throw new Error(`Estructura incorrecta en ${modelId}`);
       }
 
     } catch (error: any) {
       console.warn(`⚠️ Falló ${modelId}: ${error.message}`);
-      // No hacemos 'throw' aquí, dejamos que el bucle continúe con el siguiente modelo
       continue;
     }
   }
 
-  // Si llegamos aquí, es que TODOS los modelos del array fallaron
   throw new Error('OpenRouter agotado: Ningún modelo gratuito respondió correctamente.');
 }
 
-async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco' }> {
+async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco'; modelName: string }> {
   const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
   
-  // Simplificar prompt drásticamente para Coco
   const simplifiedPrompt = `Responde breve y claro en texto plano (sin markdown): ${prompt.substring(0, 1000)}`;
   
   const payload = {
@@ -228,9 +227,7 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
 
   const response = await fetch(COCO_API_URL, {
     method: 'POST',
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
@@ -241,7 +238,6 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
   const responseData = await response.json();
   
   if (responseData && responseData.data) {
-    // Limpieza AGRESIVA para evitar el output "0h. 0h:"
     let cleanText = responseData.data
       .replace(/```/g, '')                
       .replace(/<[^>]*>/g, '')            
@@ -253,22 +249,20 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
       .replace(/\n{3,}/g, '\n\n')         
       .trim();
     
-    // Si la respuesta sigue siendo basura muy corta (ej: "0h"), lanzar error para que no se muestre
     if (cleanText.length < 5) {
       throw new Error('Respuesta de Coco insuficiente o inválida');
     }
 
-    return { text: cleanText, provider: 'coco' };
+    return { text: cleanText, provider: 'coco', modelName: 'Coco Custom' };
   } else {
     throw new Error('Respuesta inesperada de Coco API');
   }
 }
 
-async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini' | 'openrouter' | 'coco' }> {
+async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini' | 'openrouter' | 'coco'; modelName: string }> {
   const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
   const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
-  // Intento 1: Gemini
   if (geminiApiKey) {
     try {
       console.log('🔵 Intentando con Gemini...');
@@ -277,24 +271,19 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
       return result;
     } catch (error: any) {
       console.warn('⚠️ Gemini falló:', error.message);
-      // Continuar con el siguiente proveedor
     }
   }
 
-  // Intento 2: OpenRouter (Modo Cascada Integrado)
   if (openRouterApiKey) {
     try {
       console.log('🟣 Intentando con OpenRouter (Cascada)...');
       const result = await callOpenRouterAPI(prompt, openRouterApiKey);
-      // El log de éxito ya está dentro de la función callOpenRouterAPI
       return result;
     } catch (error: any) {
       console.warn('⚠️ OpenRouter falló completamente:', error.message);
-      // Continuar con el siguiente proveedor
     }
   }
 
-  // Intento 3: Coco Solution (fallback final)
   try {
     console.log('🥥 Intentando con Coco Solution (fallback)...');
     const result = await callCocoAPI(prompt);
@@ -313,7 +302,8 @@ export default function DashboardAI() {
       id: '1',
       role: 'assistant',
       text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: cargas, bloqueos, chapuzas, proyectos hundidos... Pregunta lo que quieras, pero preparate para la verdad. Quien la esta liando hoy?',
-      timestamp: new Date()
+      timestamp: new Date(),
+      provider: 'gemini' // Asumimos default para el mensaje inicial
     }
   ]);
   const [input, setInput] = useState('');
@@ -331,7 +321,6 @@ export default function DashboardAI() {
   // ============================================================
   const analysisData = useMemo(() => {
     const now = new Date();
-    // Proteccion: asegurar que todos los arrays esten inicializados
     const safeEmployees = employees || [];
     const safeAllocations = allocations || [];
     const safeProjects = projects || [];
@@ -342,7 +331,6 @@ export default function DashboardAI() {
     const activeEmployees = safeEmployees.filter(e => e.isActive);
     const activeProjects = safeProjects.filter(p => p.status === 'active');
     
-    // Allocations del mes actual
     const monthAllocations = safeAllocations.filter(a => 
       isSameMonth(parseISO(a.weekStartDate), now)
     );
@@ -350,27 +338,21 @@ export default function DashboardAI() {
     const completedTasks = monthAllocations.filter(a => a.status === 'completed');
     const pendingTasks = monthAllocations.filter(a => a.status !== 'completed');
 
-    // ==================
-    // 1. ANÁLISIS DE CARGA POR EMPLEADO
-    // ==================
     const employeeAnalysis = activeEmployees.map(emp => {
       const load = getEmployeeMonthlyLoad(emp.id, now.getFullYear(), now.getMonth());
       const empTasks = monthAllocations.filter(a => a.employeeId === emp.id);
       const empCompleted = empTasks.filter(a => a.status === 'completed');
       const empPending = empTasks.filter(a => a.status !== 'completed');
       
-      // Eficiencia: horas reales vs computadas
       const totalReal = empCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
       const totalComp = empCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
       const totalEst = empCompleted.reduce((sum, a) => sum + a.hoursAssigned, 0);
       const efficiency = totalReal > 0 ? ((totalComp - totalReal) / totalReal * 100) : 0;
       
-      // Dependencias: ¿bloquea a otros?
       const blocking = empPending.filter(task => 
         safeAllocations.some(other => other.dependencyId === task.id && other.status !== 'completed')
       );
       
-      // Dependencias: ¿esperando por otros?
       const waitingFor = empPending.filter(task => {
         if (!task.dependencyId) return false;
         const dep = safeAllocations.find(a => a.id === task.dependencyId);
@@ -395,9 +377,6 @@ export default function DashboardAI() {
       };
     });
 
-    // ==================
-    // 2. ANÁLISIS DE PROYECTOS
-    // ==================
     const projectAnalysis = activeProjects.map(proj => {
       const projTasks = monthAllocations.filter(a => a.projectId === proj.id);
       const projCompleted = projTasks.filter(a => a.status === 'completed');
@@ -425,9 +404,6 @@ export default function DashboardAI() {
       };
     });
 
-    // ==================
-    // 3. MÉTRICAS GLOBALES
-    // ==================
     const totalCapacity = activeEmployees.reduce((sum, e) => sum + e.capacity, 0);
     const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
     const utilizationRate = totalCapacity > 0 ? (totalAssigned / totalCapacity * 100) : 0;
@@ -436,9 +412,6 @@ export default function DashboardAI() {
     const underutilizedEmployees = employeeAnalysis.filter(e => e.underutilized);
     const blockingEmployees = employeeAnalysis.filter(e => e.blocking > 0);
 
-    // ==================
-    // 4. AUSENCIAS Y EVENTOS
-    // ==================
     const monthAbsences = safeAbsences.filter(a => 
       isSameMonth(parseISO(a.startDate), now) || isSameMonth(parseISO(a.endDate), now)
     );
@@ -470,9 +443,6 @@ export default function DashboardAI() {
     };
   }, [employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad]);
 
-  // ============================================================
-  // HANDLERS
-  // ============================================================
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -488,7 +458,6 @@ export default function DashboardAI() {
     setIsLoading(true);
 
     try {
-      // Construir contexto enriquecido
       const context = `
 CONTEXTO ACTUAL DEL EQUIPO (${analysisData.month}):
 
@@ -553,7 +522,8 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
         role: 'assistant',
         text: response.text,
         timestamp: new Date(),
-        provider: response.provider
+        provider: response.provider,
+        modelName: response.modelName // Guardamos el modelo
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -583,26 +553,12 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
         id: '1',
         role: 'assistant',
         text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: cargas, bloqueos, chapuzas, proyectos hundidos... Pregunta lo que quieras, pero preparate para la verdad. Quien la esta liando hoy?',
-        timestamp: new Date()
+        timestamp: new Date(),
+        provider: 'gemini'
       }
     ]);
   };
 
-  // ============================================================
-  // QUICK STATS (Visualización rápida de métricas)
-  // ============================================================
-  const quickStats = useMemo(() => {
-    const utilization = analysisData.metrics.utilizationRate;
-    const balance = analysisData.metrics.totalCapacity - analysisData.metrics.totalAssigned;
-    return {
-      utilization: isNaN(utilization) ? 0 : utilization,
-      balance: isNaN(balance) ? 0 : balance,
-      criticalAlerts: analysisData.alerts.critical || 0,
-      warningAlerts: analysisData.alerts.warning || 0
-    };
-  }, [analysisData]);
-
-  // Mostrar loader mientras cargan los datos
   if (dataLoading) {
     return (
       <div className="h-[calc(100vh-4rem)] flex flex-col items-center justify-center">
@@ -614,7 +570,6 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col gap-4 p-4">
-      {/* Chat principal */}
       <Card className="flex-1 flex flex-col overflow-hidden shadow-md border-indigo-100/50">
         <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b pb-4">
           <CardTitle className="flex items-center gap-3 text-xl">
@@ -652,43 +607,70 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
         <CardContent className="flex-1 overflow-hidden p-0 bg-slate-50/30">
           <ScrollArea className="h-full p-4">
             <div className="space-y-4 max-w-3xl mx-auto">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <Avatar className={`h-8 w-8 mt-1 border shrink-0 ${
-                    msg.role === 'assistant' 
-                      ? 'bg-gradient-to-br from-indigo-100 to-purple-100 border-indigo-200' 
-                      : 'bg-white border-slate-200'
-                  }`}>
-                    <AvatarFallback className={msg.role === 'assistant' ? 'text-indigo-700' : 'text-slate-700'}>
-                      {msg.role === 'assistant' ? <Sparkles className="h-4 w-4" /> : <User className="h-4 w-4" />}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
-                      msg.role === 'user' 
-                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-tr-sm whitespace-pre-wrap' 
-                        : 'bg-white border border-slate-100 text-slate-800 rounded-tl-sm'
+              {messages.map((msg) => {
+                // Obtenemos la configuración de estilo para el modelo si existe
+                const modelStyle = msg.modelName && MODEL_CONFIG[msg.modelName] 
+                  ? MODEL_CONFIG[msg.modelName] 
+                  : MODEL_CONFIG["default"];
+
+                return (
+                  <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <Avatar className={`h-8 w-8 mt-1 border shrink-0 ${
+                      msg.role === 'assistant' 
+                        ? 'bg-gradient-to-br from-indigo-100 to-purple-100 border-indigo-200' 
+                        : 'bg-white border-slate-200'
                     }`}>
-                      {msg.role === 'assistant' ? parseSimpleMarkdown(msg.text) : msg.text}
+                      <AvatarFallback className={msg.role === 'assistant' ? 'text-indigo-700' : 'text-slate-700'}>
+                        {msg.role === 'assistant' ? <Sparkles className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                      </AvatarFallback>
+                    </Avatar>
+                    
+                    <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                      <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
+                        msg.role === 'user' 
+                          ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-tr-sm whitespace-pre-wrap' 
+                          : 'bg-white border border-slate-100 text-slate-800 rounded-tl-sm'
+                      }`}>
+                        {msg.role === 'assistant' ? parseSimpleMarkdown(msg.text) : msg.text}
+                      </div>
+                      
+                      {/* Footer del mensaje con Providers y Modelos */}
+                      <span className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1.5 flex-wrap">
+                        {format(msg.timestamp, 'HH:mm')}
+                        
+                        {msg.provider && (
+                          <>
+                            {/* Badge del Proveedor Principal */}
+                            <span className={cn(
+                              "px-1.5 py-0.5 rounded text-[9px] font-medium border",
+                              msg.provider === 'gemini' 
+                                ? "bg-blue-50 text-blue-600 border-blue-100" 
+                                : msg.provider === 'openrouter'
+                                ? "bg-purple-50 text-purple-600 border-purple-100"
+                                : "bg-orange-50 text-orange-600 border-orange-100"
+                            )}>
+                              {msg.provider === 'gemini' ? '✨ Gemini' : msg.provider === 'openrouter' ? '🟣 OpenRouter' : '🥥 Coco'}
+                            </span>
+
+                            {/* Badge Específico del Modelo (Solo si es OpenRouter y tenemos info) */}
+                            {msg.provider === 'openrouter' && msg.modelName && (
+                              <span className={cn(
+                                "px-1.5 py-0.5 rounded text-[9px] font-medium border flex items-center gap-1",
+                                modelStyle.bg,
+                                modelStyle.color,
+                                modelStyle.border
+                              )}>
+                                <Cpu className="w-3 h-3 opacity-70" />
+                                {modelStyle.name}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1.5">
-                      {format(msg.timestamp, 'HH:mm')}
-                      {msg.provider && (
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded text-[9px] font-medium",
-                          msg.provider === 'gemini' 
-                            ? "bg-blue-100 text-blue-600" 
-                            : msg.provider === 'openrouter'
-                            ? "bg-purple-100 text-purple-600"
-                            : "bg-orange-100 text-orange-600"
-                        )}>
-                          {msg.provider === 'gemini' ? '✨ Gemini' : msg.provider === 'openrouter' ? '🟣 OpenRouter' : '🥥 Coco'}
-                        </span>
-                      )}
-                    </span>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               
               {isLoading && (
                 <div className="flex gap-3">
@@ -709,9 +691,7 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
           </ScrollArea>
         </CardContent>
 
-        {/* Sugerencias + Input */}
         <div className="border-t bg-white">
-          {/* Preguntas sugeridas */}
           <div className="px-4 pt-3 pb-2">
             <div className="flex items-center gap-2 mb-2">
               <HelpCircle className="w-3 h-3 text-slate-400" />
@@ -734,7 +714,6 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
             </div>
           </div>
           
-          {/* Input */}
           <div className="p-4 pt-2">
             <div className="flex gap-2 max-w-3xl mx-auto relative">
               <Input 
