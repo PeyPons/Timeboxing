@@ -9,12 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
-  Briefcase, Plus, Search, LayoutGrid, List, ChevronLeft, ChevronRight,
+  Briefcase, Plus, Search, ChevronLeft, ChevronRight,
   AlertTriangle, TrendingUp, TrendingDown, Pencil, Trash2, Users, 
   FolderOpen, Clock, CalendarDays, Building2, ArrowUpRight, ArrowDownRight,
-  Minus, Eye, X, ChevronDown, ChevronUp
+  Minus, Eye, X, ChevronDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -83,241 +82,19 @@ function StatCard({
   );
 }
 
-// Componente de tarjeta de cliente mejorada
-function EnhancedClientCard({ 
-  client, 
-  stats,
-  prevStats,
-  employees,
-  onEdit, 
-  onDelete,
-  onViewDetails
-}: { 
-  client: Client;
-  stats: { used: number; budget: number; percentage: number; projects: any[] };
-  prevStats: { used: number; budget: number };
-  employees: string[];
-  onEdit: () => void;
-  onDelete: () => void;
-  onViewDetails: () => void;
-}) {
-  const isOverBudget = stats.percentage > 100;
-  const isNearLimit = stats.percentage > 85 && stats.percentage <= 100;
-  const trend = stats.used > prevStats.used ? 'up' : stats.used < prevStats.used ? 'down' : 'neutral';
-  const trendDiff = stats.used - prevStats.used;
-
-  return (
-    <Card className={cn(
-      "overflow-hidden transition-all hover:shadow-lg group relative",
-      isOverBudget && "ring-2 ring-red-200",
-      isNearLimit && "ring-2 ring-amber-200"
-    )}>
-      {/* Barra de color superior */}
-      <div 
-        className="h-1.5 w-full"
-        style={{ backgroundColor: client.color }}
-      />
-      
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-3 min-w-0">
-            <div 
-              className="h-11 w-11 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm shrink-0"
-              style={{ backgroundColor: client.color }}
-            >
-              {client.name.charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <CardTitle className="text-base truncate">{client.name}</CardTitle>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <FolderOpen className="h-3 w-3" />
-                  {stats.projects.length} proyecto{stats.projects.length !== 1 ? 's' : ''}
-                </span>
-                {employees.length > 0 && (
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Users className="h-3 w-3" />
-                    {employees.length}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onViewDetails}>
-                  <Eye className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Ver detalles</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Editar</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600" onClick={onDelete}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Eliminar</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="space-y-4">
-        {/* Horas y progreso */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Horas del mes</span>
-            <div className="flex items-center gap-2">
-              {trend !== 'neutral' && (
-                <span className={cn(
-                  "text-[10px] font-medium flex items-center gap-0.5 px-1.5 py-0.5 rounded",
-                  trend === 'up' ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-                )}>
-                  {trend === 'up' ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                  {Math.abs(trendDiff).toFixed(1)}h
-                </span>
-              )}
-              <span className={cn(
-                "font-bold text-sm",
-                isOverBudget && "text-red-600",
-                isNearLimit && "text-amber-600"
-              )}>
-                {stats.used.toFixed(1)}h / {stats.budget}h
-              </span>
-            </div>
-          </div>
-          
-          <div className="relative">
-            <Progress 
-              value={Math.min(stats.percentage, 100)} 
-              className={cn(
-                "h-2.5 rounded-full",
-                isOverBudget && "[&>div]:bg-red-500",
-                isNearLimit && "[&>div]:bg-amber-500",
-                !isOverBudget && !isNearLimit && "[&>div]:bg-emerald-500"
-              )}
-            />
-            {isOverBudget && (
-              <div 
-                className="absolute top-0 h-2.5 bg-red-300/50 rounded-r-full"
-                style={{ 
-                  left: '100%',
-                  width: `${Math.min(stats.percentage - 100, 50)}%`
-                }}
-              />
-            )}
-          </div>
-          
-          <div className="flex items-center justify-between text-xs">
-            <span className={cn(
-              "font-medium",
-              isOverBudget && "text-red-600",
-              isNearLimit && "text-amber-600",
-              !isOverBudget && !isNearLimit && "text-emerald-600"
-            )}>
-              {stats.percentage.toFixed(0)}% utilizado
-            </span>
-            {isOverBudget && (
-              <Badge variant="destructive" className="text-[10px] h-5 gap-1">
-                <AlertTriangle className="h-3 w-3" />
-                +{(stats.percentage - 100).toFixed(0)}% excedido
-              </Badge>
-            )}
-            {isNearLimit && (
-              <Badge className="text-[10px] h-5 gap-1 bg-amber-100 text-amber-700 border-amber-200">
-                <TrendingUp className="h-3 w-3" />
-                Casi lleno
-              </Badge>
-            )}
-          </div>
-        </div>
-
-        {/* Lista de proyectos compacta */}
-        {stats.projects.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Proyectos</p>
-            <div className="space-y-1 max-h-[120px] overflow-y-auto">
-              {stats.projects.slice(0, 4).map((project) => (
-                <div 
-                  key={project.id}
-                  className="flex items-center justify-between gap-2 text-xs py-1.5 px-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div 
-                      className="h-1.5 w-1.5 rounded-full shrink-0"
-                      style={{ backgroundColor: client.color }}
-                    />
-                    <span className="truncate text-slate-700">{project.name.split('[')[0].trim()}</span>
-                  </div>
-                  <span className={cn(
-                    "font-medium shrink-0",
-                    project.percentage > 100 && "text-red-600",
-                    project.percentage > 85 && project.percentage <= 100 && "text-amber-600",
-                    project.percentage <= 85 && "text-slate-600"
-                  )}>
-                    {project.used.toFixed(1)}h
-                  </span>
-                </div>
-              ))}
-              {stats.projects.length > 4 && (
-                <p className="text-[10px] text-center text-muted-foreground py-1">
-                  +{stats.projects.length - 4} más
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Empleados asignados */}
-        {employees.length > 0 && (
-          <div className="pt-2 border-t">
-            <div className="flex items-center gap-1 flex-wrap">
-              {employees.slice(0, 3).map((name, i) => (
-                <span 
-                  key={i}
-                  className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full"
-                >
-                  {name.split(' ')[0]}
-                </span>
-              ))}
-              {employees.length > 3 && (
-                <span className="text-[10px] text-muted-foreground">
-                  +{employees.length - 3}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
 // Componente principal
 export default function ClientsPage() {
   const { clients, projects, allocations, employees, addClient, updateClient, deleteClient, getClientTotalHoursForMonth, getProjectHoursForMonth } = useApp();
   
   // Estados
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [isAdding, setIsAdding] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
   const [detailClient, setDetailClient] = useState<Client | null>(null);
-  const [sortBy, setSortBy] = useState<'name' | 'hours' | 'percentage'>('name');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
   const [newClient, setNewClient] = useState({ name: '', color: colorOptions[0] });
 
   // Mes anterior para comparación
@@ -362,27 +139,12 @@ export default function ClientsPage() {
     });
   }, [clients, projects, allocations, employees, currentMonth, prevMonth, getClientTotalHoursForMonth, getProjectHoursForMonth]);
 
-  // Filtrar y ordenar
+  // Filtrar
   const filteredClients = useMemo(() => {
-    let result = clientsWithStats.filter(c => 
+    return clientsWithStats.filter(c => 
       c.client.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    // Ordenar
-    result.sort((a, b) => {
-      let comparison = 0;
-      if (sortBy === 'name') {
-        comparison = a.client.name.localeCompare(b.client.name);
-      } else if (sortBy === 'hours') {
-        comparison = a.stats.used - b.stats.used;
-      } else if (sortBy === 'percentage') {
-        comparison = a.stats.percentage - b.stats.percentage;
-      }
-      return sortDir === 'asc' ? comparison : -comparison;
-    });
-
-    return result;
-  }, [clientsWithStats, searchQuery, sortBy, sortDir]);
+    ).sort((a, b) => a.client.name.localeCompare(b.client.name));
+  }, [clientsWithStats, searchQuery]);
 
   // Estadísticas globales
   const globalStats = useMemo(() => {
@@ -433,13 +195,13 @@ export default function ClientsPage() {
     toast.success(`${deletingClient.name} eliminado`);
   };
 
-  const toggleSort = (field: 'name' | 'hours' | 'percentage') => {
-    if (sortBy === field) {
-      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortDir('asc');
-    }
+  const toggleClient = (clientId: string) => {
+    setExpandedClients(prev => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
   };
 
   return (
@@ -479,26 +241,6 @@ export default function ClientsPage() {
               onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
             >
               <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* Toggle vista */}
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-            <Button
-              variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setViewMode('grid')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setViewMode('table')}
-            >
-              <List className="h-4 w-4" />
             </Button>
           </div>
 
@@ -611,107 +353,44 @@ export default function ClientsPage() {
         </p>
       </div>
 
-      {/* Vista Grid */}
-      {viewMode === 'grid' && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredClients.map(({ client, stats, prevStats, employees: assignedEmployees }) => (
-            <EnhancedClientCard
-              key={client.id}
-              client={client}
-              stats={stats}
-              prevStats={prevStats}
-              employees={assignedEmployees}
-              onEdit={() => setEditingClient({ ...client })}
-              onDelete={() => setDeletingClient(client)}
-              onViewDetails={() => setDetailClient(client)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Vista Tabla */}
-      {viewMode === 'table' && (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead 
-                  className="cursor-pointer hover:bg-slate-50"
-                  onClick={() => toggleSort('name')}
-                >
-                  <div className="flex items-center gap-1">
-                    Cliente
-                    {sortBy === 'name' && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
-                  </div>
-                </TableHead>
-                <TableHead>Proyectos</TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-slate-50"
-                  onClick={() => toggleSort('hours')}
-                >
-                  <div className="flex items-center gap-1">
-                    Horas
-                    {sortBy === 'hours' && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-slate-50"
-                  onClick={() => toggleSort('percentage')}
-                >
-                  <div className="flex items-center gap-1">
-                    % Usado
-                    {sortBy === 'percentage' && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
-                  </div>
-                </TableHead>
-                <TableHead>Tendencia</TableHead>
-                <TableHead>Equipo</TableHead>
-                <TableHead className="w-[100px]">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredClients.map(({ client, stats, prevStats, employees: assignedEmployees }) => {
-                const trend = stats.used - prevStats.used;
-                return (
-                  <TableRow key={client.id} className="group">
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-sm"
-                          style={{ backgroundColor: client.color }}
-                        >
-                          {client.name.charAt(0)}
-                        </div>
-                        <span className="font-medium">{client.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{stats.projects.length}</Badge>
-                    </TableCell>
-                    <TableCell>
+      {/* Vista de lista similar a DeadlinesPage */}
+      <div className="space-y-3">
+        {filteredClients.map(({ client, stats, prevStats, employees: assignedEmployees }) => {
+          const isExpanded = expandedClients.has(client.id);
+          const isOverBudget = stats.percentage > 100;
+          const isNearLimit = stats.percentage > 85 && stats.percentage <= 100;
+          const trend = stats.used - prevStats.used;
+          const unplannedProjects = stats.projects.filter(p => p.percentage === 0);
+          
+          return (
+            <div key={client.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              {/* Cabecera del cliente */}
+              <button
+                onClick={() => toggleClient(client.id)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left group"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                )}
+                <div 
+                  className="w-3 h-3 rounded-full flex-shrink-0" 
+                  style={{ backgroundColor: client.color }}
+                />
+                <span className="font-bold text-slate-800 flex-1 text-left">{client.name}</span>
+                <div className="flex items-center gap-4 flex-shrink-0">
+                  {/* Resumen de horas */}
+                  <div className="text-right">
+                    <div className="flex items-center gap-2">
                       <span className={cn(
-                        "font-medium",
-                        stats.percentage > 100 && "text-red-600",
-                        stats.percentage > 85 && stats.percentage <= 100 && "text-amber-600"
+                        "font-bold text-sm",
+                        isOverBudget && "text-red-600",
+                        isNearLimit && "text-amber-600",
+                        !isOverBudget && !isNearLimit && "text-slate-700"
                       )}>
                         {stats.used.toFixed(1)}h / {stats.budget}h
                       </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Progress 
-                          value={Math.min(stats.percentage, 100)} 
-                          className={cn(
-                            "h-2 w-20",
-                            stats.percentage > 100 && "[&>div]:bg-red-500",
-                            stats.percentage > 85 && stats.percentage <= 100 && "[&>div]:bg-amber-500"
-                          )}
-                        />
-                        <span className="text-xs text-muted-foreground w-10">
-                          {stats.percentage.toFixed(0)}%
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
                       {trend !== 0 && (
                         <span className={cn(
                           "flex items-center gap-0.5 text-xs font-medium",
@@ -721,40 +400,173 @@ export default function ClientsPage() {
                           {Math.abs(trend).toFixed(1)}h
                         </span>
                       )}
-                      {trend === 0 && <span className="text-xs text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        {assignedEmployees.slice(0, 2).map((name, i) => (
-                          <span key={i} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
-                            {name.split(' ')[0]}
-                          </span>
-                        ))}
-                        {assignedEmployees.length > 2 && (
-                          <span className="text-[10px] text-muted-foreground">+{assignedEmployees.length - 2}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Progress 
+                        value={Math.min(stats.percentage, 100)} 
+                        className={cn(
+                          "h-2 w-24",
+                          isOverBudget && "[&>div]:bg-red-500",
+                          isNearLimit && "[&>div]:bg-amber-500",
+                          !isOverBudget && !isNearLimit && "[&>div]:bg-emerald-500"
                         )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailClient(client)}>
+                      />
+                      <span className={cn(
+                        "text-xs font-medium w-10 text-right",
+                        isOverBudget && "text-red-600",
+                        isNearLimit && "text-amber-600"
+                      )}>
+                        {stats.percentage.toFixed(0)}%
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Badges de estado */}
+                  <div className="flex items-center gap-1.5">
+                    {isOverBudget && (
+                      <Badge variant="destructive" className="text-[10px] h-5 gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Excedido
+                      </Badge>
+                    )}
+                    {isNearLimit && !isOverBudget && (
+                      <Badge className="text-[10px] h-5 gap-1 bg-amber-100 text-amber-700 border-amber-200">
+                        <TrendingUp className="h-3 w-3" />
+                        Casi lleno
+                      </Badge>
+                    )}
+                    {unplannedProjects.length > 0 && (
+                      <Badge variant="outline" className="text-[10px] h-5 gap-1 bg-blue-50 text-blue-700 border-blue-200">
+                        <Clock className="h-3 w-3" />
+                        {unplannedProjects.length} sin planificar
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="text-[10px]">
+                      {stats.projects.length} proyecto{stats.projects.length !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                  
+                  {/* Botones de acción */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setDetailClient(client); }}>
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingClient({ ...client })}>
+                      </TooltipTrigger>
+                      <TooltipContent>Ver detalles</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setEditingClient({ ...client }); }}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-600" onClick={() => setDeletingClient(client)}>
+                      </TooltipTrigger>
+                      <TooltipContent>Editar</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600" onClick={(e) => { e.stopPropagation(); setDeletingClient(client); }}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Eliminar</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+              </button>
+              
+              {/* Proyectos del cliente */}
+              {isExpanded && (
+                <div className="border-t divide-y divide-slate-100">
+                  {stats.projects.length > 0 ? (
+                    stats.projects.map(project => {
+                      const isProjectOverBudget = project.percentage > 100;
+                      const isProjectNearLimit = project.percentage > 85 && project.percentage <= 100;
+                      
+                      return (
+                        <div 
+                          key={project.id}
+                          className={cn(
+                            "px-4 py-3 hover:bg-slate-50 transition-colors",
+                            isProjectOverBudget && "bg-red-50/40",
+                            isProjectNearLimit && "bg-amber-50/40"
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div 
+                                className="h-2 w-2 rounded-full flex-shrink-0" 
+                                style={{ backgroundColor: client.color }}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-slate-800 truncate">{project.name}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  {project.used.toFixed(1)}h de {project.budget}h
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <div className="flex items-center gap-2">
+                                <Progress 
+                                  value={Math.min(project.percentage, 100)} 
+                                  className={cn(
+                                    "h-2 w-20",
+                                    isProjectOverBudget && "[&>div]:bg-red-500",
+                                    isProjectNearLimit && "[&>div]:bg-amber-500",
+                                    !isProjectOverBudget && !isProjectNearLimit && "[&>div]:bg-emerald-500"
+                                  )}
+                                />
+                                <span className={cn(
+                                  "text-xs font-medium w-10 text-right",
+                                  isProjectOverBudget && "text-red-600",
+                                  isProjectNearLimit && "text-amber-600",
+                                  !isProjectOverBudget && !isProjectNearLimit && "text-slate-600"
+                                )}>
+                                  {project.percentage.toFixed(0)}%
+                                </span>
+                              </div>
+                              {project.percentage === 0 && (
+                                <Badge variant="outline" className="text-[10px] h-5 bg-blue-50 text-blue-700 border-blue-200">
+                                  Sin planificar
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      Sin proyectos activos
+                    </div>
+                  )}
+                  
+                  {/* Resumen de equipo asignado */}
+                  {assignedEmployees.length > 0 && (
+                    <div className="px-4 py-3 bg-slate-50 border-t">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="text-xs font-medium text-slate-600">Equipo asignado:</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {assignedEmployees.map((name, i) => (
+                            <span 
+                              key={i}
+                              className="text-[10px] bg-white text-slate-600 px-2 py-0.5 rounded-full border border-slate-200"
+                            >
+                              {name}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {/* Empty state */}
       {filteredClients.length === 0 && (

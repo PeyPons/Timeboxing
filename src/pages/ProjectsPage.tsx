@@ -935,16 +935,17 @@ export default function ProjectsPage() {
                               const computed = task.hoursComputed || 0;
                               const taskGain = computed - real;
                               return (
-                                <div key={task.id} className="flex items-center justify-between p-2 bg-white border rounded-lg border-l-4 border-l-emerald-500 opacity-75">
+                                <div key={task.id} className="flex items-center justify-between p-3 bg-white border rounded-lg border-l-4 border-l-emerald-500 opacity-75">
                                   <div className="flex items-center gap-3 min-w-0">
-                                    <Avatar className="h-6 w-6 border shrink-0">
-                                      <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[8px] font-bold">
+                                    <Avatar className="h-7 w-7 border shrink-0">
+                                      <AvatarImage src={emp?.avatarUrl} />
+                                      <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[9px] font-bold">
                                         {emp?.name.substring(0, 2).toUpperCase() || "??"}
                                       </AvatarFallback>
                                     </Avatar>
                                     <div className="min-w-0">
-                                      <p className="text-xs font-medium truncate line-through text-slate-500">{task.taskName}</p>
-                                      <p className="text-[9px] text-slate-400">{emp?.name}</p>
+                                      <p className="text-sm font-medium truncate line-through text-slate-500">{task.taskName}</p>
+                                      <p className="text-[10px] text-slate-400">{emp?.name}</p>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3 text-xs shrink-0">
