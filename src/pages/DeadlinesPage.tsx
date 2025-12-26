@@ -62,6 +62,7 @@ export default function DeadlinesPage() {
   // Estado para rastrear quién está editando qué proyecto
   const [editingLocks, setEditingLocks] = useState<Record<string, { employeeId: string; employeeName: string; lockedAt: string }>>({});
   const lockRefreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lockCleanupIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   const [formData, setFormData] = useState({
     projectId: '',
@@ -821,7 +822,7 @@ export default function DeadlinesPage() {
         await supabase
           .from('project_editing_locks')
           .update({
-            expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+            expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString() // 2 minutos
           })
           .eq('id', existingLock.id);
         return true;
@@ -863,17 +864,25 @@ export default function DeadlinesPage() {
   };
 
   const renewEditLock = async (projectId: string) => {
-    if (!currentUser || !editingProjectId) return;
+    if (!currentUser || editingProjectId !== projectId) return;
     
     try {
-      await supabase
+      const { error } = await supabase
         .from('project_editing_locks')
         .update({
-          expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+          expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString() // 2 minutos de expiración
         })
         .eq('project_id', projectId)
         .eq('employee_id', currentUser.id)
         .eq('month', selectedMonth);
+      
+      if (error) {
+        console.error('Error renovando lock:', error);
+        // Si falla la renovación, puede ser que el lock ya no existe, cancelar edición
+        if (error.code === 'PGRST116') {
+          cancelEditingProject();
+        }
+      }
     } catch (error) {
       console.error('Error renovando lock:', error);
     }
@@ -920,7 +929,7 @@ export default function DeadlinesPage() {
     });
     setExpandedProjects(prev => new Set([...prev, projectId]));
     
-    // Renovar el lock cada 2 minutos mientras se edita
+    // Renovar el lock cada 30 segundos mientras se edita (heartbeat)
     if (lockRefreshIntervalRef.current) {
       clearInterval(lockRefreshIntervalRef.current);
     }
@@ -928,17 +937,44 @@ export default function DeadlinesPage() {
       if (editingProjectId === projectId) {
         renewEditLock(projectId);
       }
-    }, 2 * 60 * 1000);
+    }, 30 * 1000); // Cada 30 segundos
+    
+    // Liberar lock cuando se cierra la ventana/pestaña
+    const handleBeforeUnload = () => {
+      if (editingProjectId === projectId && currentUser) {
+        // Usar sendBeacon para asegurar que se ejecute aunque se cierre la ventana
+        navigator.sendBeacon?.(
+          `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/project_editing_locks?project_id=eq.${projectId}&employee_id=eq.${currentUser.id}&month=eq.${selectedMonth}`,
+          new Blob([], { type: 'application/json' })
+        );
+        // También intentar liberar normalmente
+        releaseEditLock(projectId);
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    // Guardar referencia para poder remover el listener
+    (window as any).__deadlineBeforeUnload = handleBeforeUnload;
   };
 
   const cancelEditingProject = async () => {
-    if (editingProjectId) {
-      await releaseEditLock(editingProjectId);
+    const projectIdToRelease = editingProjectId;
+    
+    if (projectIdToRelease) {
+      await releaseEditLock(projectIdToRelease);
     }
+    
     if (lockRefreshIntervalRef.current) {
       clearInterval(lockRefreshIntervalRef.current);
       lockRefreshIntervalRef.current = null;
     }
+    
+    // Remover listener de beforeunload
+    if ((window as any).__deadlineBeforeUnload) {
+      window.removeEventListener('beforeunload', (window as any).__deadlineBeforeUnload);
+      delete (window as any).__deadlineBeforeUnload;
+    }
+    
     setEditingProjectId(null);
     setInlineFormData({ employeeHours: {}, notes: '', isHidden: false });
   };
