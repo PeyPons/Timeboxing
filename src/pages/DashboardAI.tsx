@@ -28,8 +28,8 @@ interface Message {
 // Preguntas sugeridas para guiar al usuario
 const SUGGESTED_QUESTIONS = [
   { icon: <Users className="w-3 h-3" />, text: "¿Cómo está la carga del equipo?", category: "carga" },
+  { icon: <Target className="w-3 h-3" />, text: "¿Quién suele fallar en sus estimaciones?", category: "fiabilidad" },
   { icon: <AlertTriangle className="w-3 h-3" />, text: "¿Hay dependencias bloqueantes?", category: "dependencias" },
-  { icon: <TrendingDown className="w-3 h-3" />, text: "¿Qué proyectos van lentos?", category: "eficiencia" },
   { icon: <Calendar className="w-3 h-3" />, text: "¿Qué tareas arrastramos de semanas pasadas?", category: "planificacion" },
   { icon: <Zap className="w-3 h-3" />, text: "Dame un resumen ejecutivo de gestión", category: "resumen" },
 ];
@@ -285,7 +285,7 @@ export default function DashboardAI() {
     {
       id: '1',
       role: 'assistant',
-      text: 'Que pasa? Soy **Minguito**, Project Manager. Accedo a los datos para detectar cuellos de botella reales, tareas arrastradas de semanas anteriores y desviaciones de ejecución. Al lío.',
+      text: 'Que pasa? Soy **Minguito**, Project Manager. Accedo a los datos para detectar cuellos de botella, tareas zombies y **analizar quién cumple con lo que promete** (fiabilidad).',
       timestamp: new Date(),
       provider: 'gemini',
       modelName: 'gemini-2.0-flash'
@@ -305,7 +305,6 @@ export default function DashboardAI() {
   // CEREBRO DE MINGUITO: Análisis completo de datos
   // ============================================================
   const analysisData = useMemo(() => {
-    // Datos básicos visuales
     const now = new Date();
     return { 
         month: format(now, "MMMM yyyy", { locale: es }),
@@ -319,7 +318,7 @@ export default function DashboardAI() {
   // ============================================================
   const buildDynamicContext = (userQuestion: string) => {
     const now = new Date();
-    const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 }); // La semana empieza el lunes
+    const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
     const currentMonthDays = getDaysInMonth(now);
     const monthProgress = now.getDate() / currentMonthDays;
 
@@ -331,8 +330,7 @@ export default function DashboardAI() {
     // Filtros temporales
     const monthAllocations = safeAllocations.filter(a => isSameMonth(parseISO(a.weekStartDate), now));
     
-    // 1. DETECCIÓN DE TAREAS ZOMBIE (Semanas Anteriores y NO completadas)
-    // Lógica: Si weekStartDate < currentWeekStart Y status != completed
+    // 1. DETECCIÓN DE TAREAS ZOMBIE
     const zombieTasks = safeAllocations.filter(a => {
       const taskDate = parseISO(a.weekStartDate);
       return a.status !== 'completed' && isBefore(taskDate, currentWeekStart);
@@ -343,11 +341,9 @@ export default function DashboardAI() {
       semana_origen: t.weekStartDate
     }));
 
-    // 2. DETECCIÓN DE DEPENDENCIAS (BLOQUEOS REALES)
-    // Buscamos tareas que son dependencyId de otras tareas pendientes
+    // 2. DETECCIÓN DE DEPENDENCIAS
     const blockingTasks: any[] = [];
     const pendingTasks = safeAllocations.filter(a => a.status !== 'completed');
-    
     pendingTasks.forEach(waitingTask => {
         if (waitingTask.dependencyId) {
             const blocker = safeAllocations.find(a => a.id === waitingTask.dependencyId);
@@ -357,81 +353,111 @@ export default function DashboardAI() {
                     bloqueador: {
                         empleado: safeEmployees.find(e => e.id === blocker.employeeId)?.name,
                         tarea: blocker.taskName || "Tarea sin nombre",
-                        proyecto: safeProjects.find(p => p.id === blocker.projectId)?.name
                     },
                     esperando: {
                         empleado: safeEmployees.find(e => e.id === waitingTask.employeeId)?.name,
                         tarea: waitingTask.taskName || "Tarea sin nombre",
-                        proyecto: safeProjects.find(p => p.id === waitingTask.projectId)?.name
                     }
                 });
             }
         }
     });
 
-    // 3. ANÁLISIS DE PACING DE PROYECTOS (Ejecución vs Tiempo)
-    // No solo dinero, sino ritmo de trabajo.
+    // 3. ANÁLISIS DE PACING (Sin hablar de dinero/ads, solo ritmo de trabajo)
     const projectPacing = safeProjects.filter(p => p.status === 'active' && p.budgetHours > 0).map(p => {
       const projTasks = monthAllocations.filter(a => a.projectId === p.id);
-      // Consumo Real: Horas reales de completadas + Horas asignadas de pendientes (estimación)
       const hoursExecuted = projTasks.reduce((acc, t) => acc + (t.status === 'completed' ? (t.hoursActual || t.hoursAssigned) : 0), 0);
-      const hoursPlanned = projTasks.reduce((acc, t) => acc + t.hoursAssigned, 0);
-      
       const executionPct = hoursExecuted / p.budgetHours;
-      const plannedPct = hoursPlanned / p.budgetHours;
-
       let status = "Normal";
-      // Riesgo de No Entrega: Mes avanzado (>80%) pero ejecución baja (<50%)
       if (monthProgress > 0.8 && executionPct < 0.5) status = "RIESGO DE NO ENTREGA (Lento)";
-      // Riesgo de Desviación: Ejecución supera presupuesto
       if (executionPct > 1) status = "PRESUPUESTO EXCEDIDO";
-      // Riesgo de Quemado Rápido: Mes iniciando (<30%) pero ejecución muy alta (>60%)
-      if (monthProgress < 0.3 && executionPct > 0.6) status = "CONSUMO ACELERADO (Posible falta de horas a fin de mes)";
+      if (monthProgress < 0.3 && executionPct > 0.6) status = "CONSUMO ACELERADO";
 
       if (status !== "Normal") {
         return {
           proyecto: p.name,
-          presupuesto_total: p.budgetHours,
+          presupuesto: p.budgetHours,
           ejecutado: hoursExecuted.toFixed(1),
-          progreso_mes: (monthProgress * 100).toFixed(0) + '%',
           estado: status
         };
       }
       return null;
     }).filter(Boolean);
 
-    // 4. CONFLICTOS DE VACACIONES (Tarea asignada en día de ausencia)
+    // 4. ÍNDICE DE FIABILIDAD (Estimation Accuracy)
+    // Calcula la desviación media entre Horas Asignadas y Horas Reales por empleado
+    const reliabilityStats: Record<string, { totalTasks: number, totalError: number, bias: number, underEstimations: number, overEstimations: number }> = {};
+
+    const completedTasksWithHours = safeAllocations.filter(a => 
+        a.status === 'completed' && 
+        a.hoursActual !== undefined && a.hoursActual !== null &&
+        a.hoursAssigned > 0
+    );
+
+    completedTasksWithHours.forEach(t => {
+        const empId = t.employeeId;
+        if (!reliabilityStats[empId]) {
+            reliabilityStats[empId] = { totalTasks: 0, totalError: 0, bias: 0, underEstimations: 0, overEstimations: 0 };
+        }
+        
+        const diff = (t.hoursActual || 0) - t.hoursAssigned; // + si tardó más, - si tardó menos
+        const absDiff = Math.abs(diff);
+        
+        reliabilityStats[empId].totalTasks++;
+        reliabilityStats[empId].totalError += absDiff;
+        reliabilityStats[empId].bias += diff;
+
+        // Tolerancia de 0.5h
+        if (diff > 0.5) reliabilityStats[empId].underEstimations++; 
+        if (diff < -0.5) reliabilityStats[empId].overEstimations++;
+    });
+
+    const reliabilityReport = Object.entries(reliabilityStats).map(([empId, stats]) => {
+        const empName = safeEmployees.find(e => e.id === empId)?.name || 'Unknown';
+        const avgError = (stats.totalError / stats.totalTasks).toFixed(1);
+        const avgBias = (stats.bias / stats.totalTasks).toFixed(1);
+        
+        let tendency = "Preciso";
+        if (Number(avgBias) > 0.5) tendency = "Tendencia a SUBESTIMAR (Tarda más de lo planeado)";
+        if (Number(avgBias) < -0.5) tendency = "Tendencia a SOBREESTIMAR (Infla tiempos)";
+
+        // Solo mostramos reporte si hay suficientes datos (mínimo 3 tareas)
+        if (stats.totalTasks < 3) return null;
+
+        return {
+            empleado: empName,
+            tareas_analizadas: stats.totalTasks,
+            desviacion_media: avgError + "h",
+            comportamiento: tendency,
+            tareas_retrasadas: stats.underEstimations
+        };
+    }).filter(Boolean);
+
+    // 5. CONFLICTOS DE VACACIONES
     const vacationConflicts: any[] = [];
     safeEmployees.forEach(emp => {
       const empAbsences = safeAbsences.filter(a => a.employeeId === emp.id);
       const empTasks = safeAllocations.filter(a => a.employeeId === emp.id && a.status !== 'completed');
-      
       empTasks.forEach(task => {
         const taskWeekStart = parseISO(task.weekStartDate);
-        // Aproximación: Si la semana de la tarea choca con vacaciones
         const taskWeekEnd = addDays(taskWeekStart, 5); 
-        
         const conflict = empAbsences.find(abs => {
           const absStart = parseISO(abs.startDate);
           const absEnd = parseISO(abs.endDate);
-          // Simple overlap check
           return (taskWeekStart <= absEnd && taskWeekEnd >= absStart);
         });
-
         if (conflict) {
           vacationConflicts.push({
             empleado: emp.name,
-            tarea: task.taskName || 'Tarea sin nombre',
-            proyecto: safeProjects.find(p => p.id === task.projectId)?.name,
-            semana_tarea: task.weekStartDate,
-            vacaciones: `${conflict.startDate} a ${conflict.endDate}`,
-            tipo_ausencia: conflict.type
+            tarea: task.taskName,
+            semana: task.weekStartDate,
+            vacaciones: `${conflict.startDate} a ${conflict.endDate}`
           });
         }
       });
     });
 
-    // 5. DATOS ESPECÍFICOS DE LA PREGUNTA
+    // 6. DATOS ESPECÍFICOS DE LA PREGUNTA
     const lowerQ = userQuestion.toLowerCase();
     const mentionedEmployees = safeEmployees.filter(e => lowerQ.includes(e.name.toLowerCase()));
     
@@ -442,11 +468,7 @@ export default function DashboardAI() {
         const capacity = Number(emp.defaultWeeklyCapacity) || 0;
         const empTasks = monthAllocations.filter(a => a.employeeId === emp.id);
         const assigned = empTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
-        
-        specificContext += `Empleado: ${emp.name}\n`;
-        specificContext += `Capacidad Semanal: ${capacity}h\n`;
-        specificContext += `Total Asignado Mes: ${assigned}h\n`;
-        
+        specificContext += `Empleado: ${emp.name} | Capacidad: ${capacity}h | Asignado Mes: ${assigned}h\n`;
         const isOnVacation = safeAbsences.some(a => {
             const start = parseISO(a.startDate);
             const end = parseISO(a.endDate);
@@ -461,20 +483,23 @@ export default function DashboardAI() {
 
     return `
 REPORTE DE GESTIÓN (MINGUITO AI):
-Fecha: ${format(now, "dd/MM/yyyy")} (Semana empieza: ${format(currentWeekStart, "dd/MM/yyyy")})
+Fecha: ${format(now, "dd/MM/yyyy")}
 Capacidad Semanal Equipo: ${totalCapacity}h | Total Asignado Mes: ${totalAssigned}h
 
-🚨 BLOQUEOS (Dependencias Activas):
-${blockingTasks.length > 0 ? JSON.stringify(blockingTasks, null, 2) : "No hay bloqueos activos registrados."}
+🎯 ÍNDICE DE FIABILIDAD (Precisión en estimaciones):
+${reliabilityReport.length > 0 ? JSON.stringify(reliabilityReport, null, 2) : "Faltan datos de horas reales para calcular fiabilidad."}
 
-🧟 TAREAS ZOMBIE (Semanas Pasadas y NO Completadas):
-${zombieTasks.length > 0 ? JSON.stringify(zombieTasks.slice(0, 7), null, 2) : "Al día. No se arrastran tareas de semanas anteriores."}
+🚨 BLOQUEOS:
+${blockingTasks.length > 0 ? JSON.stringify(blockingTasks, null, 2) : "Sin bloqueos."}
 
-🏝️ CONFLICTOS VACACIONALES (Tareas asignadas durante ausencia):
-${vacationConflicts.length > 0 ? JSON.stringify(vacationConflicts, null, 2) : "Planificación correcta respecto a ausencias."}
+🧟 TAREAS ZOMBIE:
+${zombieTasks.length > 0 ? JSON.stringify(zombieTasks.slice(0, 5), null, 2) : "Al día."}
 
-📊 PACING DE PROYECTOS (Ritmo de Ejecución vs Tiempo):
-${projectPacing.length > 0 ? JSON.stringify(projectPacing, null, 2) : "El ritmo de ejecución parece alineado con el mes."}
+🏝️ CONFLICTOS VACACIONALES:
+${vacationConflicts.length > 0 ? JSON.stringify(vacationConflicts, null, 2) : "Ok."}
+
+📊 PACING PROYECTOS:
+${projectPacing.length > 0 ? JSON.stringify(projectPacing, null, 2) : "Ok."}
 
 ${specificContext}
 `;
@@ -498,22 +523,19 @@ ${specificContext}
       const dataContext = buildDynamicContext(input);
       
       const systemPrompt = `
-ACTÚA COMO: Minguito, un Project Manager Senior, sarcástico pero extremadamente útil y analítico.
-TU OBJETIVO: Detectar ineficiencias de gestión, no solo dar datos.
+ACTÚA COMO: Minguito, un Project Manager Senior, sarcástico pero analítico.
+TU OBJETIVO: Detectar ineficiencias y problemas de planificación.
 
 CONTEXTO DE DATOS (JSON):
 ${dataContext}
 
 INSTRUCCIONES CLAVE:
-1. **TAREAS ZOMBIE**: Si ves tareas en "TAREAS ZOMBIE", critica que se arrastren de semanas pasadas. Eso ensucia el sprint actual. Pregunta por qué no se cerraron.
-2. **PACING**: Usa la sección "PACING DE PROYECTOS". Si estamos a fin de mes y hay proyectos con poca ejecución, avisa del riesgo de no entrega ("Under-delivery"). Si es principio de mes y van muy rápido, avisa de agotamiento de recursos.
-3. **DEPENDENCIAS**: Si hay "BLOQUEOS", sé muy claro: "X está bloqueando a Y en la tarea Z". Es prioritario resolverlo.
-4. **VACACIONES**: Si alguien tiene tareas y está de vacaciones, es un error de planificación grave. Señálalo.
+1. **FIABILIDAD**: Mira el "ÍNDICE DE FIABILIDAD". Si alguien tiene tendencia a "Subestimar" (tardar más), avisa que sus planes son poco creíbles. Si "Sobreestima", está inflando presupuestos.
+2. **TAREAS ZOMBIE**: Critica las tareas viejas no cerradas.
+3. **PACING**: Avisa si un proyecto va muy lento o consume recursos demasiado rápido.
+4. **VACACIONES**: Alerta roja si asignan tareas a gente ausente.
 
-FORMATO:
-- Markdown limpio.
-- Negritas para nombres y proyectos.
-- Sé conciso. Ve al grano del problema.
+FORMATO: Markdown limpio. Negritas para nombres. Sé conciso.
 
 PREGUNTA DEL USUARIO: "${input}"
       `;
