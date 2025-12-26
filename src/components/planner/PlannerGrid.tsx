@@ -11,124 +11,25 @@ import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@
 import { Badge } from '@/components/ui/badge';
 import { startOfMonth, endOfMonth, parseISO, isSameMonth, max, min, format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { AIService } from '@/services/aiService';
+import { ErrorService } from '@/services/errorService';
+import { logger } from '@/utils/logger';
 
 // ============================================================
-// SISTEMA DE IA CON FALLBACK EN CASCADA
-// Orden: 1) Gemini → 2) OpenRouter → 3) Coco
+// SISTEMA DE IA (usa servicio centralizado)
 // ============================================================
-
-type AIProvider = 'gemini' | 'openrouter' | 'coco';
 
 interface AIResponse {
   text: string;
-  provider: AIProvider;
-}
-
-async function callGeminiAPI(prompt: string, apiKey: string): Promise<AIResponse> {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-  const result = await model.generateContent(prompt);
-  return { text: result.response.text(), provider: 'gemini' };
-}
-
-async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<AIResponse> {
-  const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-  
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: 'POST',
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": window.location.origin,
-      "X-Title": "Timeboxing App"
-    },
-    body: JSON.stringify({
-      model: "google/gemini-2.0-flash-exp:free",
-      messages: [
-        {
-          role: "user",
-          content: prompt
-        }
-      ]
-    }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(errorData)}`);
-  }
-
-  const responseData = await response.json();
-  
-  if (responseData?.choices?.[0]?.message?.content) {
-    return { text: responseData.choices[0].message.content, provider: 'openrouter' };
-  } else {
-    throw new Error('Respuesta inesperada de OpenRouter API');
-  }
-}
-
-async function callCocoAPI(prompt: string): Promise<AIResponse> {
-  const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
-  
-  const response = await fetch(COCO_API_URL, {
-    method: 'POST',
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: prompt,
-      noAuth: "true",
-      action: "text/generateResume",
-      app: "CHATBOT",
-      rol: "user",
-      method: "POST",
-      language: "es",
-    }),
-  });
-
-  if (!response.ok) throw new Error(`Coco API error: ${response.status}`);
-  const data = await response.json();
-  if (data?.data) return { text: data.data, provider: 'coco' };
-  throw new Error('Respuesta inesperada de Coco API');
+  provider: 'gemini' | 'openrouter' | 'coco';
 }
 
 async function callAI(prompt: string): Promise<AIResponse> {
-  const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
-
-  // Intento 1: Gemini
-  if (geminiApiKey) {
-    try {
-      console.log('🔵 [Insights] Intentando con Gemini...');
-      const result = await callGeminiAPI(prompt, geminiApiKey);
-      console.log('✅ [Insights] Gemini respondió correctamente');
-      return result;
-    } catch (error: any) {
-      console.warn('⚠️ [Insights] Gemini falló:', error.message);
-    }
-  }
-
-  // Intento 2: OpenRouter
-  if (openRouterApiKey) {
-    try {
-      console.log('🟣 [Insights] Intentando con OpenRouter...');
-      const result = await callOpenRouterAPI(prompt, openRouterApiKey);
-      console.log('✅ [Insights] OpenRouter respondió correctamente');
-      return result;
-    } catch (error: any) {
-      console.warn('⚠️ [Insights] OpenRouter falló:', error.message);
-    }
-  }
-
-  // Intento 3: Coco Solution (fallback final)
-  try {
-    console.log('🥥 [Insights] Intentando con Coco Solution (fallback)...');
-    const result = await callCocoAPI(prompt);
-    console.log('✅ [Insights] Coco Solution respondió correctamente');
-    return result;
-  } catch (error: any) {
-    console.error('❌ [Insights] Todos los proveedores fallaron');
-    throw new Error('No se pudo generar el análisis. Todos los proveedores de IA fallaron.');
-  }
+  const result = await AIService.callWithFallback(prompt, 'PlannerGrid');
+  return {
+    text: result.text,
+    provider: result.provider
+  };
 }
 
 export function PlannerGrid() {
@@ -246,7 +147,7 @@ export function PlannerGrid() {
                     blockingOthers: blocking
                 };
             } catch (error) {
-                console.error(`Error analyzing employee ${e.id}:`, error);
+                ErrorService.handleSilently(error, `PlannerGrid.analyzeEmployee.${e.id}`);
                 return {
                     name: e.name || 'Sin nombre',
                     department: 'N/A',
@@ -351,7 +252,7 @@ Responde SOLO JSON válido:
         }
 
     } catch (e: any) {
-        console.error("Error Minguito:", e);
+        ErrorService.handle(e, 'PlannerGrid.generateInsights');
         setInsights([{ type: 'warning', text: 'Minguito se ha quedado frito. Inténtalo de nuevo.' }]);
     } finally {
         setIsAnalyzing(false);

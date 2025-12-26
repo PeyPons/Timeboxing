@@ -1,6 +1,8 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { AIService } from '@/services/aiService';
+import { ErrorService } from '@/services/errorService';
+import { logger } from '@/utils/logger';
+import { CONSTANTS } from '@/config/constants';
 
 // Definición de tipos
 export interface CampaignData {
@@ -31,220 +33,6 @@ export interface HistoricalData {
   conversions_value: number;
   cpa: number;
   roas: number;
-}
-
-// ============================================================
-// LISTA DE MODELOS OPENROUTER (TODOS LOS GRATUITOS + FALLBACKS)
-// ============================================================
-const OPENROUTER_MODEL_CHAIN = [
-  "google/gemini-2.0-flash-exp:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "deepseek/deepseek-r1-0528:free",
-  "meta-llama/llama-3.1-405b-instruct:free",
-  "nousresearch/hermes-3-llama-3.1-405b:free",
-  "allenai/olmo-3.1-32b-think:free",
-  "alibaba/tongyi-deepresearch-30b-a3b:free",
-  "google/gemma-3-27b-it:free",
-  "mistralai/mistral-small-3.1-24b-instruct:free",
-  "nvidia/nemotron-3-nano-30b-a3b:free",
-  "qwen/qwen3-coder:free",
-  "allenai/olmo-3-32b-think:free",
-  "nex-agi/deepseek-v3.1-nex-n1:free",
-  "kwaipilot/kat-coder-pro:free",
-  "google/gemma-3-12b-it:free",
-  "google/gemma-3-4b-it:free",
-  "xiaomi/mimo-v2-flash:free",
-  "mistralai/mistral-7b-instruct:free",
-  "meta-llama/llama-3.2-3b-instruct:free",
-  "qwen/qwen-2.5-vl-7b-instruct:free",
-  "microsoft/phi-3-medium-128k-instruct:free",
-  "cerebras/llama3.1-70b", 
-  "openai/gpt-5-mini"      
-];
-
-// ============================================================
-// SISTEMA DE PROVEEDORES DE IA CON FALLBACK
-// ============================================================
-
-/**
- * Llama a la API de Gemini
- */
-async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'gemini'; modelName: string }> {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const modelName = "gemini-2.0-flash";
-  const model = genAI.getGenerativeModel({ model: modelName });
-  const result = await model.generateContent(prompt);
-  return { text: result.response.text(), provider: 'gemini', modelName: modelName };
-}
-
-/**
- * Llama a la API de OpenRouter con estrategia por lotes
- */
-async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter'; modelName: string }> {
-  const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-  const BATCH_SIZE = 3; 
-
-  const chunkArray = (arr: string[], size: number) => {
-    const chunks = [];
-    for (let i = 0; i < arr.length; i += size) {
-      chunks.push(arr.slice(i, i + size));
-    }
-    return chunks;
-  };
-
-  const modelBatches = chunkArray(OPENROUTER_MODEL_CHAIN, BATCH_SIZE);
-
-  for (let i = 0; i < modelBatches.length; i++) {
-    const currentBatch = modelBatches[i];
-    console.log(`🟣 [OpenRouter] Probando lote ${i + 1}/${modelBatches.length}:`, currentBatch);
-
-    try {
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": window.location.origin,
-          "X-Title": "Timeboxing App"
-        },
-        body: JSON.stringify({
-          models: currentBatch,
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.7,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Status ${response.status}: ${errorText}`);
-      }
-
-      const responseData = await response.json();
-      const usedModel = responseData.model || "unknown-model";
-
-      if (responseData?.choices?.[0]?.message?.content) {
-        console.log(`✅ [OpenRouter] Éxito en lote ${i + 1}. Respondió: ${usedModel}`);
-        return { 
-          text: responseData.choices[0].message.content, 
-          provider: 'openrouter', 
-          modelName: usedModel 
-        };
-      }
-      
-      console.warn(`⚠️ Respuesta vacía en lote ${i+1}, probando siguiente...`);
-
-    } catch (error: any) {
-      console.warn(`⚠️ Fallo en lote ${i + 1} de OpenRouter: ${error.message}`);
-    }
-  }
-
-  throw new Error("Todos los intentos y lotes de OpenRouter han fallado.");
-}
-
-/**
- * Llama a la API de Coco Solution
- */
-async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco'; modelName: string }> {
-  const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
-  const simplifiedPrompt = `Responde breve y claro en texto plano (sin markdown): ${prompt.substring(0, 1000)}`;
-  const payload = { message: simplifiedPrompt, noAuth: "true", action: "text/generateResume", app: "CHATBOT", rol: "user", method: "POST", language: "es" };
-  
-  const response = await fetch(COCO_API_URL, {
-    method: 'POST',
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Coco API error: ${response.status}`);
-  }
-
-  const responseData = await response.json();
-  
-  if (responseData && responseData.data) {
-    let cleanText = responseData.data
-      .replace(/```/g, '')                
-      .replace(/<[^>]*>/g, '')             
-      .replace(/^\s*[\*\-]\s*$/gm, '')     
-      .replace(/\*\*/g, '')                
-      .replace(/\*\s*\n/g, '\n')           
-      .replace(/^\*\s*/gm, '- ')           
-      .replace(/<br\s*\/?>/gi, '\n')       
-      .replace(/\n{3,}/g, '\n\n')          
-      .trim();
-    
-    if (cleanText.length < 5) throw new Error('Respuesta de Coco insuficiente');
-
-    return { text: cleanText, provider: 'coco', modelName: 'Coco Custom' };
-  } else {
-    throw new Error('Respuesta inesperada de Coco API');
-  }
-}
-
-/**
- * Sistema de IA con fallback en cascada:
- * 1. Gemini (si tiene API key)
- * 2. OpenRouter (si tiene API key)
- * 3. Coco Solution (fallback final)
- */
-async function callAIWithFallback(prompt: string): Promise<{ text: string; provider: 'gemini' | 'openrouter' | 'coco'; modelName: string }> {
-  const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
-
-  // Intento 1: Gemini
-  if (geminiApiKey) {
-    try {
-      console.log('🔵 Intentando con Gemini...');
-      const result = await callGeminiAPI(prompt, geminiApiKey);
-      console.log('✅ Gemini respondió correctamente');
-      return result;
-    } catch (error: any) {
-      console.warn('⚠️ Gemini falló:', error.message);
-    }
-  }
-
-  // Intento 2: OpenRouter
-  if (openRouterApiKey) {
-    try {
-      console.log('🟣 Intentando con OpenRouter (Estrategia por Lotes)...');
-      const result = await callOpenRouterAPI(prompt, openRouterApiKey);
-      return result;
-    } catch (error: any) {
-      console.warn('⚠️ OpenRouter falló completamente:', error.message);
-    }
-  }
-
-  // Intento 3: Coco Solution (fallback final)
-  try {
-    console.log('🥥 Intentando con Coco Solution (fallback)...');
-    const result = await callCocoAPI(prompt);
-    console.log('✅ Coco Solution respondió correctamente');
-    return result;
-  } catch (error: any) {
-    console.error('❌ Todos los proveedores fallaron');
-    throw new Error('No se pudo generar el análisis. Todos los proveedores de IA fallaron.');
-  }
-}
-
-/**
- * Limpia y formatea el texto de la IA para que sea profesional
- */
-function cleanAIResponse(text: string): string {
-  return text
-    // Eliminar asteriscos de markdown que no se renderizan bien
-    .replace(/\*\*/g, '')
-    // Convertir listas con asteriscos a formato más limpio
-    .replace(/^\*\s+/gm, '• ')
-    .replace(/^-\s+/gm, '• ')
-    // Limpiar múltiples espacios
-    .replace(/  +/g, ' ')
-    // Limpiar múltiples saltos de línea
-    .replace(/\n{3,}/g, '\n\n')
-    // Eliminar código markdown
-    .replace(/```[\s\S]*?```/g, '')
-    // Limpiar HTML
-    .replace(/<[^>]*>/g, '')
-    .trim();
 }
 
 // ============================================================
@@ -299,7 +87,7 @@ export const generateAdsSummary = async (
   // Formatear logs de cambios si existen
   const changesSummary = changeLogs && changeLogs.length > 0
     ? `\n\nACCIONES REALIZADAS DURANTE EL MES (${changeLogs.length} cambios):\n` +
-      changeLogs.slice(0, 10).map((log, idx) => 
+      changeLogs.slice(0, CONSTANTS.LIMITS.MAX_CHANGE_LOGS).map((log, idx) => 
         `  ${idx + 1}. ${format(new Date(log.change_date), 'dd/MM/yyyy')} - ${log.change_type}: ${log.campaign_name || log.resource_name}${log.details ? ` (${log.details})` : ''}`
       ).join('\n')
     : '';
@@ -336,14 +124,16 @@ FORMATO REQUERIDO:
 
 IMPORTANTE: El texto debe estar listo para imprimir en un PDF profesional. No uses formato markdown, asteriscos, ni código.`;
 
-  // Llamar al sistema de IA con fallback
+  // Llamar al sistema de IA con fallback usando el servicio centralizado
   try {
-    const result = await callAIWithFallback(prompt);
+    const result = await AIService.callWithFallback(prompt, 'AdsReport');
     // Limpiar la respuesta para que sea profesional
-    const cleanedText = cleanAIResponse(result.text);
+    const cleanedText = AIService.cleanAIResponse(result.text);
     return { ...result, text: cleanedText };
   } catch (error: any) {
-    console.error("Error al generar análisis:", error);
+    ErrorService.handle(error, 'generateAdsSummary', {
+      userMessage: 'Lo siento, hubo un error al conectar con los servicios de IA para generar el análisis. Por favor, verifica tu conexión o intenta más tarde.'
+    });
     return {
       text: "Lo siento, hubo un error al conectar con los servicios de IA para generar el análisis. Por favor, verifica tu conexión o intenta más tarde.",
       provider: 'coco',
@@ -393,11 +183,11 @@ Genera un análisis breve (2-3 párrafos) con:
 FORMATO: Texto plano profesional, sin markdown ni asteriscos. Usa viñetas (•) para listas.`;
 
   try {
-    const result = await callAIWithFallback(prompt);
-    const cleanedText = cleanAIResponse(result.text);
+    const result = await AIService.callWithFallback(prompt, 'CampaignAnalysis');
+    const cleanedText = AIService.cleanAIResponse(result.text);
     return { ...result, text: cleanedText };
   } catch (error: any) {
-    console.error("Error al generar análisis de campaña:", error);
+    ErrorService.handle(error, 'generateCampaignAnalysis');
     return {
       text: "Error al generar el análisis de esta campaña.",
       provider: 'coco',
