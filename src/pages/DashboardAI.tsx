@@ -12,7 +12,7 @@ import {
   BarChart3, UserX, Link, CheckCircle2, XCircle, Cpu
 } from 'lucide-react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { format, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInDays, addDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInDays, addDays, getDaysInMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
@@ -388,7 +388,7 @@ export default function DashboardAI() {
     {
       id: '1',
       role: 'assistant',
-      text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: cargas, bloqueos, chapuzas, proyectos hundidos... Pregunta lo que quieras, pero preparate para la verdad. Quien la esta liando hoy?',
+      text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: desviaciones, bloqueos por vacaciones y proyectos quemados. Pregunta lo que quieras.',
       timestamp: new Date(),
       provider: 'gemini',
       modelName: 'gemini-2.0-flash'
@@ -408,221 +408,150 @@ export default function DashboardAI() {
   // CEREBRO DE MINGUITO: Análisis completo de datos
   // ============================================================
   const analysisData = useMemo(() => {
+    // Calculamos solo datos básicos para el encabezado visual si es necesario
     const now = new Date();
-    const safeEmployees = employees || [];
-    const safeAllocations = allocations || [];
-    const safeProjects = projects || [];
-    const safeClients = clients || [];
-    const safeAbsences = absences || [];
-    const safeTeamEvents = teamEvents || [];
-    
-    const activeEmployees = safeEmployees.filter(e => e.isActive);
-    const activeProjects = safeProjects.filter(p => p.status === 'active');
-    
-    const monthAllocations = safeAllocations.filter(a => 
-      isSameMonth(parseISO(a.weekStartDate), now)
-    );
-    
-    const completedTasks = monthAllocations.filter(a => a.status === 'completed');
-    const pendingTasks = monthAllocations.filter(a => a.status !== 'completed');
-
-    const employeeAnalysis = activeEmployees.map(emp => {
-      const load = getEmployeeMonthlyLoad(emp.id, now.getFullYear(), now.getMonth());
-      const empTasks = monthAllocations.filter(a => a.employeeId === emp.id);
-      const empCompleted = empTasks.filter(a => a.status === 'completed');
-      const empPending = empTasks.filter(a => a.status !== 'completed');
-      
-      const totalReal = empCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
-      const totalComp = empCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
-      const totalEst = empCompleted.reduce((sum, a) => sum + a.hoursAssigned, 0);
-      const efficiency = totalReal > 0 ? ((totalComp - totalReal) / totalReal * 100) : 0;
-      
-      const blocking = empPending.filter(task => 
-        safeAllocations.some(other => other.dependencyId === task.id && other.status !== 'completed')
-      );
-      
-      const waitingFor = empPending.filter(task => {
-        if (!task.dependencyId) return false;
-        const dep = safeAllocations.find(a => a.id === task.dependencyId);
-        return dep && dep.status !== 'completed';
-      });
-
-      // Cálculo seguro de capacidad individual (evita NaN)
-      const safeCapacity = Number(emp.capacity) || 0;
-
-      return {
-        id: emp.id,
-        name: emp.name,
-        capacity: safeCapacity,
-        assigned: load.totalAssigned,
-        completed: empCompleted.length,
-        pending: empPending.length,
-        realHours: totalReal,
-        computedHours: totalComp,
-        estimatedHours: totalEst,
-        efficiency: efficiency,
-        blocking: blocking.length,
-        waitingFor: waitingFor.length,
-        overloaded: load.totalAssigned > safeCapacity,
-        underutilized: load.totalAssigned < safeCapacity * 0.7
-      };
-    });
-
-    const projectAnalysis = activeProjects.map(proj => {
-      const projTasks = monthAllocations.filter(a => a.projectId === proj.id);
-      const projCompleted = projTasks.filter(a => a.status === 'completed');
-      const projPending = projTasks.filter(a => a.status !== 'completed');
-      
-      const totalAssigned = projTasks.reduce((sum, a) => sum + a.hoursAssigned, 0);
-      const totalReal = projCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
-      const totalBudget = Number(proj.totalBudget) || 0; // Fix NaN en presupuesto
-      
-      const burnRate = totalBudget > 0 ? (totalReal / totalBudget * 100) : 0;
-
-      return {
-        id: proj.id,
-        name: proj.name,
-        client: safeClients.find(c => c.id === proj.clientId)?.name || 'Sin cliente',
-        totalTasks: projTasks.length,
-        completed: projCompleted.length,
-        pending: projPending.length,
-        totalAssigned,
-        totalReal,
-        totalBudget,
-        burnRate,
-        overBudget: totalReal > totalBudget,
-        completion: projTasks.length > 0 ? (projCompleted.length / projTasks.length * 100) : 0
-      };
-    });
-
-    // Fix NaN en Capacidad Total del equipo
-    const totalCapacity = activeEmployees.reduce((sum, e) => sum + (Number(e.capacity) || 0), 0);
-    const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-    const utilizationRate = totalCapacity > 0 ? (totalAssigned / totalCapacity * 100) : 0;
-    
-    const overloadedEmployees = employeeAnalysis.filter(e => e.overloaded);
-    const underutilizedEmployees = employeeAnalysis.filter(e => e.underutilized);
-    const blockingEmployees = employeeAnalysis.filter(e => e.blocking > 0);
-
-    const monthAbsences = safeAbsences.filter(a => 
-      isSameMonth(parseISO(a.startDate), now) || isSameMonth(parseISO(a.endDate), now)
-    );
-    
-    const monthEvents = safeTeamEvents.filter(e => 
-      isSameMonth(parseISO(e.date), now)
-    );
-
-    return {
-      month: format(now, "MMMM yyyy", { locale: es }),
-      employees: employeeAnalysis,
-      projects: projectAnalysis,
-      metrics: {
-        totalCapacity,
-        totalAssigned,
-        utilizationRate,
-        completedTasks: completedTasks.length,
-        pendingTasks: pendingTasks.length,
-        overloadedCount: overloadedEmployees.length,
-        underutilizedCount: underutilizedEmployees.length,
-        blockingCount: blockingEmployees.length
-      },
-      absences: monthAbsences,
-      events: monthEvents,
-      alerts: {
-        critical: overloadedEmployees.length + blockingEmployees.length,
-        warning: underutilizedEmployees.length + projectAnalysis.filter(p => p.overBudget).length
-      }
+    return { 
+        month: format(now, "MMMM yyyy", { locale: es }),
+        employeesCount: employees.length,
+        projectsCount: projects.length
     };
-  }, [employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad]);
+  }, [employees, projects]);
 
   // ============================================================
-  // GENERACIÓN DE CONTEXTO DINÁMICO (LA CLAVE)
+  // GENERACIÓN DE CONTEXTO DE NEGOCIO (LA CLAVE)
   // ============================================================
   const buildDynamicContext = (userQuestion: string) => {
     const now = new Date();
     const safeEmployees = employees || [];
     const safeAllocations = allocations || [];
     const safeProjects = projects || [];
+    const safeAbsences = absences || [];
     
-    // 1. ANÁLISIS DE INTENCIÓN (Búsqueda de entidades mencionadas)
+    // Filtros temporales
+    const monthAllocations = safeAllocations.filter(a => isSameMonth(parseISO(a.weekStartDate), now));
+    
+    // 1. DETECCIÓN DE TAREAS ZOMBIE (Antiguas y sin completar)
+    const zombieTasks = safeAllocations.filter(a => 
+      a.status !== 'completed' && 
+      differenceInDays(now, parseISO(a.weekStartDate)) > 14 // Más de 2 semanas
+    ).map(t => ({
+      tarea: t.taskName || 'Sin nombre',
+      empleado: safeEmployees.find(e => e.id === t.employeeId)?.name,
+      proyecto: safeProjects.find(p => p.id === t.projectId)?.name,
+      dias_retraso: differenceInDays(now, parseISO(t.weekStartDate))
+    }));
+
+    // 2. DETECCIÓN DE DESVIACIONES (Horas Reales > Asignadas)
+    const inefficientTasks = monthAllocations.filter(a => 
+      a.status === 'completed' && (a.hoursActual || 0) > a.hoursAssigned
+    ).map(t => ({
+      tarea: t.taskName,
+      empleado: safeEmployees.find(e => e.id === t.employeeId)?.name,
+      horas_presupuestadas: t.hoursAssigned,
+      horas_reales: t.hoursActual,
+      desviacion: ((t.hoursActual! - t.hoursAssigned) / t.hoursAssigned * 100).toFixed(0) + '%'
+    }));
+
+    // 3. ANÁLISIS DE PACING DE PROYECTOS (Burn Rate)
+    const daysInMonth = getDaysInMonth(now);
+    const currentDay = now.getDate();
+    const monthProgressPct = currentDay / daysInMonth;
+
+    const riskyProjects = safeProjects.filter(p => p.status === 'active' && p.budgetHours > 0).map(p => {
+      const projTasks = monthAllocations.filter(a => a.projectId === p.id);
+      const consumed = projTasks.reduce((acc, t) => acc + (t.status === 'completed' ? (t.hoursActual || t.hoursAssigned) : t.hoursAssigned), 0); // Estimamos consumo con asignado si no está completa
+      const burnPct = consumed / p.budgetHours;
+      
+      // Es arriesgado si el consumo supera al progreso del mes en un 20% margen
+      if (burnPct > (monthProgressPct + 0.15)) {
+        return {
+          proyecto: p.name,
+          presupuesto: p.budgetHours,
+          consumido: consumed.toFixed(1),
+          porcentaje_gasto: (burnPct * 100).toFixed(0) + '%',
+          porcentaje_mes: (monthProgressPct * 100).toFixed(0) + '%',
+          estado: 'QUEMANDO PRESUPUESTO RÁPIDO 🔥'
+        };
+      }
+      return null;
+    }).filter(Boolean);
+
+    // 4. CONFLICTOS DE VACACIONES (Tarea asignada en día de ausencia)
+    const vacationConflicts: any[] = [];
+    safeEmployees.forEach(emp => {
+      const empAbsences = safeAbsences.filter(a => a.employeeId === emp.id);
+      const empTasks = safeAllocations.filter(a => a.employeeId === emp.id && a.status !== 'completed');
+      
+      empTasks.forEach(task => {
+        const taskDate = parseISO(task.weekStartDate);
+        const conflict = empAbsences.find(abs => {
+          const start = parseISO(abs.startDate);
+          const end = parseISO(abs.endDate);
+          return taskDate >= start && taskDate <= end;
+        });
+
+        if (conflict) {
+          vacationConflicts.push({
+            empleado: emp.name,
+            tarea: task.taskName || 'Tarea sin nombre',
+            proyecto: safeProjects.find(p => p.id === task.projectId)?.name || 'Sin proyecto',
+            horas: task.hoursAssigned,
+            fecha_tarea: task.weekStartDate,
+            vacaciones: `${conflict.startDate} a ${conflict.endDate}`,
+            tipo: conflict.type
+          });
+        }
+      });
+    });
+
+    // 5. DATOS ESPECÍFICOS DE LA PREGUNTA
     const lowerQ = userQuestion.toLowerCase();
     const mentionedEmployees = safeEmployees.filter(e => lowerQ.includes(e.name.toLowerCase()));
-    const mentionedProjects = safeProjects.filter(p => lowerQ.includes(p.name.toLowerCase()));
     
-    // 2. DATOS ESPECÍFICOS (Solo si se mencionan)
-    let detailedData = "";
-    
+    let specificContext = "";
     if (mentionedEmployees.length > 0) {
-      detailedData += "\n*** DETALLE PROFUNDO DE EMPLEADOS MENCIONADOS ***\n";
+      specificContext = "\n*** DATOS DE EMPLEADOS MENCIONADOS ***\n";
       mentionedEmployees.forEach(emp => {
-        // Buscar TODAS las tareas de este empleado este mes
-        const empTasks = safeAllocations.filter(a => 
-          a.employeeId === emp.id && isSameMonth(parseISO(a.weekStartDate), now)
-        );
+        // FIX CRÍTICO: Usar defaultWeeklyCapacity en lugar de capacity (que no existe)
+        const capacity = Number(emp.defaultWeeklyCapacity) || 0;
+        const empTasks = monthAllocations.filter(a => a.employeeId === emp.id);
+        const assigned = empTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
         
-        detailedData += `Empleado: ${emp.name}\n`;
-        detailedData += `Tareas Detalladas:\n${JSON.stringify(empTasks.map(t => ({
-          proyecto: safeProjects.find(p => p.id === t.projectId)?.name || 'Sin proyecto',
-          horas: t.hoursAssigned,
-          estado: t.status, // 'pending', 'completed'
-          fecha: t.weekStartDate
-        })), null, 2)}\n\n`;
+        specificContext += `Empleado: ${emp.name}\n`;
+        specificContext += `Capacidad Base: ${capacity}h\n`;
+        specificContext += `Asignado Mes: ${assigned}h\n`;
+        // Detectar si está en vacaciones AHORA
+        const isOnVacation = safeAbsences.some(a => {
+            const start = parseISO(a.startDate);
+            const end = parseISO(a.endDate);
+            return a.employeeId === emp.id && now >= start && now <= end;
+        });
+        if (isOnVacation) specificContext += "ESTADO ACTUAL: DE VACACIONES (Ausencia activa hoy)\n";
       });
     }
 
-    if (mentionedProjects.length > 0) {
-      detailedData += "\n*** DETALLE PROFUNDO DE PROYECTOS MENCIONADOS ***\n";
-      mentionedProjects.forEach(proj => {
-        const projTasks = safeAllocations.filter(a => a.projectId === proj.id);
-        const projCompleted = projTasks.filter(a => a.status === 'completed');
-        
-        detailedData += `Proyecto: ${proj.name}\n`;
-        detailedData += `Estado: ${proj.status}\n`;
-        detailedData += `Presupuesto: ${proj.totalBudget}h\n`;
-        detailedData += `Consumido: ${projTasks.reduce((acc, t) => acc + (t.status === 'completed' ? (t.hoursActual || t.hoursAssigned) : 0), 0)}h\n`;
-        detailedData += `Tareas Pendientes Clave:\n${JSON.stringify(projTasks.filter(t => t.status !== 'completed').slice(0, 5).map(t => ({
-          asignado_a: safeEmployees.find(e => e.id === t.employeeId)?.name,
-          horas: t.hoursAssigned,
-          fecha: t.weekStartDate
-        })), null, 2)}\n\n`;
-      });
-    }
-
-    // 3. DATOS GENERALES (Siempre presentes, pero resumidos)
-    const monthAllocations = safeAllocations.filter(a => isSameMonth(parseISO(a.weekStartDate), now));
-    const totalCapacity = safeEmployees.filter(e => e.isActive).reduce((sum, e) => sum + (Number(e.capacity) || 0), 0); // Fix NaN aquí también
+    // FIX CRÍTICO: Calcular capacidad total usando la propiedad correcta
+    const totalCapacity = safeEmployees.filter(e => e.isActive).reduce((sum, e) => sum + (Number(e.defaultWeeklyCapacity) || 0), 0);
     const totalAssigned = monthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-    
-    // Top 5 tareas bloqueadas o pendientes (para dar salseo si no hay preguntas específicas)
-    const topPendingTasks = monthAllocations
-      .filter(a => a.status !== 'completed')
-      .sort((a, b) => b.hoursAssigned - a.hoursAssigned)
-      .slice(0, 5)
-      .map(t => ({
-        tarea: `Asignación de ${t.hoursAssigned}h`,
-        responsable: safeEmployees.find(e => e.id === t.employeeId)?.name,
-        proyecto: safeProjects.find(p => p.id === t.projectId)?.name
-      }));
 
     return `
-DATOS DEL SISTEMA (MES ACTUAL):
-- Fecha: ${format(now, "dd/MM/yyyy")}
-- Capacidad Total: ${totalCapacity}h | Asignado: ${totalAssigned}h (${totalCapacity > 0 ? ((totalAssigned/totalCapacity)*100).toFixed(1) : 0}%)
-- Empleados Activos: ${safeEmployees.filter(e => e.isActive).length}
-- Proyectos Activos: ${safeProjects.filter(p => p.status === 'active').length}
+REPORTE DE INTELIGENCIA DE NEGOCIO (MINGUITO AI):
+Fecha: ${format(now, "dd/MM/yyyy")}
+Capacidad Total Real (Semanal): ${totalCapacity}h | Asignado Total Mes: ${totalAssigned}h
 
-TOP 5 TAREAS PENDIENTES/ATASCADAS (Úsalas si preguntas por problemas generales):
-${JSON.stringify(topPendingTasks, null, 2)}
+🚨 ALERTAS DE GESTIÓN (Prioridad Alta - Conflictos Vacacionales):
+${vacationConflicts.length > 0 ? JSON.stringify(vacationConflicts, null, 2) : "Ningún conflicto de vacaciones detectado."}
 
-${detailedData}
+🔥 PROYECTOS EN RIESGO (Overburn - Gastando más de lo debido):
+${riskyProjects.length > 0 ? JSON.stringify(riskyProjects, null, 2) : "El ritmo de gasto parece saludable."}
 
-AUSENCIAS:
-${JSON.stringify(absences?.filter(a => isSameMonth(parseISO(a.startDate), now)).map(a => ({
-  empleado: safeEmployees.find(e => e.id === a.employeeId)?.name,
-  motivo: a.reason,
-  desde: a.startDate,
-  hasta: a.endDate
-})), null, 2)}
+🧟 TAREAS ZOMBIE (>14 días sin cerrar):
+${zombieTasks.length > 0 ? JSON.stringify(zombieTasks.slice(0, 5), null, 2) : "No hay tareas estancadas."}
+
+📉 INEFICIENCIAS (Horas Reales > Asignadas):
+${inefficientTasks.length > 0 ? JSON.stringify(inefficientTasks.slice(0, 5), null, 2) : "Las tareas completadas están en presupuesto."}
+
+${specificContext}
 `;
   };
 
@@ -641,25 +570,25 @@ ${JSON.stringify(absences?.filter(a => isSameMonth(parseISO(a.startDate), now)).
     setIsLoading(true);
 
     try {
-      // AQUÍ OCURRE LA MAGIA: Contexto dinámico
       const dataContext = buildDynamicContext(input);
       
       const systemPrompt = `
-ACTÚA COMO: Minguito, un Project Manager Senior, sarcástico, mordaz y obsesionado con la eficiencia.
-TU MISIÓN: Analizar los datos y responder a la pregunta del usuario con brutal honestidad.
+ACTÚA COMO: Minguito, un Project Manager Senior, sarcástico, mordaz y obsesionado con la eficiencia y el dinero.
+NO ERES UNA CALCULADORA. ERES UN ANALISTA DE NEGOCIO QUE DETECTA PROBLEMAS.
 
-CONTEXTO DE DATOS (JSON):
+CONTEXTO DE DATOS PROCESADOS:
 ${dataContext}
 
-INSTRUCCIONES CLAVE:
-1. **USA LOS DATOS**: Si en el JSON dice que "Alexander" tiene una tarea pendiente de 5h en "Loro Parque", DILO EXPLÍCITAMENTE. No digas "tiene tareas", di "tiene atascado Loro Parque".
-2. **CRITICA**: Si alguien tiene tareas pendientes y se fue de vacaciones, señálalo.
-3. **SÉ ESPECÍFICO**: Nombres, proyectos, fechas y horas. Nada de generalidades.
-4. **FORMATO**: Usa Markdown. Negritas para nombres (**Nombre**). Listas para enumerar fallos.
+TU TRABAJO:
+1. **CONFLICTOS VACACIONALES**: Si ves datos en "ALERTAS DE GESTIÓN", destrózalos. Es inaceptable asignar tareas a gente de vacaciones. Di nombres, PROYECTO y TAREA exacta.
+2. **DINERO (Overburn)**: Si hay proyectos en "PROYECTOS EN RIESGO", avisa que nos vamos a quedar sin presupuesto antes de fin de mes.
+3. **INEFICIENCIA**: Si ves tareas donde Horas Reales > Asignadas, pregunta qué pasó. ¿Se durmieron?
+4. **NO INVENTES**: Usa solo los datos del JSON. Si está vacío, di que todo va sospechosamente bien.
 
 PREGUNTA DEL USUARIO: "${input}"
       `;
 
+      // Asegúrate de importar y usar la función callAI real que incluye el fix de OpenRouter
       const response = await callAI(systemPrompt);
 
       const assistantMessage: Message = {
@@ -673,37 +602,29 @@ PREGUNTA DEL USUARIO: "${input}"
 
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error: any) {
-      console.error('Error al generar respuesta:', error);
-      
-      const errorMessage: Message = {
+      console.error('Error:', error);
+      setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: '❌ Lo siento, hubo un error al procesar tu consulta. Por favor, intenta de nuevo o reformula tu pregunta.',
+        text: '❌ Minguito se ha mareado con tantos datos. Intenta de nuevo.',
         timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+      }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSuggestedQuestion = (question: string) => {
-    setInput(question);
-  };
-
-  const clearChat = () => {
-    setMessages([
-      {
-        id: '1',
-        role: 'assistant',
-        text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: cargas, bloqueos, chapuzas, proyectos hundidos... Pregunta lo que quieras, pero preparate para la verdad. Quien la esta liando hoy?',
-        timestamp: new Date(),
-        provider: 'gemini',
-        modelName: 'gemini-2.0-flash'
-      }
-    ]);
-  };
+  const handleSuggestedQuestion = (question: string) => setInput(question);
+  const clearChat = () => setMessages([
+    {
+      id: '1',
+      role: 'assistant',
+      text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: desviaciones, bloqueos por vacaciones y proyectos quemados. Pregunta lo que quieras.',
+      timestamp: new Date(),
+      provider: 'gemini',
+      modelName: 'gemini-2.0-flash'
+    }
+  ]);
 
   if (dataLoading) {
     return (
@@ -732,10 +653,10 @@ PREGUNTA DEL USUARIO: "${input}"
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Badge variant="outline" className="text-[10px] bg-white">
-                {analysisData.employees.length} empleados
+                {analysisData.employeesCount} empleados
               </Badge>
               <Badge variant="outline" className="text-[10px] bg-white">
-                {analysisData.projects.length} proyectos
+                {analysisData.projectsCount} proyectos
               </Badge>
               <Button 
                 variant="ghost" 
@@ -754,7 +675,6 @@ PREGUNTA DEL USUARIO: "${input}"
           <ScrollArea className="h-full p-4">
             <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((msg) => {
-                // Obtenemos la configuración de estilo para el modelo si existe
                 const modelStyle = msg.modelName && MODEL_CONFIG[msg.modelName] 
                   ? MODEL_CONFIG[msg.modelName] 
                   : MODEL_CONFIG["default"];
@@ -780,13 +700,11 @@ PREGUNTA DEL USUARIO: "${input}"
                         {msg.role === 'assistant' ? parseSimpleMarkdown(msg.text) : msg.text}
                       </div>
                       
-                      {/* Footer del mensaje con Providers y Modelos */}
                       <span className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1.5 flex-wrap">
                         {format(msg.timestamp, 'HH:mm')}
                         
                         {msg.provider && (
                           <>
-                            {/* Badge del Proveedor Principal */}
                             <span className={cn(
                               "px-1.5 py-0.5 rounded text-[9px] font-medium border",
                               msg.provider === 'gemini' 
@@ -798,7 +716,6 @@ PREGUNTA DEL USUARIO: "${input}"
                               {msg.provider === 'gemini' ? '✨ Gemini' : msg.provider === 'openrouter' ? '🟣 OpenRouter' : '🥥 Coco'}
                             </span>
 
-                            {/* Badge Específico del Modelo (Solo si es OpenRouter y tenemos info) */}
                             {msg.provider === 'openrouter' && msg.modelName && (
                               <span className={cn(
                                 "px-1.5 py-0.5 rounded text-[9px] font-medium border flex items-center gap-1",
