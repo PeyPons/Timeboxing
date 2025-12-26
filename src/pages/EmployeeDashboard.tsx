@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { MyWeekView } from '@/components/employee/MyWeekView';
 import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/DashboardWidgets'; 
 import { WelcomeTour, useWelcomeTour } from '@/components/employee/WelcomeTour';
+import { AddTasksTour, useAddTasksTour } from '@/components/employee/AddTasksTour';
 import { Card } from '@/components/ui/card';
 import { EmployeeRow } from '@/components/planner/EmployeeRow'; 
 import { AllocationSheet } from '@/components/planner/AllocationSheet';
@@ -82,6 +83,8 @@ export default function EmployeeDashboard() {
 
   // Hook del Welcome Tour
   const { showTour, startTour, resetTour, isTourCompleted } = useWelcomeTour();
+  // Hook del Tour de Añadir Tareas
+  const { showTour: showAddTasksTour, triggerTour: triggerAddTasksTour, completeTour: completeAddTasksTour } = useAddTasksTour();
 
   useEffect(() => {
     const checkUserLink = async () => {
@@ -249,6 +252,7 @@ export default function EmployeeDashboard() {
       weekDate: defaultWeek
     }]);
     setIsAddingTasks(true);
+    triggerAddTasksTour();
   };
 
   const addTaskRow = () => {
@@ -579,7 +583,14 @@ export default function EmployeeDashboard() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={resetTour} className="gap-2">
                   <RotateCcw className="h-4 w-4" />
-                  Ver tour de nuevo
+                  Ver tour de bienvenida
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { 
+                  localStorage.removeItem('timeboxing_add_tasks_tour_completed');
+                  toast.info('Abre "Añadir Tareas" para ver el tour');
+                }} className="gap-2">
+                  <ListPlus className="h-4 w-4" />
+                  Ver tour de tareas
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -884,6 +895,12 @@ export default function EmployeeDashboard() {
               </Button>
             </div>
           </DialogFooter>
+          
+          {/* Tour de ayuda para añadir tareas */}
+          <AddTasksTour 
+            isOpen={isAddingTasks && showAddTasksTour} 
+            onComplete={completeAddTasksTour} 
+          />
         </DialogContent>
       </Dialog>
 
