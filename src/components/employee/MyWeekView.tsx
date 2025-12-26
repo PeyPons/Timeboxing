@@ -1,14 +1,16 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
   Sparkles, TrendingUp, TrendingDown, Users, Target, 
-  CheckCircle2, Clock, Zap, Award, Heart
+  CheckCircle2, Clock, Award, Heart, Filter, HandHelping
 } from 'lucide-react';
 import { cn, formatProjectName } from '@/lib/utils';
 
@@ -21,6 +23,9 @@ const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
   const { allocations, projects, clients, employees, getEmployeeMonthlyLoad } = useApp();
+  
+  const [filterProject, setFilterProject] = useState<string>('all');
+  const [filterTeammate, setFilterTeammate] = useState<string>('all');
   
   const monthLabel = format(viewDate, 'MMMM yyyy', { locale: es });
   
@@ -55,25 +60,28 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
     };
   }, [employeeId, viewDate, monthlyAllocations, getEmployeeMonthlyLoad]);
 
-  // Agrupar por proyecto con métricas de impacto
+  // Agrupar por proyecto con métricas de impacto y compañeros detallados
   const projectGroups = useMemo(() => {
     const groups: Record<string, {
       projectId: string;
       projectName: string;
       clientName: string;
       clientColor: string;
-      // Mis métricas
       myEstimated: number;
       myReal: number;
       myComputed: number;
       myTasks: number;
       myCompletedTasks: number;
-      // Totales del proyecto (todos los empleados)
       projectTotalComputed: number;
       projectBudget: number;
-      // Compañeros trabajando
-      teamMembers: string[];
-      // Impacto calculado
+      // Compañeros con detalle
+      teammates: { 
+        id: string; 
+        name: string; 
+        avatarUrl?: string;
+        hoursComputed: number;
+        impactPercentage: number;
+      }[];
       myImpactPercentage: number;
     }> = {};
 
@@ -94,7 +102,7 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
           myCompletedTasks: 0,
           projectTotalComputed: 0,
           projectBudget: proj?.budgetHours || 0,
-          teamMembers: [],
+          teammates: [],
           myImpactPercentage: 0
         };
       }
@@ -109,7 +117,7 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
       }
     });
 
-    // Calcular totales del proyecto y compañeros
+    // Calcular totales del proyecto y compañeros con sus aportes
     Object.keys(groups).forEach(projId => {
       const allProjectAllocations = allocations.filter(a => 
         a.projectId === projId && 
@@ -123,24 +131,32 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
       
       groups[projId].projectTotalComputed = round2(projectTotal);
       
-      // Mi impacto = mis horas computadas / total del proyecto
+      // Mi impacto
       if (projectTotal > 0) {
         groups[projId].myImpactPercentage = round2((groups[projId].myComputed / projectTotal) * 100);
       }
       
-      // Compañeros de equipo (otros empleados en este proyecto este mes)
-      const otherEmployeeIds = [...new Set(
-        allProjectAllocations
-          .filter(a => a.employeeId !== employeeId)
-          .map(a => a.employeeId)
-      )];
+      // Compañeros con sus horas y porcentaje
+      const teammateHours: Record<string, number> = {};
+      allProjectAllocations
+        .filter(a => a.employeeId !== employeeId && a.status === 'completed')
+        .forEach(a => {
+          if (!teammateHours[a.employeeId]) teammateHours[a.employeeId] = 0;
+          teammateHours[a.employeeId] += a.hoursComputed || 0;
+        });
       
-      groups[projId].teamMembers = otherEmployeeIds
-        .map(id => employees.find(e => e.id === id)?.name?.split(' ')[0] || '')
-        .filter(Boolean);
+      groups[projId].teammates = Object.entries(teammateHours).map(([empId, hours]) => {
+        const emp = employees.find(e => e.id === empId);
+        return {
+          id: empId,
+          name: emp?.name || 'Desconocido',
+          avatarUrl: emp?.avatarUrl,
+          hoursComputed: round2(hours),
+          impactPercentage: projectTotal > 0 ? round2((hours / projectTotal) * 100) : 0
+        };
+      }).sort((a, b) => b.hoursComputed - a.hoursComputed);
     });
 
-    // Ordenar por impacto descendente
     return Object.values(groups)
       .map(g => ({
         ...g,
@@ -151,110 +167,174 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
       .sort((a, b) => b.myComputed - a.myComputed);
   }, [monthlyAllocations, allocations, projects, clients, employees, employeeId, viewDate]);
 
-  // Balance total del mes (ganancia/pérdida)
+  // Colaboradores frecuentes (con quién más compartes proyectos)
+  const frequentCollaborators = useMemo(() => {
+    const collabMap: Record<string, { 
+      id: string; 
+      name: string; 
+      avatarUrl?: string;
+      sharedProjects: number; 
+      totalHoursTogether: number;
+      occupancy: number;
+    }> = {};
+
+    projectGroups.forEach(group => {
+      group.teammates.forEach(tm => {
+        if (!collabMap[tm.id]) {
+          const emp = employees.find(e => e.id === tm.id);
+          const empLoad = getEmployeeMonthlyLoad(tm.id, viewDate.getFullYear(), viewDate.getMonth());
+          collabMap[tm.id] = {
+            id: tm.id,
+            name: tm.name,
+            avatarUrl: tm.avatarUrl,
+            sharedProjects: 0,
+            totalHoursTogether: 0,
+            occupancy: empLoad.percentage
+          };
+        }
+        collabMap[tm.id].sharedProjects += 1;
+        collabMap[tm.id].totalHoursTogether += tm.hoursComputed;
+      });
+    });
+
+    return Object.values(collabMap)
+      .sort((a, b) => b.sharedProjects - a.sharedProjects)
+      .slice(0, 5);
+  }, [projectGroups, employees, getEmployeeMonthlyLoad, viewDate]);
+
+  // Compañeros que pueden ayudar (ocupación < 80% y comparten proyectos)
+  const availableHelpers = useMemo(() => {
+    return frequentCollaborators
+      .filter(c => c.occupancy < 80)
+      .sort((a, b) => a.occupancy - b.occupancy)
+      .slice(0, 3);
+  }, [frequentCollaborators]);
+
+  // Lista de todos los compañeros únicos para filtro
+  const allTeammates = useMemo(() => {
+    const set = new Set<string>();
+    projectGroups.forEach(g => g.teammates.forEach(t => set.add(t.id)));
+    return Array.from(set).map(id => employees.find(e => e.id === id)).filter(Boolean);
+  }, [projectGroups, employees]);
+
+  // Filtrar proyectos
+  const filteredProjects = useMemo(() => {
+    return projectGroups.filter(g => {
+      if (filterProject !== 'all' && g.projectId !== filterProject) return false;
+      if (filterTeammate !== 'all' && !g.teammates.some(t => t.id === filterTeammate)) return false;
+      return true;
+    });
+  }, [projectGroups, filterProject, filterTeammate]);
+
+  // Balance total del mes
   const monthlyBalance = round2(monthlyStats.totalComputed - monthlyStats.totalReal);
   const isPositiveBalance = monthlyBalance >= 0;
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
-        {/* Header con título y métricas principales */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 capitalize flex items-center gap-2">
-              {monthLabel}
-            </h2>
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <Target className="h-3.5 w-3.5" /> Rendimiento por proyecto
-            </p>
-          </div>
-          
-          {/* KPIs compactos */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <Tooltip>
-              <TooltipTrigger>
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
-                  <Clock className="h-4 w-4 text-slate-500" />
-                  <span className="text-sm font-bold text-slate-700">~{monthlyStats.capacity}h</span>
-                  <span className="text-xs text-slate-400">capacidad</span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Tu capacidad disponible este mes</TooltipContent>
-            </Tooltip>
+      <div className="space-y-6">
+        {/* Header con título, KPIs y filtros */}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 capitalize flex items-center gap-2">
+                {monthLabel}
+              </h2>
+              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                <Target className="h-3.5 w-3.5" /> Rendimiento por proyecto
+              </p>
+            </div>
             
-            <Tooltip>
-              <TooltipTrigger>
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 rounded-lg">
-                  <Zap className="h-4 w-4 text-indigo-500" />
-                  <span className="text-sm font-bold text-indigo-700">{monthlyStats.totalEstimated}h</span>
-                  <span className="text-xs text-indigo-400">asignado</span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Horas planificadas para ti este mes</TooltipContent>
-            </Tooltip>
-            
-            <Tooltip>
-              <TooltipTrigger>
-                <div className={cn(
-                  "flex items-center gap-2 px-3 py-1.5 rounded-lg",
-                  monthlyStats.executionRate >= 50 ? "bg-emerald-50" : "bg-amber-50"
-                )}>
-                  <CheckCircle2 className={cn(
-                    "h-4 w-4",
-                    monthlyStats.executionRate >= 50 ? "text-emerald-500" : "text-amber-500"
-                  )} />
-                  <span className={cn(
-                    "text-sm font-bold",
-                    monthlyStats.executionRate >= 50 ? "text-emerald-700" : "text-amber-700"
+            {/* KPIs compactos */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Tooltip>
+                <TooltipTrigger>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
+                    <Clock className="h-4 w-4 text-slate-500" />
+                    <span className="text-sm font-bold text-slate-700">~{monthlyStats.capacity}h</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Tu capacidad disponible este mes</TooltipContent>
+              </Tooltip>
+              
+              <Tooltip>
+                <TooltipTrigger>
+                  <div className={cn(
+                    "flex items-center gap-2 px-3 py-1.5 rounded-lg",
+                    monthlyStats.executionRate >= 50 ? "bg-emerald-50" : "bg-amber-50"
                   )}>
-                    {monthlyStats.executionRate}%
-                  </span>
-                  <span className={cn(
-                    "text-xs",
-                    monthlyStats.executionRate >= 50 ? "text-emerald-400" : "text-amber-400"
-                  )}>
-                    ejecución
-                  </span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                {monthlyStats.completedTasks} de {monthlyStats.totalTasks} tareas completadas
-              </TooltipContent>
-            </Tooltip>
+                    <CheckCircle2 className={cn("h-4 w-4", monthlyStats.executionRate >= 50 ? "text-emerald-500" : "text-amber-500")} />
+                    <span className={cn("text-sm font-bold", monthlyStats.executionRate >= 50 ? "text-emerald-700" : "text-amber-700")}>
+                      {monthlyStats.executionRate}%
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>{monthlyStats.completedTasks} de {monthlyStats.totalTasks} tareas completadas</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
+
+          {/* Filtros */}
+          {(projectGroups.length > 1 || allTeammates.length > 0) && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-slate-400" />
+                <Select value={filterProject} onValueChange={setFilterProject}>
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
+                    <SelectValue placeholder="Todos los proyectos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los proyectos</SelectItem>
+                    {projectGroups.map(g => (
+                      <SelectItem key={g.projectId} value={g.projectId}>
+                        {formatProjectName(g.projectName)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {allTeammates.length > 0 && (
+                <Select value={filterTeammate} onValueChange={setFilterTeammate}>
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
+                    <SelectValue placeholder="Todos los compañeros" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los compañeros</SelectItem>
+                    {allTeammates.map(emp => emp && (
+                      <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Grid de proyectos */}
-        {projectGroups.length === 0 ? (
+        {/* Grid de proyectos - altura uniforme */}
+        {filteredProjects.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="py-12 text-center">
               <Sparkles className="h-12 w-12 mx-auto mb-4 text-slate-300" />
-              <p className="text-muted-foreground">Sin proyectos asignados este mes.</p>
-              <p className="text-xs text-slate-400 mt-1">Usa "Añadir tareas" para planificar tu trabajo.</p>
+              <p className="text-muted-foreground">
+                {filterProject !== 'all' || filterTeammate !== 'all' 
+                  ? "No hay proyectos con esos filtros." 
+                  : "Sin proyectos asignados este mes."}
+              </p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {projectGroups.map(group => {
+            {filteredProjects.map(group => {
               const balance = round2(group.myComputed - group.myReal);
               const isPositive = balance >= 0;
-              const completionRate = group.myTasks > 0 
-                ? round2((group.myCompletedTasks / group.myTasks) * 100) 
-                : 0;
-              
-              // Determinar si tengo un impacto significativo
+              const completionRate = group.myTasks > 0 ? round2((group.myCompletedTasks / group.myTasks) * 100) : 0;
               const isHighImpact = group.myImpactPercentage >= 50;
               const isMediumImpact = group.myImpactPercentage >= 25 && group.myImpactPercentage < 50;
               
               return (
-                <Card 
-                  key={group.projectId} 
-                  className={cn(
-                    "transition-all hover:shadow-md overflow-hidden",
-                    isHighImpact && "ring-2 ring-emerald-200"
-                  )}
-                >
-                  {/* Header con nombre y badge de impacto */}
+                <Card key={group.projectId} className={cn("flex flex-col h-full transition-all hover:shadow-md", isHighImpact && "ring-2 ring-emerald-200")}>
+                  {/* Header */}
                   <CardHeader className="pb-2 pt-4 px-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -262,67 +342,79 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                           {formatProjectName(group.projectName)}
                         </CardTitle>
                         <div className="flex items-center gap-1.5 mt-1">
-                          <span 
-                            className="w-2 h-2 rounded-full shrink-0" 
-                            style={{ backgroundColor: group.clientColor }}
-                          />
-                          <span className="text-xs text-muted-foreground truncate">
-                            {group.clientName}
-                          </span>
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.clientColor }} />
+                          <span className="text-xs text-muted-foreground truncate">{group.clientName}</span>
                         </div>
                       </div>
                       
                       {/* Badge de impacto */}
                       <Tooltip>
                         <TooltipTrigger>
-                          <Badge 
-                            variant="outline"
-                            className={cn(
-                              "shrink-0 gap-1",
-                              isHighImpact 
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
-                                : isMediumImpact
-                                  ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                  : "bg-slate-50 text-slate-600 border-slate-200"
-                            )}
-                          >
-                            {isHighImpact ? (
-                              <Award className="h-3 w-3" />
-                            ) : (
-                              <Target className="h-3 w-3" />
-                            )}
+                          <Badge variant="outline" className={cn(
+                            "shrink-0 gap-1",
+                            isHighImpact ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : isMediumImpact ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                              : "bg-slate-50 text-slate-600 border-slate-200"
+                          )}>
+                            {isHighImpact ? <Award className="h-3 w-3" /> : <Target className="h-3 w-3" />}
                             {group.myImpactPercentage}%
                           </Badge>
                         </TooltipTrigger>
                         <TooltipContent side="left" className="max-w-[200px]">
                           <p className="font-semibold mb-1">
-                            {isHighImpact 
-                              ? "¡Alto impacto!" 
-                              : isMediumImpact 
-                                ? "Impacto notable" 
-                                : "Tu contribución"}
+                            {isHighImpact ? "¡Alto impacto!" : isMediumImpact ? "Impacto notable" : "Tu contribución"}
                           </p>
                           <p className="text-xs">
                             Aportas el {group.myImpactPercentage}% del trabajo total del proyecto este mes.
-                            {isHighImpact && " ¡Eres clave en este proyecto!"}
                           </p>
                         </TooltipContent>
                       </Tooltip>
                     </div>
                     
-                    {/* Compañeros de equipo */}
-                    {group.teamMembers.length > 0 && (
-                      <div className="flex items-center gap-1 mt-2">
+                    {/* Compañeros con avatares */}
+                    {group.teammates.length > 0 && (
+                      <div className="flex items-center gap-2 mt-2">
                         <Users className="h-3 w-3 text-slate-400" />
-                        <span className="text-[10px] text-slate-400">
-                          +{group.teamMembers.length} {group.teamMembers.length === 1 ? 'compañero' : 'compañeros'}
-                        </span>
+                        <div className="flex -space-x-2">
+                          {group.teammates.slice(0, 4).map(tm => (
+                            <Tooltip key={tm.id}>
+                              <TooltipTrigger>
+                                <Avatar className="h-6 w-6 border-2 border-white">
+                                  <AvatarImage src={tm.avatarUrl} />
+                                  <AvatarFallback className="text-[10px] bg-slate-100">
+                                    {tm.name.substring(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="font-semibold">{tm.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {tm.hoursComputed}h computadas ({tm.impactPercentage}%)
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          ))}
+                          {group.teammates.length > 4 && (
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <div className="h-6 w-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-medium text-slate-600">
+                                  +{group.teammates.length - 4}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {group.teammates.slice(4).map(tm => (
+                                  <div key={tm.id} className="text-xs">{tm.name}: {tm.hoursComputed}h</div>
+                                ))}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
                       </div>
                     )}
                   </CardHeader>
 
-                  <CardContent className="px-4 pb-4 pt-2 space-y-3">
-                    {/* Barra de progreso de tareas */}
+                  <CardContent className="px-4 pb-4 pt-2 space-y-3 flex-1 flex flex-col">
+                    {/* Barra de progreso */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">Tareas completadas</span>
@@ -331,49 +423,31 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                       <Progress value={completionRate} className="h-1.5" />
                     </div>
 
-                    {/* Métricas de horas */}
-                    <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t">
-                      <Tooltip>
-                        <TooltipTrigger className="space-y-0.5">
-                          <p className="text-lg font-bold text-slate-700">{group.myEstimated}h</p>
-                          <p className="text-[10px] text-slate-400 uppercase">Estimado</p>
-                        </TooltipTrigger>
-                        <TooltipContent>Horas que estimaste para tus tareas</TooltipContent>
-                      </Tooltip>
-                      
-                      <Tooltip>
-                        <TooltipTrigger className="space-y-0.5">
-                          <p className="text-lg font-bold text-blue-600">{group.myReal}h</p>
-                          <p className="text-[10px] text-blue-400 uppercase">Real</p>
-                        </TooltipTrigger>
-                        <TooltipContent>Horas reales trabajadas</TooltipContent>
-                      </Tooltip>
-                      
-                      <Tooltip>
-                        <TooltipTrigger className="space-y-0.5">
-                          <p className="text-lg font-bold text-emerald-600">{group.myComputed}h</p>
-                          <p className="text-[10px] text-emerald-400 uppercase">Computado</p>
-                        </TooltipTrigger>
-                        <TooltipContent>Horas facturables al cliente</TooltipContent>
-                      </Tooltip>
+                    {/* Métricas - flex-1 para empujar balance abajo */}
+                    <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t flex-1">
+                      <div className="space-y-0.5">
+                        <p className="text-lg font-bold text-slate-700">{group.myEstimated}h</p>
+                        <p className="text-[10px] text-slate-400 uppercase">Estimado</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-lg font-bold text-blue-600">{group.myReal}h</p>
+                        <p className="text-[10px] text-blue-400 uppercase">Real</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-lg font-bold text-emerald-600">{group.myComputed}h</p>
+                        <p className="text-[10px] text-emerald-400 uppercase">Computado</p>
+                      </div>
                     </div>
 
-                    {/* Balance */}
+                    {/* Balance - siempre al final */}
                     {group.myCompletedTasks > 0 && (
                       <div className={cn(
-                        "flex items-center justify-between px-3 py-2 rounded-lg",
+                        "flex items-center justify-between px-3 py-2 rounded-lg mt-auto",
                         isPositive ? "bg-emerald-50" : "bg-red-50"
                       )}>
                         <span className="text-xs font-medium text-slate-600">Balance</span>
-                        <div className={cn(
-                          "flex items-center gap-1 font-bold text-sm",
-                          isPositive ? "text-emerald-600" : "text-red-600"
-                        )}>
-                          {isPositive ? (
-                            <TrendingUp className="h-4 w-4" />
-                          ) : (
-                            <TrendingDown className="h-4 w-4" />
-                          )}
+                        <div className={cn("flex items-center gap-1 font-bold text-sm", isPositive ? "text-emerald-600" : "text-red-600")}>
+                          {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
                           {isPositive ? '+' : ''}{balance}h
                         </div>
                       </div>
@@ -382,6 +456,81 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                 </Card>
               );
             })}
+          </div>
+        )}
+
+        {/* Bloque de Colaboradores y Ayuda */}
+        {(frequentCollaborators.length > 0 || availableHelpers.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Colaboradores frecuentes */}
+            {frequentCollaborators.length > 0 && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Users className="h-4 w-4 text-indigo-600" />
+                    Colaboradores frecuentes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {frequentCollaborators.map(collab => (
+                    <div key={collab.id} className="flex items-center gap-3 p-2 rounded-lg bg-slate-50">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={collab.avatarUrl} />
+                        <AvatarFallback className="text-xs">{collab.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{collab.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {collab.sharedProjects} {collab.sharedProjects === 1 ? 'proyecto' : 'proyectos'} · {round2(collab.totalHoursTogether)}h juntos
+                        </p>
+                      </div>
+                      <Badge variant="outline" className={cn(
+                        "text-[10px]",
+                        collab.occupancy > 90 ? "text-red-600 border-red-200" 
+                          : collab.occupancy > 70 ? "text-amber-600 border-amber-200"
+                          : "text-emerald-600 border-emerald-200"
+                      )}>
+                        {collab.occupancy}%
+                      </Badge>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Compañeros con disponibilidad */}
+            {availableHelpers.length > 0 && (
+              <Card className="border-emerald-200 bg-emerald-50/30">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2 text-emerald-700">
+                    <HandHelping className="h-4 w-4" />
+                    ¿Necesitas ayuda?
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-xs text-emerald-600 mb-3">
+                    Estos compañeros comparten proyectos contigo y tienen disponibilidad:
+                  </p>
+                  {availableHelpers.map(helper => (
+                    <div key={helper.id} className="flex items-center gap-3 p-2 rounded-lg bg-white border border-emerald-100">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={helper.avatarUrl} />
+                        <AvatarFallback className="text-xs">{helper.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{helper.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Ocupación: {helper.occupancy}%
+                        </p>
+                      </div>
+                      <Badge className="bg-emerald-100 text-emerald-700 border-0">
+                        Disponible
+                      </Badge>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
@@ -405,9 +554,7 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                   )}
                   <div>
                     <p className="font-semibold text-slate-800">
-                      {isPositiveBalance 
-                        ? "¡Buen trabajo este mes!" 
-                        : "Hay margen de mejora"}
+                      {isPositiveBalance ? "¡Buen trabajo este mes!" : "Hay margen de mejora"}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {isPositiveBalance 
