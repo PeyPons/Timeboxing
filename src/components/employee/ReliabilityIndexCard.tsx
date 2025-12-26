@@ -5,7 +5,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
-  Target, TrendingUp, TrendingDown, AlertTriangle, 
+  Target, TrendingUp, TrendingDown, 
   Lightbulb, Award, HelpCircle, CheckCircle2, History
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,23 +16,11 @@ interface ReliabilityIndexCardProps {
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-interface ReliabilityData {
-  index: number;
-  totalEstimated: number;
-  totalReal: number;
-  tasksAnalyzed: number;
-  trend: 'accurate' | 'overestimates' | 'underestimates' | 'insufficient';
-  averageDeviation: number;
-}
-
 export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) {
   const { allocations, employees } = useApp();
-  
   const employee = employees.find(e => e.id === employeeId);
 
-  // Calcular índice de fiabilidad histórico
-  const reliability = useMemo((): ReliabilityData => {
-    // Filtrar TODAS las tareas completadas del empleado (histórico completo)
+  const reliability = useMemo(() => {
     const completedTasks = (allocations || []).filter(a => 
       a.employeeId === employeeId && 
       a.status === 'completed' &&
@@ -44,41 +32,23 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
     const totalReal = round2(completedTasks.reduce((sum, a) => sum + (a.hoursActual || 0), 0));
     const tasksAnalyzed = completedTasks.length;
     
-    // Índice: (Estimado / Real) * 100
     const index = totalReal > 0 ? round2((totalEstimated / totalReal) * 100) : 0;
     
-    // Tendencia
-    let trend: ReliabilityData['trend'] = 'insufficient';
+    let trend: 'accurate' | 'overestimates' | 'underestimates' | 'insufficient' = 'insufficient';
     if (tasksAnalyzed >= 5) {
-      if (index >= 90 && index <= 110) {
-        trend = 'accurate';
-      } else if (index < 90) {
-        trend = 'underestimates';
-      } else {
-        trend = 'overestimates';
-      }
+      if (index >= 90 && index <= 110) trend = 'accurate';
+      else if (index < 90) trend = 'underestimates';
+      else trend = 'overestimates';
     }
     
-    // Desviación promedio por tarea
-    const averageDeviation = tasksAnalyzed > 0 
-      ? round2((totalReal - totalEstimated) / tasksAnalyzed) 
-      : 0;
+    const averageDeviation = tasksAnalyzed > 0 ? round2((totalReal - totalEstimated) / tasksAnalyzed) : 0;
     
-    return {
-      index,
-      totalEstimated,
-      totalReal,
-      tasksAnalyzed,
-      trend,
-      averageDeviation
-    };
+    return { index, totalEstimated, totalReal, tasksAnalyzed, trend, averageDeviation };
   }, [allocations, employeeId]);
 
-  // Configuración visual según tendencia
   const getConfig = () => {
     if (reliability.tasksAnalyzed < 5) {
       return {
-        color: 'slate',
         icon: HelpCircle,
         title: 'Datos insuficientes',
         description: 'Completa al menos 5 tareas con horas reales para calcular tu índice.',
@@ -92,7 +62,6 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
     switch (reliability.trend) {
       case 'accurate':
         return {
-          color: 'emerald',
           icon: Award,
           title: '¡Estimaciones precisas!',
           description: 'Tus estimaciones son muy cercanas a la realidad. Esto es una habilidad valiosa.',
@@ -103,7 +72,6 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
         };
       case 'underestimates':
         return {
-          color: 'amber',
           icon: TrendingDown,
           title: 'Tiendes a subestimar',
           description: `En promedio, tardas ${Math.abs(reliability.averageDeviation).toFixed(1)}h más por tarea de lo que estimas.`,
@@ -114,7 +82,6 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
         };
       case 'overestimates':
         return {
-          color: 'blue',
           icon: TrendingUp,
           title: 'Tiendes a sobreestimar',
           description: `En promedio, terminas ${Math.abs(reliability.averageDeviation).toFixed(1)}h antes por tarea.`,
@@ -125,7 +92,6 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
         };
       default:
         return {
-          color: 'slate',
           icon: HelpCircle,
           title: 'Calculando...',
           description: '',
@@ -140,11 +106,8 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
   const config = getConfig();
   const IconComponent = config.icon;
 
-  // Calcular el valor de la barra de progreso (centrado en 100)
   const getProgressValue = () => {
     if (reliability.tasksAnalyzed < 5) return 50;
-    // Convertir el índice a una escala donde 100% = centro (50 en la barra)
-    // 50% índice = 0, 100% índice = 50, 150% índice = 100
     return Math.min(Math.max((reliability.index / 2), 0), 100);
   };
 
@@ -195,14 +158,12 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
                     {config.title}
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {config.description}
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">{config.description}</p>
               </div>
             </div>
           </div>
 
-          {/* Barra visual de precisión */}
+          {/* Barra visual */}
           {reliability.tasksAnalyzed >= 5 && (
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-muted-foreground">
@@ -212,13 +173,12 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
               </div>
               <div className="relative">
                 <Progress value={getProgressValue()} className={cn("h-2", config.progressColor)} />
-                {/* Marcador del centro (100% = perfecto) */}
                 <div className="absolute top-0 left-1/2 w-0.5 h-2 bg-slate-400 -translate-x-1/2" />
               </div>
             </div>
           )}
 
-          {/* Estadísticas detalladas */}
+          {/* Estadísticas */}
           {reliability.tasksAnalyzed >= 5 && (
             <div className="grid grid-cols-2 gap-3 pt-2 border-t">
               <div className="text-center">
@@ -264,9 +224,7 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
           {reliability.tasksAnalyzed >= 5 && reliability.trend !== 'accurate' && (
             <div className={cn(
               "rounded-lg p-3 border",
-              reliability.trend === 'underestimates' 
-                ? "bg-amber-50 border-amber-200" 
-                : "bg-blue-50 border-blue-200"
+              reliability.trend === 'underestimates' ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200"
             )}>
               <p className={cn(
                 "text-xs font-medium",
