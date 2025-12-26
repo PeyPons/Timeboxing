@@ -1,7 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApp } from '@/contexts/AppContext';
-import { Loader2 } from 'lucide-react';
 
 interface PermissionProtectedRouteProps {
   children: React.ReactNode;
@@ -19,9 +18,8 @@ export function PermissionProtectedRoute({ children, requiredPermission }: Permi
   // Esperar a que termine de cargar antes de hacer redirecciones
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
-        <Loader2 className="h-10 w-10 text-indigo-600 animate-spin" />
-        <p className="text-slate-500 text-sm font-medium animate-pulse">Cargando...</p>
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50">
+        <div className="h-8 w-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin opacity-60" />
       </div>
     );
   }

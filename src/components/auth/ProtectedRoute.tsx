@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { Loader2 } from "lucide-react";
 
 export const ProtectedRoute = () => {
   const [session, setSession] = useState<boolean | null>(null);
@@ -48,12 +47,11 @@ export const ProtectedRoute = () => {
     };
   }, []);
 
-  // MIENTRAS CARGA: Mostramos Spinner
+  // MIENTRAS CARGA: Mostramos Spinner suave y discreto
   if (isChecking || session === null) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
-        <Loader2 className="h-10 w-10 text-indigo-600 animate-spin" />
-        <p className="text-slate-500 text-sm font-medium animate-pulse">Verificando sesión...</p>
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50">
+        <div className="h-8 w-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin opacity-60" />
       </div>
     );
   }

@@ -60,6 +60,7 @@ export default function EmployeeDashboard() {
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [myEmployeeProfile, setMyEmployeeProfile] = useState<Employee | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedCell, setSelectedCell] = useState<{ employeeId: string; weekStart: Date } | null>(null);
@@ -80,20 +81,29 @@ export default function EmployeeDashboard() {
 
   useEffect(() => {
     const checkUserLink = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUser(user);
-        // Buscar por user_id o por email (como hace AppContext)
-        const linked = employees.find(e => 
-          e.user_id === user.id || 
-          (e.email && user.email && e.email.toLowerCase() === user.email.toLowerCase())
-        );
-        if (linked) {
-          setMyEmployeeProfile(linked);
+      setIsLoadingProfile(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setCurrentUser(user);
+          // Buscar por user_id o por email (como hace AppContext)
+          const linked = employees.find(e => 
+            e.user_id === user.id || 
+            (e.email && user.email && e.email.toLowerCase() === user.email.toLowerCase())
+          );
+          if (linked) {
+            setMyEmployeeProfile(linked);
+          }
         }
+      } finally {
+        setIsLoadingProfile(false);
       }
     };
-    if (!isGlobalLoading && employees.length > 0) checkUserLink();
+    if (!isGlobalLoading && employees.length > 0) {
+      checkUserLink();
+    } else if (isGlobalLoading) {
+      setIsLoadingProfile(true);
+    }
   }, [employees, isGlobalLoading]);
 
   const weeks = useMemo(() => getWeeksForMonth(currentMonth), [currentMonth]);
@@ -338,7 +348,18 @@ export default function EmployeeDashboard() {
   const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   const handleToday = () => setCurrentMonth(new Date());
 
-  if (isGlobalLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">Cargando...</div>;
+  // Mostrar loader mientras carga global o el perfil
+  if (isGlobalLoading || isLoadingProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin opacity-60" />
+        </div>
+      </div>
+    );
+  }
+  
+  // Solo mostrar error después de que termine de cargar
   if (!myEmployeeProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
