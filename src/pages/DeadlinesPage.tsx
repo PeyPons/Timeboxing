@@ -27,7 +27,7 @@ import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 
 export default function DeadlinesPage() {
-  const { projects, clients, employees, isAdmin, absences, teamEvents } = useApp();
+  const { projects, clients, employees, absences, teamEvents } = useApp();
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [globalAssignments, setGlobalAssignments] = useState<GlobalAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -732,20 +732,18 @@ export default function DeadlinesPage() {
               ))}
             </SelectContent>
           </Select>
-          {isAdmin && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" onClick={copyFromPreviousMonth}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Copiar del mes anterior</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" onClick={copyFromPreviousMonth}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Copiar del mes anterior</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -876,12 +874,10 @@ export default function DeadlinesPage() {
             <Users className="h-5 w-5" />
             Asignaciones Globales
           </CardTitle>
-          {isAdmin && (
-            <Button onClick={() => openGlobalDialog()} size="sm" variant="outline" className="gap-2">
-              <Plus className="h-4 w-4" />
-              Añadir
-            </Button>
-          )}
+          <Button onClick={() => openGlobalDialog()} size="sm" variant="outline" className="gap-2">
+            <Plus className="h-4 w-4" />
+            Añadir
+          </Button>
         </CardHeader>
         <CardContent>
           {globalAssignments.length === 0 ? (
@@ -904,26 +900,24 @@ export default function DeadlinesPage() {
                     <Badge variant="outline" className="font-mono">
                       +{assignment.hours}h
                     </Badge>
-                    {isAdmin && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => openGlobalDialog(assignment)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-600 hover:text-red-700"
-                          onClick={() => handleDeleteGlobal(assignment.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openGlobalDialog(assignment)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-600 hover:text-red-700"
+                        onClick={() => handleDeleteGlobal(assignment.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
