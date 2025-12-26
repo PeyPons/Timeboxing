@@ -2,114 +2,23 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Send, Bot, User, Sparkles, Trash2, TrendingUp, TrendingDown, 
-  AlertTriangle, Users, Calendar, Target, Clock, Zap, HelpCircle,
-  BarChart3, UserX, Link, CheckCircle2, XCircle
-} from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Bot, Send, User, Sparkles, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { format, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInDays, addDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, parseISO, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
-  text: string;
+  content: string;
   timestamp: Date;
   provider?: 'gemini' | 'openrouter' | 'coco';
-}
-
-// Preguntas sugeridas para guiar al usuario
-const SUGGESTED_QUESTIONS = [
-  { icon: <Users className="w-3 h-3" />, text: "¿Cómo está la carga del equipo?", category: "carga" },
-  { icon: <AlertTriangle className="w-3 h-3" />, text: "¿Hay alguien bloqueando tareas?", category: "dependencias" },
-  { icon: <TrendingDown className="w-3 h-3" />, text: "¿Quién se ha pasado de horas este mes?", category: "eficiencia" },
-  { icon: <Calendar className="w-3 h-3" />, text: "¿Quién tiene tareas asignadas?", category: "planificacion" },
-  { icon: <Zap className="w-3 h-3" />, text: "Dame un resumen ejecutivo del mes", category: "resumen" },
-];
-
-// ============================================================
-// FUNCIÓN PARA PARSEAR MARKDOWN BÁSICO
-// ============================================================
-function parseSimpleMarkdown(text: string): React.ReactNode {
-  // Dividir por líneas
-  const lines = text.split('\n');
-  
-  const elements: React.ReactNode[] = [];
-  let listItems: string[] = [];
-  
-  const flushList = () => {
-    if (listItems.length > 0) {
-      elements.push(
-        <ul key={`list-${elements.length}`} className="list-disc list-inside space-y-1 my-2">
-          {listItems.map((item, i) => (
-            <li key={i} className="text-sm">{parseLine(item)}</li>
-          ))}
-        </ul>
-      );
-      listItems = [];
-    }
-  };
-  
-  const parseLine = (line: string): React.ReactNode => {
-    // Parsear **bold** y *italic*
-    const parts: React.ReactNode[] = [];
-    let remaining = line;
-    let key = 0;
-    
-    while (remaining.length > 0) {
-      // Buscar **bold**
-      const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
-      if (boldMatch && boldMatch.index !== undefined) {
-        if (boldMatch.index > 0) {
-          parts.push(<span key={key++}>{remaining.slice(0, boldMatch.index)}</span>);
-        }
-        parts.push(<strong key={key++} className="font-semibold">{boldMatch[1]}</strong>);
-        remaining = remaining.slice(boldMatch.index + boldMatch[0].length);
-        continue;
-      }
-      
-      // Si no hay más matches, añadir el resto
-      parts.push(<span key={key++}>{remaining}</span>);
-      break;
-    }
-    
-    return parts.length > 0 ? parts : line;
-  };
-  
-  lines.forEach((line, index) => {
-    const trimmedLine = line.trim();
-    
-    // Línea vacía
-    if (!trimmedLine) {
-      flushList();
-      elements.push(<br key={`br-${index}`} />);
-      return;
-    }
-    
-    // Lista con * o -
-    if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
-      listItems.push(trimmedLine.slice(2));
-      return;
-    }
-    
-    // Párrafo normal
-    flushList();
-    elements.push(
-      <p key={`p-${index}`} className="mb-1">
-        {parseLine(trimmedLine)}
-      </p>
-    );
-  });
-  
-  flushList();
-  
-  return <div className="space-y-1">{elements}</div>;
+  isError?: boolean;
 }
 
 // ============================================================
@@ -135,12 +44,7 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
     },
     body: JSON.stringify({
       model: "google/gemini-2.0-flash-exp:free",
-      messages: [
-        {
-          role: "user",
-          content: prompt
-        }
-      ]
+      messages: [{ role: "user", content: prompt }]
     }),
   });
 
@@ -153,43 +57,47 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
   
   if (responseData?.choices?.[0]?.message?.content) {
     return { text: responseData.choices[0].message.content, provider: 'openrouter' };
-  } else {
-    throw new Error('Respuesta inesperada de OpenRouter API');
   }
+  throw new Error('Respuesta inesperada de OpenRouter API');
 }
 
 async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco' }> {
   const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
   
-  const payload = {
-    message: prompt,
-    noAuth: "true",
-    action: "text/generateResume",
-    app: "CHATBOT",
-    rol: "user",
-    method: "POST",
-    language: "es",
-  };
+  // Simplificar el prompt para Coco - no soporta bien markdown
+  const simplifiedPrompt = prompt + "\n\nIMPORTANTE: Responde en texto plano sin usar asteriscos, guiones ni formato markdown. Usa frases completas separadas por puntos.";
 
   const response = await fetch(COCO_API_URL, {
     method: 'POST',
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: simplifiedPrompt,
+      noAuth: "true",
+      action: "text/generateResume",
+      app: "CHATBOT",
+      rol: "user",
+      method: "POST",
+      language: "es",
+    }),
   });
 
-  if (!response.ok) {
-    throw new Error(`Coco API error: ${response.status}`);
-  }
-
-  const responseData = await response.json();
+  if (!response.ok) throw new Error(`Coco API error: ${response.status}`);
   
-  if (responseData && responseData.data) {
-    return { text: responseData.data, provider: 'coco' };
-  } else {
-    throw new Error('Respuesta inesperada de Coco API');
+  const data = await response.json();
+  if (data?.data) {
+    // Limpiar respuesta de Coco - quitar formato roto
+    let cleanText = data.data
+      .replace(/\*\s*\n/g, '') // Quitar asteriscos sueltos con salto de línea
+      .replace(/^\*\s*/gm, '• ') // Convertir asteriscos al inicio de línea en bullets
+      .replace(/<br\s*\/?>/gi, '\n') // Convertir <br> en saltos de línea
+      .replace(/\n{3,}/g, '\n\n') // Máximo 2 saltos de línea consecutivos
+      .replace(/•\s*\n•/g, '• ') // Quitar bullets vacíos
+      .replace(/•\s*$/gm, '') // Quitar bullets al final de línea sin contenido
+      .trim();
+    
+    return { text: cleanText, provider: 'coco' };
   }
+  throw new Error('Respuesta inesperada de Coco API');
 }
 
 async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini' | 'openrouter' | 'coco' }> {
@@ -205,7 +113,6 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
       return result;
     } catch (error: any) {
       console.warn('⚠️ Gemini falló:', error.message);
-      // Continuar con el siguiente proveedor
     }
   }
 
@@ -218,7 +125,6 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
       return result;
     } catch (error: any) {
       console.warn('⚠️ OpenRouter falló:', error.message);
-      // Continuar con el siguiente proveedor
     }
   }
 
@@ -240,7 +146,7 @@ export default function DashboardAI() {
     {
       id: '1',
       role: 'assistant',
-      text: '¡Ey! Soy Minguito, tu analista de cabecera. Tengo acceso a todo: cargas, dependencias, presupuestos, eficiencia... Pregúntame lo que quieras o usa las sugerencias de abajo. ¿Por dónde empezamos?',
+      content: '¡Hola! Soy **Minguito**, tu Project Manager virtual. Pregúntame sobre disponibilidad, cargas de trabajo o proyectos.',
       timestamp: new Date()
     }
   ]);
@@ -250,15 +156,14 @@ export default function DashboardAI() {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
   // ============================================================
-  // CEREBRO DE MINGUITO: Análisis completo de datos
+  // CONSTRUIR CONTEXTO DE DATOS
   // ============================================================
-  const analysisData = useMemo(() => {
-    // Protección: asegurar que todos los arrays estén inicializados
+  const buildDataContext = () => {
     const safeEmployees = employees || [];
     const safeAllocations = allocations || [];
     const safeProjects = projects || [];
@@ -267,199 +172,88 @@ export default function DashboardAI() {
     const safeTeamEvents = teamEvents || [];
 
     const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
     const activeEmployees = safeEmployees.filter(e => e.isActive);
     const activeProjects = safeProjects.filter(p => p.status === 'active');
     
-    // Allocations del mes actual
     const monthAllocations = safeAllocations.filter(a => {
       try {
         return isSameMonth(parseISO(a.weekStartDate), now);
-      } catch {
-        return false;
-      }
+      } catch { return false; }
     });
-    
-    const completedTasks = monthAllocations.filter(a => a.status === 'completed');
-    const pendingTasks = monthAllocations.filter(a => a.status !== 'completed');
 
-    // ==================
-    // 1. ANÁLISIS DE CARGA POR EMPLEADO
-    // ==================
+    // Análisis por empleado
     const employeeAnalysis = activeEmployees.map(emp => {
       try {
         const load = getEmployeeMonthlyLoad(emp.id, now.getFullYear(), now.getMonth());
         const empTasks = monthAllocations.filter(a => a.employeeId === emp.id);
-        const empCompleted = empTasks.filter(a => a.status === 'completed');
-        const empPending = empTasks.filter(a => a.status !== 'completed');
         
-        // Eficiencia: horas reales vs computadas
-        const totalReal = empCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
-        const totalComp = empCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
-        const totalEst = empCompleted.reduce((sum, a) => sum + a.hoursAssigned, 0);
-        const efficiency = totalReal > 0 ? ((totalComp - totalReal) / totalReal * 100) : 0;
-        
-        // Dependencias: ¿bloquea a otros?
-        const blocking = empPending.filter(task => 
-          safeAllocations.some(other => other.dependencyId === task.id && other.status !== 'completed')
-        );
-        
-        // Dependencias: ¿esperando por otros?
-        const waitingFor = empPending.filter(task => {
-          if (!task.dependencyId) return false;
-          const dep = safeAllocations.find(a => a.id === task.dependencyId);
-          return dep && dep.status !== 'completed';
-        });
-
         return {
-          id: emp.id,
-          name: emp.name || 'Sin nombre',
-          capacity: emp.capacity || 0,
-          assigned: load?.totalAssigned || 0,
-          completed: empCompleted.length,
-          pending: empPending.length,
-          realHours: totalReal,
-          computedHours: totalComp,
-          estimatedHours: totalEst,
-          efficiency: isNaN(efficiency) ? 0 : efficiency,
-          blocking: blocking.length,
-          waitingFor: waitingFor.length,
-          overloaded: (load?.totalAssigned || 0) > (emp.capacity || 0),
-          underutilized: (load?.totalAssigned || 0) < (emp.capacity || 0) * 0.7
+          nombre: emp.name || 'Sin nombre',
+          rol: emp.role || 'N/A',
+          capacidad: emp.capacity || emp.defaultWeeklyCapacity || 0,
+          horasAsignadas: load?.totalAssigned || empTasks.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0),
+          tareas: empTasks.length,
+          estado: load?.status || 'empty'
         };
-      } catch (error) {
-        console.error(`Error analyzing employee ${emp.id}:`, error);
+      } catch {
         return {
-          id: emp.id,
-          name: emp.name || 'Sin nombre',
-          capacity: emp.capacity || 0,
-          assigned: 0,
-          completed: 0,
-          pending: 0,
-          realHours: 0,
-          computedHours: 0,
-          estimatedHours: 0,
-          efficiency: 0,
-          blocking: 0,
-          waitingFor: 0,
-          overloaded: false,
-          underutilized: false
+          nombre: emp.name || 'Sin nombre',
+          rol: emp.role || 'N/A',
+          capacidad: 0,
+          horasAsignadas: 0,
+          tareas: 0,
+          estado: 'empty'
         };
       }
     });
 
-    // ==================
-    // 2. ANÁLISIS DE PROYECTOS
-    // ==================
+    // Proyectos
     const projectAnalysis = activeProjects.map(proj => {
-      try {
-        const projTasks = monthAllocations.filter(a => a.projectId === proj.id);
-        const projCompleted = projTasks.filter(a => a.status === 'completed');
-        const projPending = projTasks.filter(a => a.status !== 'completed');
-        
-        const totalAssigned = projTasks.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0);
-        const totalReal = projCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
-        const totalBudget = proj.totalBudget || proj.budgetHours || 0;
-        
-        const burnRate = totalBudget > 0 ? (totalReal / totalBudget * 100) : 0;
-
-        return {
-          id: proj.id,
-          name: proj.name || 'Sin nombre',
-          client: safeClients.find(c => c.id === proj.clientId)?.name || 'Sin cliente',
-          totalTasks: projTasks.length,
-          completed: projCompleted.length,
-          pending: projPending.length,
-          totalAssigned,
-          totalReal,
-          totalBudget,
-          burnRate: isNaN(burnRate) ? 0 : burnRate,
-          overBudget: totalReal > totalBudget,
-          completion: projTasks.length > 0 ? (projCompleted.length / projTasks.length * 100) : 0
-        };
-      } catch (error) {
-        console.error(`Error analyzing project ${proj.id}:`, error);
-        return {
-          id: proj.id,
-          name: proj.name || 'Sin nombre',
-          client: 'Sin cliente',
-          totalTasks: 0,
-          completed: 0,
-          pending: 0,
-          totalAssigned: 0,
-          totalReal: 0,
-          totalBudget: 0,
-          burnRate: 0,
-          overBudget: false,
-          completion: 0
-        };
-      }
+      const projTasks = monthAllocations.filter(a => a.projectId === proj.id);
+      const hoursUsed = projTasks.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0);
+      const client = safeClients.find(c => c.id === proj.clientId);
+      
+      return {
+        nombre: proj.name,
+        cliente: client?.name || 'Sin cliente',
+        presupuesto: proj.budgetHours || 0,
+        horasUsadas: hoursUsed
+      };
     });
 
-    // ==================
-    // 3. MÉTRICAS GLOBALES
-    // ==================
-    const totalCapacity = activeEmployees.reduce((sum, e) => sum + (e.capacity || 0), 0);
-    const totalAssigned = monthAllocations.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0);
-    const utilizationRate = totalCapacity > 0 ? (totalAssigned / totalCapacity * 100) : 0;
-    
-    const overloadedEmployees = employeeAnalysis.filter(e => e.overloaded);
-    const underutilizedEmployees = employeeAnalysis.filter(e => e.underutilized);
-    const blockingEmployees = employeeAnalysis.filter(e => e.blocking > 0);
-
-    // ==================
-    // 4. AUSENCIAS Y EVENTOS
-    // ==================
-    const monthAbsences = safeAbsences.filter(a => {
+    // Ausencias actuales
+    const currentAbsences = safeAbsences.filter(a => {
       try {
-        return isSameMonth(parseISO(a.startDate), now) || isSameMonth(parseISO(a.endDate), now);
-      } catch {
-        return false;
-      }
-    });
-    
-    const monthEvents = safeTeamEvents.filter(e => {
-      try {
-        return isSameMonth(parseISO(e.date), now);
-      } catch {
-        return false;
-      }
+        return new Date(a.endDate) >= now;
+      } catch { return false; }
+    }).map(a => {
+      const emp = safeEmployees.find(e => e.id === a.employeeId);
+      return {
+        empleado: emp?.name || 'Desconocido',
+        tipo: a.type || a.reason || 'Ausencia',
+        hasta: a.endDate
+      };
     });
 
     return {
-      month: format(now, "MMMM yyyy", { locale: es }),
-      employees: employeeAnalysis,
-      projects: projectAnalysis,
-      metrics: {
-        totalCapacity: isNaN(totalCapacity) ? 0 : totalCapacity,
-        totalAssigned: isNaN(totalAssigned) ? 0 : totalAssigned,
-        utilizationRate: isNaN(utilizationRate) ? 0 : utilizationRate,
-        completedTasks: completedTasks.length,
-        pendingTasks: pendingTasks.length,
-        overloadedCount: overloadedEmployees.length,
-        underutilizedCount: underutilizedEmployees.length,
-        blockingCount: blockingEmployees.length
-      },
-      absences: monthAbsences,
-      events: monthEvents,
-      alerts: {
-        critical: overloadedEmployees.length + blockingEmployees.length,
-        warning: underutilizedEmployees.length + projectAnalysis.filter(p => p.overBudget).length
-      }
+      fecha: format(now, "d 'de' MMMM yyyy", { locale: es }),
+      mes: format(now, "MMMM yyyy", { locale: es }),
+      empleados: employeeAnalysis,
+      proyectos: projectAnalysis,
+      ausencias: currentAbsences
     };
-  }, [employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad]);
+  };
 
   // ============================================================
   // HANDLERS
   // ============================================================
-  const handleSend = async () => {
+  const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      text: input,
+      content: input,
       timestamp: new Date()
     };
 
@@ -468,75 +262,43 @@ export default function DashboardAI() {
     setIsLoading(true);
 
     try {
-      // Construir contexto enriquecido
-      const context = `
-CONTEXTO ACTUAL DEL EQUIPO (${analysisData.month}):
+      const dataContext = buildDataContext();
 
-MÉTRICAS GLOBALES:
-- Capacidad Total: ${analysisData.metrics.totalCapacity}h
-- Horas Asignadas: ${analysisData.metrics.totalAssigned}h
-- Tasa de Utilización: ${analysisData.metrics.utilizationRate.toFixed(1)}%
-- Tareas Completadas: ${analysisData.metrics.completedTasks}
-- Tareas Pendientes: ${analysisData.metrics.pendingTasks}
-- Empleados Sobrecargados: ${analysisData.metrics.overloadedCount}
-- Empleados Subutilizados: ${analysisData.metrics.underutilizedCount}
-- Empleados Bloqueando Tareas: ${analysisData.metrics.blockingCount}
+      const prompt = `
+Eres Minguito, un Project Manager Senior amigable. Analiza estos datos de la agencia:
 
-ANÁLISIS POR EMPLEADO:
-${(analysisData.employees || []).map(e => `
-- ${e.name}:
-  * Capacidad: ${e.capacity}h | Asignado: ${e.assigned}h
-  * Tareas: ${e.completed} completadas, ${e.pending} pendientes
-  * Eficiencia: ${e.efficiency.toFixed(1)}% (Real: ${e.realHours}h vs Computado: ${e.computedHours}h)
-  * Bloqueos: ${e.blocking > 0 ? `⚠️ Bloqueando ${e.blocking} tarea(s)` : '✓ Sin bloqueos'}
-  * Dependencias: ${e.waitingFor > 0 ? `⏳ Esperando ${e.waitingFor} tarea(s)` : '✓ Sin esperas'}
-  * Estado: ${e.overloaded ? '🔴 SOBRECARGADO' : e.underutilized ? '🟡 SUBUTILIZADO' : '🟢 ÓPTIMO'}
-`).join('\n')}
+DATOS ACTUALES (${dataContext.fecha}):
 
-ANÁLISIS DE PROYECTOS:
-${(analysisData.projects || []).map(p => `
-- ${p.name} (Cliente: ${p.client}):
-  * Tareas: ${p.completed}/${p.totalTasks} (${p.completion.toFixed(0)}% completado)
-  * Horas: ${p.totalReal}h de ${p.totalBudget}h (${p.burnRate.toFixed(1)}% consumido)
-  * Estado: ${p.overBudget ? '🔴 SOBRE PRESUPUESTO' : '🟢 DENTRO DE PRESUPUESTO'}
-`).join('\n')}
+EMPLEADOS:
+${dataContext.empleados.map(e => 
+  `- ${e.nombre} (${e.rol}): ${e.horasAsignadas}h asignadas de ${e.capacidad}h capacidad, ${e.tareas} tareas`
+).join('\n')}
 
-AUSENCIAS DEL MES:
-${(analysisData.absences || []).length > 0 ? (analysisData.absences || []).map(a => {
-  const emp = (employees || []).find(e => e.id === a.employeeId);
-  try {
-    return `- ${emp?.name || 'Desconocido'}: ${a.reason || a.type || 'Sin motivo'} (${format(parseISO(a.startDate), 'dd/MM')} - ${format(parseISO(a.endDate), 'dd/MM')})`;
-  } catch {
-    return `- ${emp?.name || 'Desconocido'}: ${a.reason || a.type || 'Sin motivo'}`;
-  }
-}).join('\n') : '- Sin ausencias registradas'}
+PROYECTOS ACTIVOS:
+${dataContext.proyectos.map(p => 
+  `- ${p.nombre} (${p.cliente}): ${p.horasUsadas}h de ${p.presupuesto}h presupuesto`
+).join('\n')}
 
-EVENTOS DEL MES:
-${(analysisData.events || []).length > 0 ? (analysisData.events || []).map(e => {
-  try {
-    const attendeesCount = (e.attendees || []).length;
-    return `- ${e.name || 'Evento'} (${format(parseISO(e.date), 'dd/MM')}): ${attendeesCount} asistentes`;
-  } catch {
-    return `- ${e.name || 'Evento'}: Sin fecha`;
-  }
-}).join('\n') : '- Sin eventos programados'}
+AUSENCIAS ACTUALES:
+${dataContext.ausencias.length > 0 
+  ? dataContext.ausencias.map(a => `- ${a.empleado}: ${a.tipo} hasta ${a.hasta}`).join('\n')
+  : '- Sin ausencias registradas'}
 
 PREGUNTA DEL USUARIO: ${input}
 
 INSTRUCCIONES:
-- Responde de forma directa y concisa
-- Usa datos específicos del contexto
-- Usa formato Markdown para énfasis (**negrita**)
-- Sé profesional pero cercano
-- Si detectas problemas críticos, menciónalos con prioridad
+- Sé breve, directo y amigable
+- Si preguntan disponibilidad, calcula: Capacidad - Horas Asignadas
+- Usa negritas para nombres importantes
+- Si todo va bien, reconócelo positivamente
 `;
 
-      const response = await callAI(context);
+      const response = await callAI(prompt);
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: response.text,
+        content: response.text,
         timestamp: new Date(),
         provider: response.provider
       };
@@ -548,8 +310,9 @@ INSTRUCCIONES:
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: '❌ Lo siento, hubo un error al procesar tu consulta. Por favor, intenta de nuevo o reformula tu pregunta.',
-        timestamp: new Date()
+        content: '❌ Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, intenta de nuevo.',
+        timestamp: new Date(),
+        isError: true
       };
 
       setMessages(prev => [...prev, errorMessage]);
@@ -558,8 +321,11 @@ INSTRUCCIONES:
     }
   };
 
-  const handleSuggestedQuestion = (question: string) => {
-    setInput(question);
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
   };
 
   const clearChat = () => {
@@ -567,267 +333,167 @@ INSTRUCCIONES:
       {
         id: '1',
         role: 'assistant',
-        text: '¡Ey! Soy Minguito, tu analista de cabecera. Tengo acceso a todo: cargas, dependencias, presupuestos, eficiencia... Pregúntame lo que quieras o usa las sugerencias de abajo. ¿Por dónde empezamos?',
+        content: '¡Hola! Soy **Minguito**, tu Project Manager virtual. Pregúntame sobre disponibilidad, cargas de trabajo o proyectos.',
         timestamp: new Date()
       }
     ]);
   };
 
-  // ============================================================
-  // QUICK STATS (Visualización rápida de métricas)
-  // ============================================================
-  const quickStats = useMemo(() => {
-    const utilization = analysisData.metrics.utilizationRate;
-    const balance = analysisData.metrics.totalCapacity - analysisData.metrics.totalAssigned;
+  // Helper para badge del proveedor
+  const getProviderBadge = (provider?: string) => {
+    if (!provider) return null;
     
-    return {
-      utilization: isNaN(utilization) ? 0 : utilization,
-      balance: isNaN(balance) ? 0 : balance,
-      criticalAlerts: analysisData.alerts.critical || 0,
-      warningAlerts: analysisData.alerts.warning || 0
+    const config: Record<string, { label: string; className: string }> = {
+      gemini: { label: '✨ Gemini', className: 'bg-blue-100 text-blue-600' },
+      openrouter: { label: '🟣 OpenRouter', className: 'bg-purple-100 text-purple-600' },
+      coco: { label: '🥥 Coco', className: 'bg-orange-100 text-orange-600' }
     };
-  }, [analysisData]);
+    
+    const { label, className } = config[provider] || { label: provider, className: 'bg-gray-100 text-gray-600' };
+    return (
+      <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-medium ml-2", className)}>
+        {label}
+      </span>
+    );
+  };
 
-  // Mostrar loader mientras los datos cargan
+  // Mostrar loader mientras cargan los datos
   if (dataLoading) {
     return (
-      <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
-        <div className="text-center">
-          <Sparkles className="h-12 w-12 text-indigo-500 animate-pulse mx-auto mb-4" />
-          <p className="text-muted-foreground">Cargando datos...</p>
-        </div>
+      <div className="flex flex-col h-[calc(100vh-2rem)] items-center justify-center">
+        <Sparkles className="h-12 w-12 text-indigo-500 animate-pulse mb-4" />
+        <p className="text-muted-foreground">Cargando datos...</p>
       </div>
     );
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col gap-4 p-4">
-      {/* Quick Stats Cards */}
-      <div className="grid grid-cols-4 gap-3">
-        <Card className={cn(
-          "p-3 border",
-          quickStats.utilization > 90 
-            ? "bg-gradient-to-br from-red-50 to-red-100 border-red-200" 
-            : quickStats.utilization > 70
-            ? "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200"
-            : "bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200"
-        )}>
-          <div className="flex items-center gap-2">
-            <BarChart3 className={cn(
-              "w-4 h-4",
-              quickStats.utilization > 90 ? "text-red-600" : quickStats.utilization > 70 ? "text-emerald-600" : "text-amber-600"
-            )} />
-            <span className="text-xs text-slate-600">Utilización</span>
-          </div>
-          <p className={cn(
-            "text-xl font-bold mt-1",
-            quickStats.utilization > 90 ? "text-red-700" : quickStats.utilization > 70 ? "text-emerald-700" : "text-amber-700"
-          )}>
-            {quickStats.utilization.toFixed(0)}%
-          </p>
-        </Card>
-        
-        <Card className={cn(
-          "p-3 border",
-          quickStats.balance < 0 
-            ? "bg-gradient-to-br from-red-50 to-red-100 border-red-200" 
-            : "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200"
-        )}>
-          <div className="flex items-center gap-2">
-            {quickStats.balance >= 0 ? (
-              <TrendingUp className="w-4 h-4 text-emerald-600" />
-            ) : (
-              <TrendingDown className="w-4 h-4 text-red-600" />
-            )}
-            <span className="text-xs text-slate-600">Balance</span>
-          </div>
-          <p className={cn(
-            "text-xl font-bold mt-1",
-            quickStats.balance >= 0 ? "text-emerald-700" : "text-red-700"
-          )}>
-            {quickStats.balance >= 0 ? '+' : ''}{quickStats.balance}h
-          </p>
-        </Card>
-        
-        <Card className={cn(
-          "p-3 border",
-          quickStats.criticalAlerts > 0 
-            ? "bg-gradient-to-br from-red-50 to-red-100 border-red-200" 
-            : "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200"
-        )}>
-          <div className="flex items-center gap-2">
-            <XCircle className={cn("w-4 h-4", quickStats.criticalAlerts > 0 ? "text-red-600" : "text-slate-400")} />
-            <span className="text-xs text-slate-600">Críticos</span>
-          </div>
-          <p className={cn(
-            "text-xl font-bold mt-1",
-            quickStats.criticalAlerts > 0 ? "text-red-700" : "text-slate-400"
-          )}>
-            {quickStats.criticalAlerts}
-          </p>
-        </Card>
-        
-        <Card className={cn(
-          "p-3 border",
-          quickStats.warningAlerts > 0 
-            ? "bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200" 
-            : "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200"
-        )}>
-          <div className="flex items-center gap-2">
-            <AlertTriangle className={cn("w-4 h-4", quickStats.warningAlerts > 0 ? "text-amber-600" : "text-slate-400")} />
-            <span className="text-xs text-slate-600">Avisos</span>
-          </div>
-          <p className={cn(
-            "text-xl font-bold mt-1",
-            quickStats.warningAlerts > 0 ? "text-amber-700" : "text-slate-400"
-          )}>
-            {quickStats.warningAlerts}
-          </p>
-        </Card>
+    <div className="flex flex-col h-[calc(100vh-2rem)] gap-4 p-4 md:p-8 max-w-5xl mx-auto w-full">
+      {/* Header */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+            <Sparkles className="h-8 w-8 text-indigo-500" />
+            Copiloto IA
+          </h1>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={clearChat}
+            className="text-muted-foreground hover:text-red-500"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Limpiar chat
+          </Button>
+        </div>
+        <p className="text-muted-foreground">
+          Tu Project Manager virtual. Pregunta sobre disponibilidad, cargas o proyectos.
+        </p>
       </div>
 
-      {/* Chat principal */}
-      <Card className="flex-1 flex flex-col overflow-hidden shadow-md border-indigo-100/50">
-        <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b pb-4">
-          <CardTitle className="flex items-center gap-3 text-xl">
-            <div className="h-10 w-10 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-full flex items-center justify-center shadow-lg shadow-indigo-200">
-              <Bot className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent font-bold">
-                Minguito AI
-              </span>
-              <p className="text-xs text-muted-foreground font-normal mt-0.5">
-                Analista de Gestión • {analysisData.month}
-              </p>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Badge variant="outline" className="text-[10px] bg-white">
-                {(analysisData.employees || []).length} empleados
-              </Badge>
-              <Badge variant="outline" className="text-[10px] bg-white">
-                {(analysisData.projects || []).length} proyectos
-              </Badge>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="text-muted-foreground hover:text-red-500 h-8 w-8" 
-                onClick={clearChat}
-                title="Limpiar chat"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardTitle>
+      {/* Chat Card */}
+      <Card className="flex-1 flex flex-col overflow-hidden shadow-lg border-indigo-100 dark:border-indigo-900/50">
+        <CardHeader className="bg-muted/30 border-b pb-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs font-medium text-muted-foreground">
+              Sistema Online • {(employees || []).filter(e => e.isActive).length} empleados • {(projects || []).filter(p => p.status === 'active').length} proyectos activos
+            </span>
+          </div>
         </CardHeader>
         
-        <CardContent className="flex-1 overflow-hidden p-0 bg-slate-50/30">
-          <ScrollArea className="h-full p-4">
+        <CardContent className="flex-1 flex flex-col p-0 overflow-hidden bg-slate-50/50 dark:bg-slate-950/50">
+          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
             <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((msg) => (
-                <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <Avatar className={`h-8 w-8 mt-1 border shrink-0 ${
-                    msg.role === 'assistant' 
-                      ? 'bg-gradient-to-br from-indigo-100 to-purple-100 border-indigo-200' 
-                      : 'bg-white border-slate-200'
-                  }`}>
-                    <AvatarFallback className={msg.role === 'assistant' ? 'text-indigo-700' : 'text-slate-700'}>
-                      {msg.role === 'assistant' ? <Sparkles className="h-4 w-4" /> : <User className="h-4 w-4" />}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
-                      msg.role === 'user' 
-                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-tr-sm whitespace-pre-wrap' 
-                        : 'bg-white border border-slate-100 text-slate-800 rounded-tl-sm'
-                    }`}>
-                      {msg.role === 'assistant' ? parseSimpleMarkdown(msg.text) : msg.text}
-                    </div>
-                    <span className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1.5">
-                      {format(msg.timestamp, 'HH:mm')}
-                      {msg.provider && (
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded text-[9px] font-medium",
-                          msg.provider === 'gemini' 
-                            ? "bg-blue-100 text-blue-600" 
-                            : msg.provider === 'openrouter'
-                            ? "bg-purple-100 text-purple-600"
-                            : "bg-orange-100 text-orange-600"
-                        )}>
-                          {msg.provider === 'gemini' ? '✨ Gemini' : msg.provider === 'openrouter' ? '🟣 OpenRouter' : '🥥 Coco'}
-                        </span>
+                <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {msg.role === 'assistant' && (
+                    <Avatar className={`h-8 w-8 mt-1 border shrink-0 ${msg.isError ? 'border-red-200 bg-red-50' : 'border-indigo-200 bg-white'}`}>
+                      {msg.isError ? (
+                        <AlertTriangle className="h-5 w-5 text-red-500 m-1.5" />
+                      ) : (
+                        <AvatarFallback className="bg-indigo-50 text-indigo-600">
+                          <Bot className="h-5 w-5" />
+                        </AvatarFallback>
                       )}
-                    </span>
+                    </Avatar>
+                  )}
+                  
+                  <div className={cn(
+                    "rounded-2xl px-4 py-3 max-w-[85%] text-sm shadow-sm leading-relaxed",
+                    msg.role === 'user' 
+                      ? 'bg-indigo-600 text-white rounded-br-none' 
+                      : msg.isError 
+                        ? 'bg-red-50 border border-red-200 text-red-700 rounded-bl-none'
+                        : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-bl-none'
+                  )}>
+                    {msg.role === 'user' ? (
+                      msg.content
+                    ) : (
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    )}
                   </div>
+                  
+                  {msg.role === 'user' && (
+                    <Avatar className="h-8 w-8 mt-1 border border-slate-200 bg-white shrink-0">
+                      <AvatarFallback className="bg-slate-50 text-slate-600">
+                        <User className="h-5 w-5" />
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
                 </div>
               ))}
               
+              {/* Mostrar proveedor del último mensaje */}
+              {messages.length > 1 && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].provider && (
+                <div className="flex justify-start pl-11">
+                  <span className="text-[10px] text-muted-foreground flex items-center">
+                    {format(messages[messages.length - 1].timestamp, 'HH:mm')}
+                    {getProviderBadge(messages[messages.length - 1].provider)}
+                  </span>
+                </div>
+              )}
+              
               {isLoading && (
-                <div className="flex gap-3">
-                  <div className="h-8 w-8 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-full flex items-center justify-center">
-                    <Sparkles className="h-4 w-4 text-indigo-400 animate-pulse" />
-                  </div>
-                  <div className="bg-white border border-slate-100 px-4 py-2.5 rounded-2xl rounded-tl-sm text-sm text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <span className="animate-bounce">●</span>
-                      <span className="animate-bounce" style={{ animationDelay: '0.1s' }}>●</span>
-                      <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>●</span>
-                    </span>
+                <div className="flex gap-3 justify-start">
+                  <Avatar className="h-8 w-8 mt-1 border border-indigo-200 bg-white">
+                    <AvatarFallback className="bg-indigo-50">
+                      <Sparkles className="h-4 w-4 animate-pulse text-indigo-400" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2 text-sm text-muted-foreground shadow-sm">
+                    <Loader2 className="h-3 w-3 animate-spin text-indigo-500" /> 
+                    Analizando datos de la agencia...
                   </div>
                 </div>
               )}
-              <div ref={scrollRef} />
             </div>
           </ScrollArea>
-        </CardContent>
 
-        {/* Sugerencias + Input */}
-        <div className="border-t bg-white">
-          {/* Preguntas sugeridas */}
-          <div className="px-4 pt-3 pb-2">
-            <div className="flex items-center gap-2 mb-2">
-              <HelpCircle className="w-3 h-3 text-slate-400" />
-              <span className="text-[10px] text-slate-500 uppercase font-medium">Sugerencias</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {SUGGESTED_QUESTIONS.map((q, i) => (
-                <Button
-                  key={i}
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs gap-1.5 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 transition-colors"
-                  onClick={() => handleSuggestedQuestion(q.text)}
-                  disabled={isLoading}
-                >
-                  {q.icon}
-                  {q.text}
-                </Button>
-              ))}
-            </div>
-          </div>
-          
           {/* Input */}
-          <div className="p-4 pt-2">
-            <div className="flex gap-2 max-w-3xl mx-auto relative">
+          <div className="p-4 bg-background border-t">
+            <div className="max-w-3xl mx-auto flex gap-3">
               <Input 
-                placeholder="Pregunta lo que quieras sobre el equipo, proyectos, cargas..." 
+                placeholder="Ej: ¿Quién tiene disponibilidad esta semana?..." 
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                className="pr-12 py-6 shadow-sm border-slate-200 focus-visible:ring-indigo-500"
+                onKeyDown={handleKeyDown}
+                className="flex-1 shadow-sm border-indigo-200 focus-visible:ring-indigo-500"
                 disabled={isLoading}
+                autoFocus
               />
               <Button 
-                size="icon" 
-                onClick={() => handleSend()} 
-                disabled={isLoading || !input.trim()}
-                className="absolute right-1.5 top-1.5 h-9 w-9 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 transition-all"
+                onClick={handleSendMessage} 
+                disabled={isLoading || !input.trim()} 
+                className="bg-indigo-600 hover:bg-indigo-700 shadow-md"
               >
                 <Send className="h-4 w-4" />
               </Button>
             </div>
           </div>
-        </div>
+        </CardContent>
       </Card>
     </div>
   );
