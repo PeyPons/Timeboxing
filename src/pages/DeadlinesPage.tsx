@@ -631,20 +631,41 @@ export default function DeadlinesPage() {
     const [year, month] = selectedMonth.split('-').map(Number);
     const prevMonth = format(subMonths(new Date(year, month - 1), 1), 'yyyy-MM');
     
-    const previousDeadlines = deadlines.filter(d => d.month === prevMonth);
-    if (previousDeadlines.length === 0) {
-      toast.error('No hay datos del mes anterior para copiar');
-      return;
-    }
-    
-    if (!confirm(`¿Copiar ${previousDeadlines.length} deadlines del mes anterior?`)) return;
-    
     try {
+      // Cargar deadlines del mes anterior desde la base de datos
+      const { data: previousData, error: loadError } = await supabase
+        .from('deadlines')
+        .select('*')
+        .eq('month', prevMonth);
+      
+      if (loadError) throw loadError;
+      
+      if (!previousData || previousData.length === 0) {
+        toast.error('No hay datos del mes anterior para copiar');
+        return;
+      }
+      
+      const previousDeadlines = previousData.map((d: any) => ({
+        id: d.id,
+        projectId: d.project_id,
+        month: d.month,
+        notes: d.notes,
+        employeeHours: d.employee_hours || {},
+        isHidden: d.is_hidden || false
+      }));
+      
+      if (!confirm(`¿Copiar ${previousDeadlines.length} deadlines del mes anterior?`)) return;
+      
       let copied = 0;
+      let skipped = 0;
+      
       for (const deadline of previousDeadlines) {
         // Verificar que no exista ya en el mes actual
-        const existing = deadlines.find(d => d.projectId === deadline.projectId && d.month === selectedMonth);
-        if (existing) continue;
+        const existing = deadlines.find(d => d.projectId === deadline.projectId);
+        if (existing) {
+          skipped++;
+          continue;
+        }
         
         const { data, error } = await supabase
           .from('deadlines')
@@ -671,7 +692,13 @@ export default function DeadlinesPage() {
         copied++;
       }
       
-      toast.success(`Se copiaron ${copied} deadlines`);
+      if (copied > 0 && skipped > 0) {
+        toast.success(`Se copiaron ${copied} deadlines (${skipped} ya existían)`);
+      } else if (copied > 0) {
+        toast.success(`Se copiaron ${copied} deadlines`);
+      } else {
+        toast.info('Todos los deadlines ya existían en este mes');
+      }
     } catch (error: any) {
       console.error('Error copiando deadlines:', error);
       toast.error(error.message || 'Error al copiar');
@@ -747,668 +774,376 @@ export default function DeadlinesPage() {
         </div>
       </div>
 
-      {/* Resumen de Empleados */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Resumen por Empleado
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeEmployees.map(emp => {
-              const capacityData = getMonthlyCapacity(emp.id);
-              const assigned = getEmployeeAssignedHours(emp.id);
-              const available = capacityData.available;
-              const percentage = available > 0 ? (assigned / available) * 100 : (assigned > 0 ? 999 : 0);
-              const status = percentage > 100 ? 'overload' : percentage > 85 ? 'warning' : 'healthy';
-              const remaining = available - assigned;
+      {/* Resumen de Empleados - Diseño compacto */}
+      <div className="bg-white rounded-xl border shadow-sm p-4">
+        <h3 className="text-sm font-medium text-slate-500 mb-3 flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          Resumen del equipo
+        </h3>
+        <div className="flex flex-wrap gap-3">
+          {activeEmployees.map(emp => {
+            const capacityData = getMonthlyCapacity(emp.id);
+            const assigned = getEmployeeAssignedHours(emp.id);
+            const available = capacityData.available;
+            const percentage = available > 0 ? Math.round((assigned / available) * 100) : (assigned > 0 ? 999 : 0);
+            const status = percentage > 100 ? 'overload' : percentage > 85 ? 'warning' : 'healthy';
+            const remaining = available - assigned;
+            
+            return (
+              <TooltipProvider key={emp.id}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className={cn(
+                      "flex items-center gap-2 px-3 py-2 rounded-lg border cursor-help transition-colors",
+                      status === 'overload' && "bg-red-50 border-red-200",
+                      status === 'warning' && "bg-amber-50 border-amber-200",
+                      status === 'healthy' && "bg-white border-slate-200 hover:border-slate-300"
+                    )}>
+                      <Avatar className="h-7 w-7">
+                        <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                        <AvatarFallback className="bg-slate-600 text-white text-xs">
+                          {(emp.first_name || emp.name)[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="text-sm">
+                        <span className="font-medium">{emp.first_name || emp.name}</span>
+                        <span className={cn(
+                          "ml-2 font-mono text-xs",
+                          status === 'overload' ? "text-red-600" : 
+                          status === 'warning' ? "text-amber-600" : 
+                          "text-slate-500"
+                        )}>
+                          {assigned.toFixed(0)}/{available.toFixed(0)}h
+                        </span>
+                      </div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    <div className="space-y-1 text-xs">
+                      <div className="font-semibold mb-2">{emp.first_name || emp.name}</div>
+                      <div className="flex justify-between gap-4">
+                        <span>Base:</span>
+                        <span className="font-mono">{capacityData.total.toFixed(1)}h</span>
+                      </div>
+                      {capacityData.absenceHours > 0 && (
+                        <div className="flex justify-between gap-4 text-red-400">
+                          <span>Ausencias:</span>
+                          <span className="font-mono">-{capacityData.absenceHours.toFixed(1)}h</span>
+                        </div>
+                      )}
+                      {capacityData.eventHours > 0 && (
+                        <div className="flex justify-between gap-4 text-amber-400">
+                          <span>Eventos:</span>
+                          <span className="font-mono">-{capacityData.eventHours.toFixed(1)}h</span>
+                        </div>
+                      )}
+                      <div className="border-t border-slate-600 pt-1 flex justify-between gap-4">
+                        <span>Disponible:</span>
+                        <span className="font-mono font-semibold">{available.toFixed(1)}h</span>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <span>Asignado:</span>
+                        <span className="font-mono">{assigned.toFixed(1)}h</span>
+                      </div>
+                      <div className={cn(
+                        "flex justify-between gap-4 font-semibold",
+                        remaining < 0 ? "text-red-400" : "text-emerald-400"
+                      )}>
+                        <span>Libre:</span>
+                        <span className="font-mono">{remaining.toFixed(1)}h</span>
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Asignaciones Globales - Diseño inline */}
+      <div className="bg-white rounded-xl border shadow-sm p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-slate-500">Tareas globales del mes</h3>
+          <Button onClick={() => openGlobalDialog()} size="sm" variant="ghost" className="gap-1 h-7 text-xs">
+            <Plus className="h-3 w-3" />
+            Añadir
+          </Button>
+        </div>
+        {globalAssignments.length === 0 ? (
+          <div className="text-sm text-slate-400 italic">
+            Sin tareas globales
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {globalAssignments.map(assignment => (
+              <div key={assignment.id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full text-sm group">
+                <span>{assignment.name}</span>
+                <span className="font-mono text-indigo-600 font-medium">+{assignment.hours}h</span>
+                <button 
+                  onClick={() => openGlobalDialog(assignment)}
+                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 transition-opacity"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+                <button 
+                  onClick={() => handleDeleteGlobal(assignment.id)}
+                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Filtros - Diseño inline */}
+      <div className="flex flex-wrap items-center gap-3 bg-white rounded-xl border shadow-sm p-3">
+        <div className="flex-1 min-w-[200px]">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Buscar proyecto o cliente..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 h-9 border-slate-200"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-4 text-sm">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch
+              id="only-seo"
+              checked={onlySEO}
+              onCheckedChange={setOnlySEO}
+              className="scale-90"
+            />
+            <span className="text-slate-600">Solo SEO</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch
+              id="show-hidden"
+              checked={showHidden}
+              onCheckedChange={setShowHidden}
+              className="scale-90"
+            />
+            <span className="text-slate-600">Ocultos</span>
+          </label>
+        </div>
+        <Select value={filterByEmployee} onValueChange={setFilterByEmployee}>
+          <SelectTrigger className="w-[140px] h-9 text-sm">
+            <SelectValue placeholder="Empleado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            {activeEmployees.map(emp => (
+              <SelectItem key={emp.id} value={emp.id}>
+                {emp.first_name || emp.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+          <SelectTrigger className="w-[140px] h-9 text-sm">
+            <SelectValue placeholder="Ordenar" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="client">Por cliente</SelectItem>
+            <SelectItem value="assigned">Más asignado</SelectItem>
+            <SelectItem value="remaining">Más disponible</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Proyectos - Diseño limpio */}
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b bg-slate-50">
+          <h3 className="font-semibold text-slate-700">Proyectos</h3>
+        </div>
+        {Object.keys(projectsByClient).length === 0 ? (
+          <div className="text-center text-slate-500 py-8">
+            No hay proyectos para mostrar
+          </div>
+        ) : (
+          <div className="divide-y">
+            {Object.entries(projectsByClient).map(([clientId, clientProjects]) => {
+              const client = clients.find(c => c.id === clientId);
+              const isExpanded = expandedClients.has(clientId);
               
               return (
-                <div key={emp.id} className="p-4 border rounded-lg bg-white">
-                  <div className="flex items-center gap-3 mb-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={emp.avatarUrl} alt={emp.name} />
-                      <AvatarFallback className="bg-indigo-600 text-white text-sm">
-                        {(emp.first_name || emp.name)[0]}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm truncate">{emp.first_name || emp.name}</div>
-                      <div className="text-xs text-slate-500 truncate">{emp.role}</div>
-                    </div>
-                    {status === 'overload' && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                    {status === 'warning' && <AlertTriangle className="h-4 w-4 text-amber-500" />}
-                    {status === 'healthy' && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-                  </div>
-                  <div className="space-y-2">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="flex justify-between text-sm cursor-help">
-                            <span className="text-slate-600 border-b border-dotted border-slate-300">
-                              Disponible:
-                            </span>
-                            <span className="font-mono font-semibold">{available.toFixed(1)}h</span>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs">
-                          <div className="space-y-1 text-xs">
-                            <div className="flex justify-between gap-4">
-                              <span>Horario base:</span>
-                              <span className="font-mono">{capacityData.total.toFixed(1)}h</span>
-                            </div>
-                            {capacityData.absenceHours > 0 && (
-                              <div className="flex justify-between gap-4 text-red-400">
-                                <span>Ausencias:</span>
-                                <span className="font-mono">-{capacityData.absenceHours.toFixed(1)}h</span>
+                <div key={clientId}>
+                  <Collapsible open={isExpanded} onOpenChange={() => toggleClient(clientId)}>
+                    <CollapsibleTrigger className="w-full">
+                      <div className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-slate-400" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-slate-400" />
+                        )}
+                        <div 
+                          className="w-3 h-3 rounded-full flex-shrink-0" 
+                          style={{ backgroundColor: client?.color || '#6b7280' }}
+                        />
+                        <span className="font-medium text-sm">{client?.name || 'Sin cliente'}</span>
+                        <span className="text-xs text-slate-400">
+                          ({clientProjects.length})
+                        </span>
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="ml-7 border-l">
+                        {clientProjects.map(project => {
+                          const deadline = getProjectDeadline(project.id);
+                          const isEditing = editingProjectId === project.id;
+                          const currentHours = isEditing ? inlineFormData.employeeHours : (deadline?.employeeHours || {});
+                          const totalAssigned = (Object.values(currentHours) as number[]).reduce((sum, h) => sum + (h || 0), 0);
+                          const isOverBudget = totalAssigned > (project.budgetHours || 0);
+                          const isUnderMin = project.minimumHours != null && project.minimumHours > 0 && totalAssigned < project.minimumHours;
+                          const isHidden = isEditing ? inlineFormData.isHidden : hiddenProjects.has(project.id);
+                          const isProjectExpanded = expandedProjects.has(project.id);
+                          
+                          return (
+                            <div 
+                              key={project.id} 
+                              className={cn(
+                                "border-b last:border-b-0",
+                                isHidden && "opacity-40"
+                              )}
+                            >
+                              {/* Fila del proyecto */}
+                              <div 
+                                className={cn(
+                                  "flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50/50 transition-colors",
+                                  isOverBudget && "bg-red-50/30",
+                                  isEditing && "bg-indigo-50/50"
+                                )}
+                                onClick={() => {
+                                  if (!isEditing) toggleProjectExpanded(project.id);
+                                }}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm">{project.name}</span>
+                                    {isHidden && (
+                                      <EyeOff className="h-3 w-3 text-slate-400" />
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-slate-400 font-mono">
+                                    {project.minimumHours != null && project.minimumHours > 0 && (
+                                      <span className="mr-2">min {project.minimumHours}h</span>
+                                    )}
+                                    <span>{project.budgetHours}h</span>
+                                  </div>
+                                </div>
+                                
+                                {/* Horas asignadas */}
+                                <div className={cn(
+                                  "text-sm font-mono font-medium min-w-[50px] text-right",
+                                  isOverBudget ? "text-red-600" : 
+                                  isUnderMin ? "text-amber-600" : 
+                                  totalAssigned > 0 ? "text-slate-700" : "text-slate-400"
+                                )}>
+                                  {totalAssigned}h
+                                </div>
+                                
+                                {/* Botón de acción */}
+                                {!isEditing && (
+                                  <Button
+                                    size="sm"
+                                    variant={totalAssigned === 0 ? "default" : "ghost"}
+                                    className={cn(
+                                      "h-7 px-2 text-xs",
+                                      totalAssigned === 0 && "bg-indigo-600 hover:bg-indigo-700"
+                                    )}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startEditingProject(project.id);
+                                    }}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                    {totalAssigned === 0 ? 'Asignar' : 'Editar'}
+                                  </Button>
+                                )}
                               </div>
-                            )}
-                            {capacityData.eventHours > 0 && (
-                              <div className="flex justify-between gap-4 text-amber-400">
-                                <span>Eventos:</span>
-                                <span className="font-mono">-{capacityData.eventHours.toFixed(1)}h</span>
-                              </div>
-                            )}
-                            <div className="border-t border-slate-600 pt-1 flex justify-between gap-4 font-semibold">
-                              <span>Disponible:</span>
-                              <span className="font-mono">{available.toFixed(1)}h</span>
+                              
+                              {/* Panel de edición */}
+                              {isEditing && (
+                                <div className="px-4 py-3 bg-slate-50 border-t space-y-3">
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                                    {activeEmployees.map(emp => (
+                                      <div key={emp.id} className="flex flex-col gap-0.5">
+                                        <span className="text-xs text-slate-500 truncate">
+                                          {emp.first_name || emp.name}
+                                        </span>
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          step="0.5"
+                                          value={inlineFormData.employeeHours[emp.id] || ''}
+                                          onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0)}
+                                          className="h-7 text-center font-mono text-sm"
+                                          placeholder="0"
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <Input
+                                      placeholder="Notas..."
+                                      value={inlineFormData.notes}
+                                      onChange={(e) => setInlineFormData(prev => ({ ...prev, notes: e.target.value }))}
+                                      className="h-7 text-sm flex-1 min-w-[200px]"
+                                    />
+                                    <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                      <Switch
+                                        checked={inlineFormData.isHidden}
+                                        onCheckedChange={(checked) => setInlineFormData(prev => ({ ...prev, isHidden: checked }))}
+                                        className="scale-75"
+                                      />
+                                      Ocultar
+                                    </label>
+                                    <div className="flex items-center gap-2 ml-auto">
+                                      <span className="text-xs text-slate-500">
+                                        Total: <span className={cn(
+                                          "font-mono font-medium",
+                                          isOverBudget ? "text-red-600" : "text-slate-700"
+                                        )}>{totalAssigned}h</span>
+                                        <span className="text-slate-400">/{project.budgetHours}h</span>
+                                      </span>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs"
+                                        onClick={cancelEditingProject}
+                                        disabled={isSaving}
+                                      >
+                                        Cancelar
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
+                                        onClick={() => saveInlineDeadline(project.id)}
+                                        disabled={isSaving}
+                                      >
+                                        {isSaving ? '...' : 'Guardar'}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Asignado:</span>
-                      <span className={cn(
-                        "font-mono font-semibold",
-                        status === 'overload' ? "text-red-600" : 
-                        status === 'warning' ? "text-amber-600" : 
-                        "text-slate-900"
-                      )}>
-                        {assigned.toFixed(1)}h
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Libre:</span>
-                      <span className={cn(
-                        "font-mono font-semibold",
-                        remaining < 0 ? "text-red-600" : "text-emerald-600"
-                      )}>
-                        {remaining.toFixed(1)}h
-                      </span>
-                    </div>
-                    <Progress 
-                      value={Math.min(percentage, 100)} 
-                      className={cn(
-                        "h-2",
-                        status === 'overload' && "bg-red-200",
-                        status === 'warning' && "bg-amber-200",
-                        status === 'healthy' && "bg-emerald-200"
-                      )}
-                    />
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">Uso:</span>
-                      <span className={cn(
-                        "font-semibold",
-                        status === 'overload' ? "text-red-600" : 
-                        status === 'warning' ? "text-amber-600" : 
-                        "text-emerald-600"
-                      )}>
-                        {percentage.toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
+                          );
+                        })}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
               );
             })}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Asignaciones Globales */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Asignaciones Globales
-          </CardTitle>
-          <Button onClick={() => openGlobalDialog()} size="sm" variant="outline" className="gap-2">
-            <Plus className="h-4 w-4" />
-            Añadir
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {globalAssignments.length === 0 ? (
-            <div className="text-center text-slate-500 py-4 text-sm">
-              No hay asignaciones globales para este mes
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {globalAssignments.map(assignment => (
-                <div key={assignment.id} className="flex items-center justify-between p-3 border rounded-lg bg-slate-50">
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">{assignment.name}</div>
-                    <div className="text-xs text-slate-500">
-                      {assignment.affectsAll 
-                        ? 'Afecta a todos los empleados' 
-                        : `Afecta a ${(assignment.affectedEmployeeIds as string[])?.length || 0} empleado(s)`}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline" className="font-mono">
-                      +{assignment.hours}h
-                    </Badge>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openGlobalDialog(assignment)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-red-600 hover:text-red-700"
-                        onClick={() => handleDeleteGlobal(assignment.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Filtros */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Buscar proyecto o cliente..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                id="only-seo"
-                checked={onlySEO}
-                onCheckedChange={setOnlySEO}
-              />
-              <Label htmlFor="only-seo" className="cursor-pointer">
-                Solo SEO
-              </Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                id="show-hidden"
-                checked={showHidden}
-                onCheckedChange={setShowHidden}
-              />
-              <Label htmlFor="show-hidden" className="cursor-pointer">
-                Mostrar ocultos
-              </Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-slate-400" />
-              <Select value={filterByEmployee} onValueChange={setFilterByEmployee}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Empleado..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {activeEmployees.map(emp => (
-                    <SelectItem key={emp.id} value={emp.id}>
-                      {emp.first_name || emp.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Ordenar..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="client">Por cliente</SelectItem>
-                <SelectItem value="assigned">Más asignado</SelectItem>
-                <SelectItem value="remaining">Más disponible</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Proyectos agrupados por cliente */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Asignaciones por Proyecto</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {Object.keys(projectsByClient).length === 0 ? (
-            <div className="text-center text-slate-500 py-8">
-              No hay proyectos para mostrar
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {Object.entries(projectsByClient).map(([clientId, clientProjects]) => {
-                const client = clients.find(c => c.id === clientId);
-                const isExpanded = expandedClients.has(clientId);
-                
-                return (
-                  <div key={clientId} className="border rounded-lg overflow-hidden">
-                    <Collapsible open={isExpanded} onOpenChange={() => toggleClient(clientId)}>
-                      <CollapsibleTrigger className="w-full">
-                        <div className="flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors">
-                          <div className="flex items-center gap-3">
-                            {isExpanded ? (
-                              <ChevronDown className="h-5 w-5 text-slate-500" />
-                            ) : (
-                              <ChevronRight className="h-5 w-5 text-slate-500" />
-                            )}
-                            <div 
-                              className="w-4 h-4 rounded-full" 
-                              style={{ backgroundColor: client?.color || '#6b7280' }}
-                            />
-                            <span className="font-semibold">{client?.name || 'Sin cliente'}</span>
-                            <Badge variant="outline" className="text-xs">
-                              {clientProjects.length} proyecto{clientProjects.length !== 1 ? 's' : ''}
-                            </Badge>
-                          </div>
-                        </div>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <div className="divide-y">
-                          {clientProjects.map(project => {
-                            const deadline = getProjectDeadline(project.id);
-                            const isEditing = editingProjectId === project.id;
-                            const currentHours = isEditing ? inlineFormData.employeeHours : (deadline?.employeeHours || {});
-                            const totalAssigned = (Object.values(currentHours) as number[]).reduce((sum, h) => sum + (h || 0), 0);
-                            const isOverBudget = totalAssigned > (project.budgetHours || 0);
-                            const isUnderMin = project.minimumHours != null && project.minimumHours > 0 && totalAssigned < project.minimumHours;
-                            const isHidden = isEditing ? inlineFormData.isHidden : hiddenProjects.has(project.id);
-                            const isProjectExpanded = expandedProjects.has(project.id);
-                            const progressPct = (project.budgetHours || 0) > 0 ? (totalAssigned / (project.budgetHours || 1)) * 100 : 0;
-                            
-                            return (
-                              <div 
-                                key={project.id} 
-                                className={cn(
-                                  "transition-colors",
-                                  isHidden && "opacity-50",
-                                  isOverBudget && "bg-red-50/50"
-                                )}
-                              >
-                                {/* Header del proyecto - siempre visible */}
-                                <div 
-                                  className={cn(
-                                    "p-4 cursor-pointer hover:bg-slate-50 flex items-center gap-4",
-                                    isProjectExpanded && "border-b bg-slate-50"
-                                  )}
-                                  onClick={() => {
-                                    if (!isEditing) toggleProjectExpanded(project.id);
-                                  }}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {isProjectExpanded ? (
-                                      <ChevronDown className="h-4 w-4 text-slate-400" />
-                                    ) : (
-                                      <ChevronRight className="h-4 w-4 text-slate-400" />
-                                    )}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="font-medium">{project.name}</span>
-                                      {isHidden && (
-                                        <Badge variant="outline" className="text-xs">
-                                          <EyeOff className="h-3 w-3 mr-1" />
-                                          Oculto
-                                        </Badge>
-                                      )}
-                                      {!deadline && !isEditing && (
-                                        <Badge variant="outline" className="text-xs text-slate-400">
-                                          Sin asignar
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-4 text-xs text-slate-500 mt-1">
-                                      {project.minimumHours != null && project.minimumHours > 0 && (
-                                        <span className="font-mono">Min: {project.minimumHours}h</span>
-                                      )}
-                                      <span className="font-mono">{project.budgetHours}h contratadas</span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-3">
-                                    {/* Barra de progreso mini */}
-                                    <div className="w-24 hidden sm:block">
-                                      <Progress 
-                                        value={Math.min(progressPct, 100)} 
-                                        className={cn(
-                                          "h-2",
-                                          isOverBudget && "bg-red-200",
-                                          isUnderMin && "bg-amber-200"
-                                        )}
-                                      />
-                                    </div>
-                                    <Badge 
-                                      variant={isOverBudget ? "destructive" : isUnderMin ? "secondary" : totalAssigned > 0 ? "default" : "outline"}
-                                      className="font-mono min-w-[60px] justify-center"
-                                    >
-                                      {totalAssigned}h
-                                    </Badge>
-                                    {!isEditing && (
-                                      <Button
-                                        size="sm"
-                                        variant={totalAssigned === 0 ? "default" : "outline"}
-                                        className={cn(
-                                          "gap-1 whitespace-nowrap",
-                                          totalAssigned === 0 && "bg-indigo-600 hover:bg-indigo-700"
-                                        )}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          startEditingProject(project.id);
-                                        }}
-                                      >
-                                        <Pencil className="h-3 w-3" />
-                                        {totalAssigned === 0 ? 'Asignar' : 'Editar'}
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-                                
-                                {/* Panel expandido con edición inline */}
-                                {isProjectExpanded && (
-                                  <div className="p-4 bg-white border-t">
-                                    {isEditing ? (
-                                      /* Modo edición */
-                                      <div className="space-y-4">
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                                          {activeEmployees.map(emp => (
-                                            <div key={emp.id} className="flex flex-col gap-1">
-                                              <Label className="text-xs text-slate-600 truncate" title={emp.first_name || emp.name}>
-                                                {emp.first_name || emp.name}
-                                              </Label>
-                                              <div className="flex items-center gap-1">
-                                                <Input
-                                                  type="number"
-                                                  min="0"
-                                                  step="0.5"
-                                                  value={inlineFormData.employeeHours[emp.id] || ''}
-                                                  onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0)}
-                                                  className="h-8 text-center font-mono text-sm"
-                                                  placeholder="0"
-                                                />
-                                                <span className="text-xs text-slate-400">h</span>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                        <div className="flex flex-col sm:flex-row gap-3">
-                                          <div className="flex-1">
-                                            <Input
-                                              placeholder="Notas (ej: LB 3,5h corresponde a link building)"
-                                              value={inlineFormData.notes}
-                                              onChange={(e) => setInlineFormData(prev => ({ ...prev, notes: e.target.value }))}
-                                              className="h-8 text-sm"
-                                            />
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <Switch
-                                              id={`hidden-${project.id}`}
-                                              checked={inlineFormData.isHidden}
-                                              onCheckedChange={(checked) => setInlineFormData(prev => ({ ...prev, isHidden: checked }))}
-                                            />
-                                            <Label htmlFor={`hidden-${project.id}`} className="text-xs cursor-pointer whitespace-nowrap">
-                                              Ocultar
-                                            </Label>
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center justify-between pt-2 border-t">
-                                          <div className="text-sm">
-                                            <span className="text-slate-600">Total: </span>
-                                            <span className={cn(
-                                              "font-mono font-semibold",
-                                              isOverBudget ? "text-red-600" : isUnderMin ? "text-amber-600" : "text-slate-900"
-                                            )}>
-                                              {totalAssigned}h
-                                            </span>
-                                            <span className="text-slate-400"> / {project.budgetHours}h</span>
-                                          </div>
-                                          <div className="flex gap-2">
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={cancelEditingProject}
-                                              disabled={isSaving}
-                                            >
-                                              Cancelar
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              onClick={() => saveInlineDeadline(project.id)}
-                                              disabled={isSaving}
-                                              className="bg-indigo-600 hover:bg-indigo-700"
-                                            >
-                                              {isSaving ? 'Guardando...' : 'Guardar'}
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      /* Modo vista */
-                                      <div className="space-y-3">
-                                        {deadline ? (
-                                          <>
-                                            <div className="flex flex-wrap gap-2">
-                                              {activeEmployees.map(emp => {
-                                                const hours = deadline.employeeHours[emp.id] || 0;
-                                                if (hours === 0) return null;
-                                                return (
-                                                  <div key={emp.id} className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded-md">
-                                                    <span className="text-xs text-slate-600">{emp.first_name || emp.name}:</span>
-                                                    <span className="text-xs font-mono font-semibold">{hours}h</span>
-                                                  </div>
-                                                );
-                                              })}
-                                            </div>
-                                            {deadline.notes && (
-                                              <div className="text-sm text-slate-500 italic">
-                                                {deadline.notes}
-                                              </div>
-                                            )}
-                                          </>
-                                        ) : (
-                                          <div className="text-sm text-slate-400">
-                                            No hay asignaciones para este proyecto
-                                          </div>
-                                        )}
-                                        <div className="flex items-center gap-2 pt-2 border-t">
-                                          <Button
-                                            size="sm"
-                                            variant="default"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              startEditingProject(project.id);
-                                            }}
-                                            className="gap-1 bg-indigo-600 hover:bg-indigo-700"
-                                          >
-                                            <Pencil className="h-3 w-3" />
-                                            {deadline ? 'Editar asignaciones' : 'Asignar horas'}
-                                          </Button>
-                                          {deadline && (
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDelete(deadline.id);
-                                              }}
-                                            >
-                                              <Trash2 className="h-3 w-3" />
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Dialog para crear/editar deadline */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editingDeadline ? 'Editar Deadline' : 'Nuevo Deadline'}
-            </DialogTitle>
-            <DialogDescription>
-              Asigna horas por empleado para este proyecto
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Proyecto</Label>
-              <Select
-                value={formData.projectId}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, projectId: value }))}
-                disabled={!!editingDeadline}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un proyecto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {filteredProjects.map(project => {
-                    const client = clients.find(c => c.id === project.clientId);
-                    return (
-                      <SelectItem key={project.id} value={project.id}>
-                        {client?.name || 'Sin cliente'} - {project.name} 
-                        ({project.minimumHours ? `${project.minimumHours}-` : ''}{project.budgetHours}h)
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Switch
-                id="is-hidden"
-                checked={formData.isHidden}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isHidden: checked }))}
-              />
-              <Label htmlFor="is-hidden" className="cursor-pointer">
-                Ocultar este proyecto (no se trabaja este mes)
-              </Label>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Anotaciones</Label>
-              <Textarea
-                placeholder="Ej: LB 3,5 horas (link building)"
-                value={formData.notes}
-                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-3">
-              <Label>Asignación de Horas por Empleado</Label>
-              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-                {activeEmployees.map(emp => {
-                  const hours = formData.employeeHours[emp.id] || 0;
-                  const project = projects.find(p => p.id === formData.projectId);
-                  return (
-                    <div key={emp.id} className="flex items-center gap-3 p-2 rounded-lg border bg-slate-50">
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{emp.first_name || emp.name}</div>
-                        <div className="text-xs text-slate-500">{emp.role}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={hours}
-                          onChange={(e) => updateEmployeeHours(emp.id, parseFloat(e.target.value) || 0)}
-                          className="w-24 text-center"
-                          placeholder="0"
-                        />
-                        <span className="text-sm text-slate-500">h</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {formData.projectId && (
-              <div className="p-3 bg-slate-50 rounded-lg">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">Total asignado:</span>
-                  <span className={cn(
-                    "font-mono font-semibold",
-                    Object.values(formData.employeeHours).reduce((sum, h) => (sum as number) + (h as number), 0 as number) > (projects.find(p => p.id === formData.projectId)?.budgetHours || 0)
-                      ? "text-red-600"
-                      : "text-slate-900"
-                  )}>
-                    {Object.values(formData.employeeHours).reduce((sum, h) => (sum as number) + (h as number), 0 as number)}h
-                  </span>
-                </div>
-                {projects.find(p => p.id === formData.projectId)?.minimumHours && (
-                  <div className="flex justify-between items-center text-sm mt-1">
-                    <span className="text-slate-600">Horas mínimas:</span>
-                    <span className="font-mono font-semibold text-slate-900">
-                      {projects.find(p => p.id === formData.projectId)?.minimumHours}h
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center text-sm mt-1">
-                  <span className="text-slate-600">Horas contratadas:</span>
-                  <span className="font-mono font-semibold text-slate-900">
-                    {projects.find(p => p.id === formData.projectId)?.budgetHours || 0}h
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-700">
-              <Save className="h-4 w-4 mr-2" />
-              Guardar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
 
       {/* Dialog para asignaciones globales */}
       <Dialog open={isGlobalDialogOpen} onOpenChange={setIsGlobalDialogOpen}>
