@@ -5,6 +5,7 @@ import { MyWeekView } from '@/components/employee/MyWeekView';
 import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/DashboardWidgets'; 
 import { ReliabilityIndexCard } from '@/components/employee/ReliabilityIndexCard';
 import { WelcomeTour, useWelcomeTour } from '@/components/employee/WelcomeTour';
+import { EmployeeSettings } from '@/components/employee/EmployeeSettings';
 import { Card } from '@/components/ui/card';
 import { EmployeeRow } from '@/components/planner/EmployeeRow'; 
 import { AllocationSheet } from '@/components/planner/AllocationSheet';
@@ -398,6 +399,8 @@ export default function EmployeeDashboard() {
           <Button variant="outline" onClick={() => setShowAbsences(true)} className="gap-2 text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" data-tour="absences">
             <Calendar className="h-4 w-4" /> Ausencias
           </Button>
+
+          <EmployeeSettings employeeId={myEmployeeProfile.id} />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
