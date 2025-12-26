@@ -181,6 +181,17 @@ export function PlannerGrid() {
             return null;
         }).filter(Boolean);
         
+        // FILTRAR: Solo empleados con tareas para el análisis
+        const employeesWithTasks = employeeData.filter(e => e.tasksTotal > 0);
+        const employeesWithoutTasks = employeeData.filter(e => e.tasksTotal === 0).map(e => e.name);
+        
+        // Si no hay nadie con tareas, no hay mucho que analizar
+        if (employeesWithTasks.length === 0) {
+            setInsights([{ type: 'info', text: 'Sin tareas asignadas este mes. ¡Hora de planificar!' }]);
+            setIsAnalyzing(false);
+            return;
+        }
+        
         // Construir contexto compacto para la IA
         const analysisContext = {
             mes: format(currentMonth, 'MMMM yyyy', { locale: es }),
@@ -192,22 +203,29 @@ export function PlannerGrid() {
                 horasComputadas: Math.round(globalComp),
                 balance: Math.round(globalBalance * 10) / 10
             },
-            empleados: employeeData,
+            empleadosConTareas: employeesWithTasks,
+            empleadosSinTareas: employeesWithoutTasks,
             proyectosEnRiesgo: projectIssues
         };
 
         const prompt = `
-Eres Minguito, analista de gestión veterano. Analiza estos datos y dame EXACTAMENTE 3 insights clave:
+Eres Minguito, analista de gestión. Dame EXACTAMENTE 3 insights basados en estos datos:
 
 DATOS: ${JSON.stringify(analysisContext)}
 
+IMPORTANTE:
+- Solo analiza empleados que tienen tareas (empleadosConTareas)
+- Los empleados en "empleadosSinTareas" NO tienen tareas, no digas que están sobrecargados
+- Un empleado con 0 horas asignadas NO está sobrecargado
+- Sobrecarga = más del 100% de su capacidad
+
 REGLAS:
-- Prioriza: 1) Bloqueos entre personas, 2) Sobrecarga/infracarga, 3) Proyectos en riesgo, 4) Balance de eficiencia
-- Sé directo y usa expresiones coloquiales españolas ("ojo con", "cuidadín", "menudo marrón")
-- Máximo 15 palabras por insight
+- Prioriza: 1) Bloqueos, 2) Sobrecarga real (>100%), 3) Proyectos en riesgo
+- Sé directo, máximo 12 palabras por insight
+- NO uses emojis ni formato markdown
 - Si todo va bien, reconócelo
 
-Responde SOLO con JSON válido:
+Responde SOLO JSON válido:
 [{"type":"warning"|"success"|"info", "text":"Frase aquí"}]
 `;
 
