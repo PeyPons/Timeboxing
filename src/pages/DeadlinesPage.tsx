@@ -373,6 +373,20 @@ export default function DeadlinesPage() {
     };
   }, [selectedMonth, currentUser, employees]);
 
+  // Limpiar locks al desmontar o cambiar de mes
+  useEffect(() => {
+    return () => {
+      // Limpiar interval de renovación
+      if (lockRefreshIntervalRef.current) {
+        clearInterval(lockRefreshIntervalRef.current);
+      }
+      // Liberar lock si estamos editando
+      if (editingProjectId && currentUser) {
+        releaseEditLock(editingProjectId);
+      }
+    };
+  }, [editingProjectId, currentUser, selectedMonth]);
+
   const activeEmployees = useMemo(() => {
     return employees.filter(e => e.isActive).sort((a, b) => 
       (a.first_name || a.name).localeCompare(b.first_name || b.name)
