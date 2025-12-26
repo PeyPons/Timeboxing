@@ -21,6 +21,7 @@ interface Message {
   role: 'user' | 'assistant';
   text: string;
   timestamp: Date;
+  provider?: 'gemini' | 'coco';
 }
 
 // Preguntas sugeridas para guiar al usuario
@@ -32,6 +33,74 @@ const SUGGESTED_QUESTIONS = [
   { icon: <Calendar className="w-3 h-3" />, text: "¿Hay empleados sin tareas planificadas?", category: "planificacion" },
   { icon: <Zap className="w-3 h-3" />, text: "Dame un resumen ejecutivo del mes", category: "resumen" },
 ];
+
+// ============================================================
+// SISTEMA DE IA CON FALLBACK
+// ============================================================
+async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'gemini' }> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const result = await model.generateContent(prompt);
+  return { text: result.response.text(), provider: 'gemini' };
+}
+
+async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco' }> {
+  const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
+  
+  const payload = {
+    message: prompt,
+    noAuth: "true",
+    action: "text/generateResume",
+    app: "CHATBOT",
+    rol: "user",
+    method: "POST",
+    language: "es",
+  };
+
+  const response = await fetch(COCO_API_URL, {
+    method: 'POST',
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Coco API error: ${response.status}`);
+  }
+
+  const responseData = await response.json();
+  
+  if (responseData && responseData.data) {
+    return { text: responseData.data, provider: 'coco' };
+  } else {
+    throw new Error('Respuesta inesperada de Coco API');
+  }
+}
+
+async function callAI(prompt: string, geminiApiKey?: string): Promise<{ text: string; provider: 'gemini' | 'coco' }> {
+  // Intentar primero con Gemini si hay API key
+  if (geminiApiKey) {
+    try {
+      return await callGeminiAPI(prompt, geminiApiKey);
+    } catch (error: any) {
+      console.warn('Gemini falló, usando Coco como fallback:', error.message);
+      // Si es error de quota, usar fallback
+      if (error.message?.includes('429') || error.message?.includes('quota')) {
+        return await callCocoAPI(prompt);
+      }
+      // Para otros errores, también intentar fallback
+      try {
+        return await callCocoAPI(prompt);
+      } catch {
+        throw error; // Si ambos fallan, lanzar el error original de Gemini
+      }
+    }
+  }
+  
+  // Si no hay API key de Gemini, usar Coco directamente
+  return await callCocoAPI(prompt);
+}
 
 export default function DashboardAI() {
   const { employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad } = useApp();
@@ -256,22 +325,7 @@ export default function DashboardAI() {
     setInput('');
     setIsLoading(true);
 
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) {
-      setMessages(prev => [...prev, { 
-        id: crypto.randomUUID(), 
-        role: 'assistant', 
-        text: '⚠️ Sin API Key no puedo funcionar. Configura VITE_GEMINI_API_KEY en tu .env', 
-        timestamp: new Date() 
-      }]);
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
       // Construir el contexto completo para Minguito
       const contextPrompt = `
 Eres Minguito, el analista de gestión de una agencia digital. 
@@ -319,21 +373,23 @@ PREGUNTA DEL USUARIO: "${messageText}"
 Responde basándote en los datos reales. Si el usuario pregunta algo que no está en los datos, dilo claramente.
 `;
 
-      const result = await model.generateContent(contextPrompt);
-      const responseText = result.response.text();
+      // Usar el sistema de fallback: Gemini primero, Coco si falla
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      const { text: responseText, provider } = await callAI(contextPrompt, apiKey);
 
       setMessages(prev => [...prev, { 
         id: crypto.randomUUID(), 
         role: 'assistant', 
         text: responseText, 
-        timestamp: new Date() 
+        timestamp: new Date(),
+        provider
       }]);
     } catch (error) {
       console.error('Error Minguito:', error);
       setMessages(prev => [...prev, { 
         id: crypto.randomUUID(), 
         role: 'assistant', 
-        text: 'Uf, me he quedado frito. Algo ha fallado con la API. Inténtalo de nuevo en un momento.', 
+        text: 'Uf, me he quedado frito. Ni Gemini ni la API de respaldo han funcionado. Inténtalo de nuevo en un momento.', 
         timestamp: new Date() 
       }]);
     } finally {
@@ -496,8 +552,18 @@ Responde basándote en los datos reales. Si el usuario pregunta algo que no est�
                     }`}>
                       {msg.text}
                     </div>
-                    <span className="text-[10px] text-muted-foreground mt-1 px-1">
+                    <span className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1.5">
                       {format(msg.timestamp, 'HH:mm')}
+                      {msg.provider && (
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[9px] font-medium",
+                          msg.provider === 'gemini' 
+                            ? "bg-blue-100 text-blue-600" 
+                            : "bg-orange-100 text-orange-600"
+                        )}>
+                          {msg.provider === 'gemini' ? '✨ Gemini' : '🥥 Coco'}
+                        </span>
+                      )}
                     </span>
                   </div>
                 </div>
