@@ -10,25 +10,164 @@ export interface CampaignData {
   conversions: number;
 }
 
-// Función principal que AHORA SÍ llama a la API
+// ============================================================
+// SISTEMA DE PROVEEDORES DE IA CON FALLBACK
+// ============================================================
+
+/**
+ * Llama a la API de Gemini
+ */
+async function callGeminiAPI(prompt: string, apiKey: string): Promise<string> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+
+/**
+ * Llama a la API de OpenRouter
+ */
+async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<string> {
+  const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+  
+  const response = await fetch(OPENROUTER_API_URL, {
+    method: 'POST',
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": window.location.origin, // Opcional pero recomendado
+      "X-Title": "Timeboxing App" // Opcional pero recomendado
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.0-flash-exp:free", // Modelo gratuito de Gemini a través de OpenRouter
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(errorData)}`);
+  }
+
+  const responseData = await response.json();
+  
+  if (responseData?.choices?.[0]?.message?.content) {
+    return responseData.choices[0].message.content;
+  } else {
+    throw new Error('Respuesta inesperada de OpenRouter API');
+  }
+}
+
+/**
+ * Llama a la API de Coco Solution
+ */
+async function callCocoAPI(prompt: string): Promise<string> {
+  const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
+  
+  const payload = {
+    message: prompt,
+    noAuth: "true",
+    action: "text/generateResume",
+    app: "CHATBOT",
+    rol: "user",
+    method: "POST",
+    language: "es",
+  };
+
+  const response = await fetch(COCO_API_URL, {
+    method: 'POST',
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Coco API error: ${response.status}`);
+  }
+
+  const responseData = await response.json();
+  
+  if (responseData?.data) {
+    return responseData.data;
+  } else {
+    throw new Error('Respuesta inesperada de Coco API');
+  }
+}
+
+/**
+ * Sistema de IA con fallback en cascada:
+ * 1. Gemini (si tiene API key)
+ * 2. OpenRouter (si tiene API key)
+ * 3. Coco Solution (fallback final)
+ */
+async function callAIWithFallback(prompt: string): Promise<string> {
+  const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+
+  // Intento 1: Gemini
+  if (geminiApiKey) {
+    try {
+      console.log('🔵 Intentando con Gemini...');
+      const result = await callGeminiAPI(prompt, geminiApiKey);
+      console.log('✅ Gemini respondió correctamente');
+      return result;
+    } catch (error: any) {
+      console.warn('⚠️ Gemini falló:', error.message);
+      // Continuar con el siguiente proveedor
+    }
+  }
+
+  // Intento 2: OpenRouter
+  if (openRouterApiKey) {
+    try {
+      console.log('🟣 Intentando con OpenRouter...');
+      const result = await callOpenRouterAPI(prompt, openRouterApiKey);
+      console.log('✅ OpenRouter respondió correctamente');
+      return result;
+    } catch (error: any) {
+      console.warn('⚠️ OpenRouter falló:', error.message);
+      // Continuar con el siguiente proveedor
+    }
+  }
+
+  // Intento 3: Coco Solution (fallback final)
+  try {
+    console.log('🥥 Intentando con Coco Solution (fallback)...');
+    const result = await callCocoAPI(prompt);
+    console.log('✅ Coco Solution respondió correctamente');
+    return result;
+  } catch (error: any) {
+    console.error('❌ Todos los proveedores fallaron');
+    throw new Error('No se pudo generar el análisis. Todos los proveedores de IA fallaron.');
+  }
+}
+
+// ============================================================
+// FUNCIÓN PRINCIPAL DE GENERACIÓN DE RESUMEN
+// ============================================================
+
+/**
+ * Genera un resumen de campañas de Google Ads utilizando IA
+ * con sistema de fallback automático entre proveedores
+ */
 export const generateAdsSummary = async (
   accountName: string,
   campaigns: CampaignData[],
   totalSpend: any,
   totalConversions: any
-): Promise<string> => { // Nota: Ahora devuelve una Promise<string>
-
-  // 1. Obtener API Key (Igual que en DashboardAI)
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) {
-    return "Error: No se ha configurado la API Key de Gemini en .env";
-  }
-
-  // 2. Sanitización de datos
+): Promise<string> => {
+  
+  // Sanitización de datos
   const safeSpend = Number(totalSpend) || 0;
   const safeConversions = Number(totalConversions) || 0;
 
-  // 3. Formatear campañas para el contexto de la IA
+  // Formatear campañas para el contexto de la IA
   const campaignsSummary = campaigns && campaigns.length > 0 
     ? campaigns.map(c => {
         const cCost = Number(c.cost) || 0;
@@ -47,7 +186,7 @@ export const generateAdsSummary = async (
       }).join('\n')
     : "    - No hay datos detallados de campañas disponibles.";
 
-  // 4. Construir el Prompt (Instrucciones + Datos)
+  // Construir el Prompt
   const prompt = `
     Actúa como un analista experto en Google Ads (PPC) Senior.
     Estás analizando la cuenta: "${accountName}".
@@ -70,17 +209,11 @@ export const generateAdsSummary = async (
     - Sé directo y profesional. No saludes, ve al grano.
   `;
 
-  // 5. LLAMADA A GEMINI (Esto es lo que faltaba)
+  // Llamar al sistema de IA con fallback
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
-    
-  } catch (error) {
-    console.error("Error llamando a Gemini:", error);
-    return "Lo siento, hubo un error al conectar con la IA para generar el análisis. Verifica tu cuota o conexión.";
+    return await callAIWithFallback(prompt);
+  } catch (error: any) {
+    console.error("Error al generar análisis:", error);
+    return "Lo siento, hubo un error al conectar con los servicios de IA para generar el análisis. Por favor, verifica tu conexión o intenta más tarde.";
   }
 };
