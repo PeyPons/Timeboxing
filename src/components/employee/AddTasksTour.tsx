@@ -1,11 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { 
   X, ChevronLeft, ChevronRight, FolderOpen, FileText, 
   Clock, Calendar, Plus, AlertTriangle, CheckCircle2,
-  Sparkles, Target, Lightbulb, MousePointerClick
+  Sparkles, Lightbulb
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -13,7 +12,7 @@ const TOUR_STORAGE_KEY = 'timeboxing_add_tasks_tour_completed';
 
 interface TourStep {
   id: string;
-  target?: string; // Selector CSS del elemento a resaltar
+  target?: string;
   title: string;
   description: string;
   icon: React.ReactNode;
@@ -81,16 +80,6 @@ const tourSteps: TourStep[] = [
     highlight: true,
   },
   {
-    id: 'alerts',
-    target: '[data-tour-task="summary"]',
-    title: 'Resumen e Indicadores',
-    description: 'Aquí verás el impacto de tus tareas. Verde = OK, Amarillo = revisar límites de presupuesto o capacidad.',
-    icon: <AlertTriangle className="w-5 h-5" />,
-    tip: 'Puedes guardar aunque haya advertencias, pero revisa antes.',
-    position: 'top',
-    highlight: true,
-  },
-  {
     id: 'finish',
     title: '¡Listo para planificar! ✨',
     description: 'Ya conoces todas las herramientas. Planifica tu semana y mantén el control de tu tiempo.',
@@ -115,10 +104,9 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
   const [highlightPos, setHighlightPos] = useState<HighlightPosition | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Verificar si debe mostrarse
   useEffect(() => {
     if (isOpen) {
       const completed = localStorage.getItem(TOUR_STORAGE_KEY);
@@ -126,105 +114,63 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
         const timer = setTimeout(() => {
           setIsVisible(true);
           setCurrentStep(0);
-        }, 400);
+        }, 500);
         return () => clearTimeout(timer);
       }
     } else {
       setIsVisible(false);
       setCurrentStep(0);
       setHighlightPos(null);
-      setTooltipPos(null);
     }
   }, [isOpen]);
 
-  // Calcular posiciones del highlight y tooltip
   const calculatePositions = useCallback(() => {
     const step = tourSteps[currentStep];
     
     if (step.position === 'center' || !step.highlight || !step.target) {
       setHighlightPos(null);
-      setTooltipPos(null);
       setIsReady(true);
       return;
     }
 
     const element = document.querySelector(step.target);
     if (!element) {
+      console.log('Element not found:', step.target);
       setHighlightPos(null);
-      setTooltipPos(null);
       setIsReady(true);
       return;
     }
 
     const rect = element.getBoundingClientRect();
+    const padding = 6;
     
-    // Posición del highlight
-    const padding = 8;
     setHighlightPos({
       top: rect.top - padding,
       left: rect.left - padding,
       width: rect.width + padding * 2,
       height: rect.height + padding * 2
     });
-
-    // Posición del tooltip
-    const tooltipWidth = 380;
-    const tooltipHeight = 280;
-    const gap = 16;
     
-    let top = 0;
-    let left = 0;
-
-    switch (step.position) {
-      case 'bottom':
-        top = rect.bottom + gap;
-        left = rect.left + rect.width / 2 - tooltipWidth / 2;
-        break;
-      case 'top':
-        top = rect.top - tooltipHeight - gap;
-        left = rect.left + rect.width / 2 - tooltipWidth / 2;
-        break;
-      case 'left':
-        top = rect.top + rect.height / 2 - tooltipHeight / 2;
-        left = rect.left - tooltipWidth - gap;
-        break;
-      case 'right':
-        top = rect.top + rect.height / 2 - tooltipHeight / 2;
-        left = rect.right + gap;
-        break;
-    }
-
-    // Mantener en pantalla
-    left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
-    top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 16));
-
-    setTooltipPos({ top, left });
     setIsReady(true);
   }, [currentStep]);
 
-  // Actualizar posiciones cuando cambia el paso
   useEffect(() => {
     if (!isVisible) return;
 
     setIsReady(false);
-    const step = tourSteps[currentStep];
-
-    if (step.position === 'center' || !step.highlight) {
-      calculatePositions();
-      return;
-    }
-
-    // Esperar a que el elemento esté disponible
+    
+    // Dar tiempo a que el DOM se actualice
     const timer = setTimeout(() => {
       calculatePositions();
-    }, 100);
+    }, 150);
 
-    // Recalcular en resize
     window.addEventListener('resize', calculatePositions);
+    window.addEventListener('scroll', calculatePositions, true);
     
     return () => {
       clearTimeout(timer);
       window.removeEventListener('resize', calculatePositions);
+      window.removeEventListener('scroll', calculatePositions, true);
     };
   }, [isVisible, currentStep, calculatePositions]);
 
@@ -256,96 +202,135 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
     onComplete();
   };
 
-  if (!isVisible) return null;
+  if (!isVisible || !isReady) return null;
 
   const step = tourSteps[currentStep];
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === tourSteps.length - 1;
-  const isCentered = step.position === 'center' || !step.highlight;
+  const isCentered = step.position === 'center' || !step.highlight || !highlightPos;
 
-  const tourContent = (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 99999, pointerEvents: 'none' }}>
-      {/* Overlay SVG con spotlight */}
-      <svg 
-        style={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: 0, 
-          width: '100vw', 
-          height: '100vh',
-          pointerEvents: 'auto'
-        }}
-        onClick={handleSkip}
+  // Calcular posición del tooltip
+  let tooltipStyle: React.CSSProperties = {};
+  
+  if (isCentered) {
+    tooltipStyle = {
+      position: 'fixed',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+    };
+  } else if (highlightPos) {
+    const gap = 12;
+    const tooltipWidth = 380;
+    
+    switch (step.position) {
+      case 'bottom':
+        tooltipStyle = {
+          position: 'fixed',
+          top: highlightPos.top + highlightPos.height + gap,
+          left: Math.max(16, Math.min(highlightPos.left + highlightPos.width / 2 - tooltipWidth / 2, window.innerWidth - tooltipWidth - 16)),
+        };
+        break;
+      case 'top':
+        tooltipStyle = {
+          position: 'fixed',
+          bottom: window.innerHeight - highlightPos.top + gap,
+          left: Math.max(16, Math.min(highlightPos.left + highlightPos.width / 2 - tooltipWidth / 2, window.innerWidth - tooltipWidth - 16)),
+        };
+        break;
+      case 'left':
+        tooltipStyle = {
+          position: 'fixed',
+          top: highlightPos.top,
+          right: window.innerWidth - highlightPos.left + gap,
+        };
+        break;
+      case 'right':
+        tooltipStyle = {
+          position: 'fixed',
+          top: highlightPos.top,
+          left: highlightPos.left + highlightPos.width + gap,
+        };
+        break;
+    }
+  }
+
+  return (
+    <>
+      {/* Overlay oscuro con hole para el elemento - z-index MUY ALTO para estar sobre el Dialog */}
+      <div 
+        ref={containerRef}
+        className="fixed inset-0 pointer-events-none"
+        style={{ zIndex: 2147483646 }}
       >
-        <defs>
-          <mask id="add-tasks-tour-mask">
-            <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {highlightPos && isReady && (
-              <rect 
-                x={highlightPos.left - 2}
-                y={highlightPos.top - 2}
-                width={highlightPos.width + 4}
-                height={highlightPos.height + 4}
-                rx="12"
-                fill="black"
-              />
-            )}
-          </mask>
-        </defs>
-        <rect 
-          x="0" 
-          y="0" 
-          width="100%" 
-          height="100%" 
-          fill="rgba(0, 0, 0, 0.75)" 
-          mask="url(#add-tasks-tour-mask)"
-        />
-      </svg>
-
-      {/* Borde animado del highlight */}
-      {highlightPos && isReady && (
-        <div
-          style={{
-            position: 'fixed',
-            top: highlightPos.top - 2,
-            left: highlightPos.left - 2,
-            width: highlightPos.width + 4,
-            height: highlightPos.height + 4,
-            border: '3px solid #818cf8',
-            borderRadius: '12px',
-            boxShadow: '0 0 0 4px rgba(129, 140, 248, 0.3), 0 0 30px rgba(129, 140, 248, 0.5)',
-            pointerEvents: 'none',
-            zIndex: 100000
+        <svg 
+          className="fixed inset-0 w-full h-full pointer-events-auto"
+          onClick={(e) => {
+            // Solo cerrar si click fuera del highlight
+            if (highlightPos) {
+              const rect = { x: highlightPos.left, y: highlightPos.top, width: highlightPos.width, height: highlightPos.height };
+              const clickX = e.clientX;
+              const clickY = e.clientY;
+              if (clickX < rect.x || clickX > rect.x + rect.width || clickY < rect.y || clickY > rect.y + rect.height) {
+                // Click fuera - no hacer nada, dejar que navegue
+              }
+            }
           }}
         >
-          <div 
+          <defs>
+            <mask id="tour-spotlight-mask-addtasks">
+              <rect x="0" y="0" width="100%" height="100%" fill="white" />
+              {highlightPos && (
+                <rect 
+                  x={highlightPos.left}
+                  y={highlightPos.top}
+                  width={highlightPos.width}
+                  height={highlightPos.height}
+                  rx="8"
+                  fill="black"
+                />
+              )}
+            </mask>
+          </defs>
+          <rect 
+            x="0" 
+            y="0" 
+            width="100%" 
+            height="100%" 
+            fill="rgba(0, 0, 0, 0.80)" 
+            mask="url(#tour-spotlight-mask-addtasks)"
+          />
+        </svg>
+
+        {/* Borde brillante alrededor del elemento */}
+        {highlightPos && (
+          <div
+            className="pointer-events-none"
             style={{
-              position: 'absolute',
-              inset: 0,
-              borderRadius: '12px',
-              border: '2px solid #a5b4fc',
-              animation: 'add-task-tour-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite',
-              opacity: 0.4
+              position: 'fixed',
+              top: highlightPos.top - 3,
+              left: highlightPos.left - 3,
+              width: highlightPos.width + 6,
+              height: highlightPos.height + 6,
+              border: '3px solid #818cf8',
+              borderRadius: '11px',
+              boxShadow: '0 0 0 4px rgba(129, 140, 248, 0.4), 0 0 20px rgba(129, 140, 248, 0.6), inset 0 0 20px rgba(129, 140, 248, 0.1)',
+              zIndex: 2147483647,
+              animation: 'tour-pulse 2s ease-in-out infinite',
             }}
           />
-        </div>
-      )}
+        )}
 
-      {/* Tooltip Card */}
-      {isReady && (
+        {/* Tooltip Card */}
         <Card 
-          className="shadow-2xl border-0 overflow-hidden"
+          className="shadow-2xl border-0 overflow-hidden pointer-events-auto"
           style={{
-            position: 'fixed',
+            ...tooltipStyle,
             width: 380,
-            top: isCentered ? '50%' : tooltipPos?.top,
-            left: isCentered ? '50%' : tooltipPos?.left,
-            transform: isCentered ? 'translate(-50%, -50%)' : undefined,
-            zIndex: 100001,
-            pointerEvents: 'auto'
+            zIndex: 2147483647,
           }}
         >
-          {/* Header gradient */}
+          {/* Header */}
           <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -380,18 +365,10 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
                 <p className="text-xs text-amber-800">{step.tip}</p>
               </div>
             )}
-
-            {step.highlight && (
-              <div className="flex items-center gap-2 mt-3 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg">
-                <MousePointerClick className="w-4 h-4" />
-                <span>Elemento resaltado en el formulario</span>
-              </div>
-            )}
           </div>
 
           {/* Footer */}
           <div className="px-5 pb-5 bg-white">
-            {/* Progress dots */}
             <div className="flex justify-center gap-1.5 mb-4">
               {tourSteps.map((_, index) => (
                 <button
@@ -409,7 +386,6 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
               ))}
             </div>
 
-            {/* Navigation buttons */}
             <div className="flex items-center justify-between">
               <Button
                 variant="ghost"
@@ -453,44 +429,30 @@ export function AddTasksTour({ isOpen, onComplete }: AddTasksTourProps) {
             </div>
           </div>
         </Card>
-      )}
+      </div>
 
-      {/* Animation styles */}
+      {/* Estilos de animación */}
       <style>{`
-        @keyframes add-task-tour-ping {
-          75%, 100% {
-            transform: scale(1.05);
-            opacity: 0;
+        @keyframes tour-pulse {
+          0%, 100% {
+            box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.4), 0 0 20px rgba(129, 140, 248, 0.6);
+          }
+          50% {
+            box-shadow: 0 0 0 8px rgba(129, 140, 248, 0.2), 0 0 40px rgba(129, 140, 248, 0.8);
           }
         }
       `}</style>
-    </div>
+    </>
   );
-
-  return createPortal(tourContent, document.body);
 }
 
-// Hook para controlar el tour
 export function useAddTasksTour() {
   const [showTour, setShowTour] = useState(false);
 
-  const shouldShowTour = () => {
-    return !localStorage.getItem(TOUR_STORAGE_KEY);
-  };
-
-  const triggerTour = () => {
-    if (shouldShowTour()) {
-      setShowTour(true);
-    }
-  };
-
-  const completeTour = () => {
-    setShowTour(false);
-  };
-
-  const resetTour = () => {
-    localStorage.removeItem(TOUR_STORAGE_KEY);
-  };
+  const shouldShowTour = () => !localStorage.getItem(TOUR_STORAGE_KEY);
+  const triggerTour = () => { if (shouldShowTour()) setShowTour(true); };
+  const completeTour = () => setShowTour(false);
+  const resetTour = () => localStorage.removeItem(TOUR_STORAGE_KEY);
 
   return { showTour, triggerTour, completeTour, resetTour, shouldShowTour };
 }
