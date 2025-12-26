@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { Client } from '@/types';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,7 +21,7 @@ const colorOptions = [
   '#db2777', '#9333ea', '#f59e0b', '#06b6d4', '#84cc16', '#6366f1'
 ];
 
-export function ClientCard({ client }: ClientCardProps) {
+export const ClientCard = memo(function ClientCard({ client }: ClientCardProps) {
   const { getClientTotalHoursForMonth, projects, getProjectHoursForMonth, updateClient, deleteClient } = useApp();
   const [isEditing, setIsEditing] = useState(false);
   const [editedClient, setEditedClient] = useState(client);
@@ -211,4 +211,4 @@ export function ClientCard({ client }: ClientCardProps) {
       </CardContent>
     </Card>
   );
-}
+});

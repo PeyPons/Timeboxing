@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,9 +92,15 @@ const getStatusConfig = (status: string) => {
 };
 
 // Componente de stat card para el header
-function StatCard({ icon: Icon, label, value, subValue, color = 'slate' }: { 
-  icon: any; label: string; value: string; subValue?: string; color?: string;
-}) {
+interface StatCardProps {
+  icon: any;
+  label: string;
+  value: string;
+  subValue?: string;
+  color?: string;
+}
+
+const StatCard = memo(function StatCard({ icon: Icon, label, value, subValue, color = 'slate' }: StatCardProps) {
   const colorClasses: Record<string, string> = {
     slate: 'bg-slate-50 border-slate-200',
     blue: 'bg-blue-50 border-blue-200',
@@ -113,7 +119,7 @@ function StatCard({ icon: Icon, label, value, subValue, color = 'slate' }: {
       {subValue && <p className="text-xs text-slate-500 mt-1">{subValue}</p>}
     </div>
   );
-}
+});
 
 export default function AdsPage() {
   const [rawData, setRawData] = useState<any[]>([]);
