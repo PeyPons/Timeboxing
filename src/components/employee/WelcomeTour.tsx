@@ -8,8 +8,8 @@ import {
   CheckCircle2, AlertOctagon, FileDown, Award
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const TOUR_STORAGE_KEY = 'timeboxing_welcome_tour_completed';
+import { supabase } from '@/lib/supabase';
+import { useApp } from '@/contexts/AppContext';
 
 interface TourStep {
   id: string;
@@ -145,6 +145,7 @@ interface WelcomeTourProps {
 }
 
 export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps) {
+  const { currentUser, updateEmployee } = useApp();
   const [isVisible, setIsVisible] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [highlightPos, setHighlightPos] = useState<HighlightPosition | null>(null);
@@ -159,12 +160,21 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
       return;
     }
 
-    const completed = localStorage.getItem(TOUR_STORAGE_KEY);
-    if (!completed) {
-      const timer = setTimeout(() => setIsVisible(true), 500);
-      return () => clearTimeout(timer);
+    // Verificar desde la base de datos si el usuario está logueado
+    if (currentUser) {
+      if (!currentUser.welcomeTourCompleted) {
+        const timer = setTimeout(() => setIsVisible(true), 500);
+        return () => clearTimeout(timer);
+      }
+    } else {
+      // Fallback a localStorage si no hay usuario (por compatibilidad)
+      const completed = localStorage.getItem('timeboxing_welcome_tour_completed');
+      if (!completed) {
+        const timer = setTimeout(() => setIsVisible(true), 500);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [forceShow]);
+  }, [forceShow, currentUser]);
 
   // Calcular posiciones
   const calculatePositions = useCallback(() => {
@@ -293,11 +303,27 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     }
   }, [currentStep]);
 
-  const handleComplete = useCallback(() => {
-    localStorage.setItem(TOUR_STORAGE_KEY, 'true');
+  const handleComplete = useCallback(async () => {
     setIsVisible(false);
+    
+    // Guardar en la base de datos si hay usuario
+    if (currentUser) {
+      try {
+        const updatedEmployee = {
+          ...currentUser,
+          welcomeTourCompleted: true
+        };
+        await updateEmployee(updatedEmployee);
+      } catch (error) {
+        console.error('Error guardando estado del tour:', error);
+      }
+    } else {
+      // Fallback a localStorage si no hay usuario
+      localStorage.setItem('timeboxing_welcome_tour_completed', 'true');
+    }
+    
     onComplete?.();
-  }, [onComplete]);
+  }, [onComplete, currentUser, updateEmployee]);
 
   const handleSkip = useCallback(() => {
     handleComplete();
@@ -540,18 +566,35 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
 
 // Hook para controlar el tour
 export function useWelcomeTour() {
+  const { currentUser, updateEmployee } = useApp();
   const [showTour, setShowTour] = useState(false);
 
   const startTour = () => setShowTour(true);
   const endTour = () => setShowTour(false);
   
-  const resetTour = () => {
-    localStorage.removeItem(TOUR_STORAGE_KEY);
-    setShowTour(true);
+  const resetTour = async () => {
+    if (currentUser) {
+      try {
+        const updatedEmployee = {
+          ...currentUser,
+          welcomeTourCompleted: false
+        };
+        await updateEmployee(updatedEmployee);
+        setShowTour(true);
+      } catch (error) {
+        console.error('Error reseteando tour:', error);
+      }
+    } else {
+      localStorage.removeItem('timeboxing_welcome_tour_completed');
+      setShowTour(true);
+    }
   };
 
   const isTourCompleted = () => {
-    return localStorage.getItem(TOUR_STORAGE_KEY) === 'true';
+    if (currentUser) {
+      return currentUser.welcomeTourCompleted || false;
+    }
+    return localStorage.getItem('timeboxing_welcome_tour_completed') === 'true';
   };
 
   return { showTour, startTour, endTour, resetTour, isTourCompleted };

@@ -23,6 +23,7 @@ export interface Employee {
   first_name?: string;
   last_name?: string;
   crmUserId?: number;  // NUEVO: ID del usuario en el CRM
+  welcomeTourCompleted?: boolean;  // Si el usuario completó el tour de bienvenida
 }
 
 export interface TeamEvent {

@@ -91,7 +91,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           last_name: e.last_name,
           email: e.email,
           user_id: e.user_id,
-          crmUserId: e.crm_user_id  // NUEVO: Mapeo del CRM User ID
+          crmUserId: e.crm_user_id,
+          welcomeTourCompleted: e.welcome_tour_completed || false
         }));
         setEmployees(mappedEmployees);
 
@@ -216,7 +217,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       work_schedule: employee.workSchedule,
       is_active: employee.isActive,
       hourly_rate: employee.hourlyRate,
-      crm_user_id: employee.crmUserId  // NUEVO: CRM User ID
+      crm_user_id: employee.crmUserId,
+      welcome_tour_completed: employee.welcomeTourCompleted || false
     }).eq('id', employee.id);
   }, []);
 
