@@ -20,7 +20,24 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
     isSameMonth(parseISO(a.weekStartDate), today)
   );
 
-  if (myTasks.length === 0) return null;
+  // Si no hay tareas pendientes, mostrar mensaje positivo
+  if (myTasks.length === 0) {
+    return (
+      <Card className="border shadow-sm bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 text-slate-700">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+            Sin pendientes
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-500">
+            ✨ <strong>¡Todo al día!</strong> No tienes tareas pendientes este mes. Usa el botón <em>"Añadir Tareas"</em> para planificar tu trabajo.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // 1. CRITERIO CRÍTICO: ¿ESTOY BLOQUEANDO A ALGUIEN?
   const blockingTask = myTasks.find(t => 
