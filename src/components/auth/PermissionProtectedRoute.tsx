@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApp } from '@/contexts/AppContext';
+import { Loader2 } from 'lucide-react';
 
 interface PermissionProtectedRouteProps {
   children: React.ReactNode;
@@ -13,9 +14,19 @@ interface PermissionProtectedRouteProps {
 export function PermissionProtectedRoute({ children, requiredPermission }: PermissionProtectedRouteProps) {
   const location = useLocation();
   const { canAccess } = usePermissions();
-  const { currentUser } = useApp();
+  const { currentUser, isLoading } = useApp();
 
-  // Si no hay usuario, redirigir a login
+  // Esperar a que termine de cargar antes de hacer redirecciones
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+        <Loader2 className="h-10 w-10 text-indigo-600 animate-spin" />
+        <p className="text-slate-500 text-sm font-medium animate-pulse">Cargando...</p>
+      </div>
+    );
+  }
+
+  // Solo después de cargar, verificar si hay usuario
   if (!currentUser) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }

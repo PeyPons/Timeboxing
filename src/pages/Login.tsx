@@ -4,20 +4,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Si ya estamos logueados, fuera de aquí
+  // Obtener la ruta de origen desde el state de navegación
+  const from = (location.state as any)?.from?.pathname || "/";
+
+  // Si ya estamos logueados, redirigir a la ruta original o al dashboard
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) navigate("/");
+      if (session) navigate(from, { replace: true });
     });
-  }, [navigate]);
+  }, [navigate, from]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +37,8 @@ export default function Login() {
       setLoading(false);
     } else {
       toast.success("¡Bienvenido!");
-      navigate("/");
+      // Redirigir a la ruta original o al dashboard
+      navigate(from, { replace: true });
     }
   };
 
