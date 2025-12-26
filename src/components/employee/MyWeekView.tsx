@@ -203,9 +203,16 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                           {/* CABECERA PROYECTO */}
                           <div className="p-4 pb-3 border-b border-slate-100 bg-white">
                               <div className="flex justify-between items-start mb-1 gap-2">
-                                  <h3 className="text-lg font-bold text-slate-900 leading-tight truncate" title={group.projectName}>
-                                      {formatProjectName(group.projectName)}
-                                  </h3>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <h3 className="text-base font-bold text-slate-900 leading-tight truncate cursor-help">
+                                          {formatProjectName(group.projectName)}
+                                      </h3>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-[300px]">
+                                      <p className="text-xs font-medium">{group.projectName}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
                                   <Tooltip>
                                     <TooltipTrigger>
                                       <Badge 
@@ -241,12 +248,19 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
                                   </Tooltip>
                               </div>
                               
-                              {/* Fila inferior con altura fija */}
+                              {/* Fila inferior con cliente */}
                               <div className="flex items-center justify-between mt-2 h-5">
-                                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                                      <span className="w-2 h-2 rounded-full bg-slate-300"></span>
-                                      <span className="truncate max-w-[100px]">{group.clientName}</span>
-                                  </div>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-help max-w-[140px]">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
+                                          <span className="truncate">{group.clientName}</span>
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom">
+                                      <p className="text-xs">{group.clientName}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
                                   
                                   <div className="flex items-center gap-3">
                                     {/* Team members indicator - siempre ocupa espacio */}
