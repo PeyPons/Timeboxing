@@ -128,7 +128,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
             crmUserId: crmUserId !== '' ? Number(crmUserId) : undefined,
             workSchedule: workSchedule, 
             isActive: true,
-            avatarUrl: employeeToEdit?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
+            avatarUrl: employeeToEdit?.avatarUrl || `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${name}`
         };
 
         if (employeeToEdit) {
