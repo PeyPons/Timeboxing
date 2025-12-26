@@ -1,405 +1,285 @@
-import { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { 
-  X, ChevronLeft, ChevronRight, ListPlus, Clock, Calendar, 
-  TrendingUp, Target, Sparkles, CheckCircle2, FileDown, Users
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useApp } from '@/contexts/AppContext';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Users, ArrowRight, AlertOctagon, Link as LinkIcon, CheckCircle2, Clock, Zap, AlertTriangle } from 'lucide-react';
+import { isSameMonth, parseISO } from 'date-fns';
+import { formatProjectName } from '@/lib/utils';
 
-const TOUR_STORAGE_KEY = 'timeboxing_welcome_tour_completed';
-
-interface TourStep {
-  id: string;
-  target: string;
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  position: 'top' | 'bottom' | 'left' | 'right' | 'center';
-  highlight?: boolean;
-  customContent?: boolean;
+interface WidgetProps {
+  employeeId: string;
 }
 
-const tourSteps: TourStep[] = [
-  {
-    id: 'welcome',
-    target: 'body',
-    title: '¡Bienvenido a Timeboxing! 🎉',
-    description: 'Este es tu panel de control personal. Te guiaremos por las funciones principales para que empieces con buen pie.',
-    icon: <Sparkles className="w-6 h-6 text-indigo-500" />,
-    position: 'center'
-  },
-  {
-    id: 'add-tasks',
-    target: '[data-tour="add-tasks"]',
-    title: 'Añadir tareas',
-    description: 'Planifica tu trabajo añadiendo múltiples tareas a la vez. Selecciona el proyecto, las horas y la semana. Verás alertas si te pasas del presupuesto.',
-    icon: <ListPlus className="w-6 h-6 text-indigo-500" />,
-    position: 'bottom',
-    highlight: true
-  },
-  {
-    id: 'crm-export',
-    target: '[data-tour="crm-export"]',
-    title: 'Exportar al CRM',
-    description: 'Exporta tus tareas planificadas al CRM con un solo clic. Se generará un archivo CSV listo para importar. Necesitas tener configurado tu ID de usuario del CRM.',
-    icon: <FileDown className="w-6 h-6 text-purple-500" />,
-    position: 'bottom',
-    highlight: true
-  },
-  {
-    id: 'internal-tasks',
-    target: '[data-tour="internal-tasks"]',
-    title: 'Gestión interna',
-    description: 'Registra reuniones, formaciones, deadlines y otras tareas que no están asociadas a clientes. Se registran automáticamente como completadas.',
-    icon: <Clock className="w-6 h-6 text-slate-500" />,
-    position: 'bottom',
-    highlight: true
-  },
-  {
-    id: 'goals',
-    target: '[data-tour="goals"]',
-    title: 'Tus objetivos',
-    description: 'Gestiona tus objetivos profesionales (OKRs) con resultados clave medibles. Mantén el foco en lo que importa para tu crecimiento.',
-    icon: <TrendingUp className="w-6 h-6 text-emerald-500" />,
-    position: 'bottom',
-    highlight: true
-  },
-  {
-    id: 'absences',
-    target: '[data-tour="absences"]',
-    title: 'Ausencias',
-    description: 'Registra tus vacaciones, bajas o permisos para que el planificador tenga en cuenta tu disponibilidad real. Tu capacidad se ajustará automáticamente.',
-    icon: <Calendar className="w-6 h-6 text-amber-500" />,
-    position: 'bottom',
-    highlight: true
-  },
-  {
-    id: 'calendar',
-    target: '[data-tour="calendar"]',
-    title: 'Tu calendario',
-    description: 'Vista mensual de tu carga de trabajo. Los colores indican tu ocupación: verde (OK), amarillo (casi lleno), rojo (sobrecargado). Haz clic en cualquier semana para ver los detalles.',
-    icon: <Calendar className="w-6 h-6 text-blue-500" />,
-    position: 'bottom',
-    highlight: true
-  },
-  {
-    id: 'projects-summary',
-    target: '[data-tour="projects-summary"]',
-    title: 'Tus proyectos e impacto',
-    description: 'Ve todos tus proyectos del mes con métricas de impacto. Descubre con quién colaboras más y quién tiene disponibilidad para ayudarte si lo necesitas.',
-    icon: <Target className="w-6 h-6 text-purple-500" />,
-    position: 'top',
-    highlight: true
-  },
-  {
-    id: 'finish',
-    target: 'body',
-    title: '¡A por ello! 💪',
-    description: '',
-    icon: <CheckCircle2 className="w-6 h-6 text-emerald-500" />,
-    position: 'center',
-    customContent: true
-  }
-];
-
-interface HighlightPosition {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
-interface WelcomeTourProps {
-  onComplete?: () => void;
-  forceShow?: boolean;
-}
-
-export function useWelcomeTour() {
-  const [showTour, setShowTour] = useState(false);
-  const [isTourCompleted, setIsTourCompleted] = useState(true);
-
-  useEffect(() => {
-    const completed = localStorage.getItem(TOUR_STORAGE_KEY) === 'true';
-    setIsTourCompleted(completed);
-    if (!completed) {
-      const timer = setTimeout(() => setShowTour(true), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
-  const startTour = useCallback(() => setShowTour(true), []);
+// WIDGET 1: ALERTAS / RECOMENDACIONES - Altura completa
+export function PriorityInsights({ employeeId }: WidgetProps) {
+  const { allocations, projects, employees } = useApp();
+  const today = new Date();
   
-  const resetTour = useCallback(() => {
-    localStorage.removeItem(TOUR_STORAGE_KEY);
-    setIsTourCompleted(false);
-    setShowTour(true);
-  }, []);
-
-  return { showTour, startTour, resetTour, isTourCompleted };
-}
-
-export function WelcomeTour({ onComplete, forceShow }: WelcomeTourProps) {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [isVisible, setIsVisible] = useState(false);
-  const [highlightPosition, setHighlightPosition] = useState<HighlightPosition | null>(null);
-
-  useEffect(() => {
-    if (forceShow) {
-      setIsVisible(true);
-      setCurrentStep(0);
-    }
-  }, [forceShow]);
-
-  useEffect(() => {
-    if (!isVisible) return;
-
-    const step = tourSteps[currentStep];
-    if (step.position === 'center') {
-      setHighlightPosition(null);
-      return;
-    }
-
-    const updatePosition = () => {
-      const element = document.querySelector(step.target);
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        setHighlightPosition({
-          top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX,
-          width: rect.width,
-          height: rect.height
-        });
-
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    };
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition);
-
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition);
-    };
-  }, [currentStep, isVisible]);
-
-  const handleNext = () => {
-    if (currentStep < tourSteps.length - 1) {
-      setCurrentStep(prev => prev + 1);
-    } else {
-      handleComplete();
-    }
-  };
-
-  const handlePrev = () => {
-    if (currentStep > 0) {
-      setCurrentStep(prev => prev - 1);
-    }
-  };
-
-  const handleComplete = () => {
-    localStorage.setItem(TOUR_STORAGE_KEY, 'true');
-    setIsVisible(false);
-    setCurrentStep(0);
-    onComplete?.();
-  };
-
-  const handleSkip = () => {
-    localStorage.setItem(TOUR_STORAGE_KEY, 'true');
-    setIsVisible(false);
-    setCurrentStep(0);
-  };
-
-  if (!isVisible) return null;
-
-  const step = tourSteps[currentStep];
-
-  const getTooltipPosition = () => {
-    if (!highlightPosition || step.position === 'center') {
-      return {
-        position: 'fixed' as const,
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)'
-      };
-    }
-
-    const padding = 16;
-    const tooltipWidth = 320;
-    const tooltipHeight = 200;
-
-    switch (step.position) {
-      case 'bottom':
-        return {
-          position: 'absolute' as const,
-          top: highlightPosition.top + highlightPosition.height + padding,
-          left: Math.max(padding, Math.min(
-            highlightPosition.left + highlightPosition.width / 2 - tooltipWidth / 2,
-            window.innerWidth - tooltipWidth - padding
-          ))
-        };
-      case 'top':
-        return {
-          position: 'absolute' as const,
-          top: highlightPosition.top - tooltipHeight - padding,
-          left: Math.max(padding, Math.min(
-            highlightPosition.left + highlightPosition.width / 2 - tooltipWidth / 2,
-            window.innerWidth - tooltipWidth - padding
-          ))
-        };
-      case 'left':
-        return {
-          position: 'absolute' as const,
-          top: highlightPosition.top + highlightPosition.height / 2 - tooltipHeight / 2,
-          left: highlightPosition.left - tooltipWidth - padding
-        };
-      case 'right':
-        return {
-          position: 'absolute' as const,
-          top: highlightPosition.top + highlightPosition.height / 2 - tooltipHeight / 2,
-          left: highlightPosition.left + highlightPosition.width + padding
-        };
-      default:
-        return {};
-    }
-  };
-
-  const portalContent = (
-    <>
-      {/* Overlay oscuro */}
-      <div 
-        className="fixed inset-0 bg-black/60 z-[9998] transition-opacity duration-300"
-        onClick={handleSkip}
-      />
-      
-      {/* Highlight del elemento - recorte en el overlay */}
-      {highlightPosition && step.highlight && (
-        <div
-          className="absolute z-[9999] rounded-xl pointer-events-none transition-all duration-300"
-          style={{
-            top: highlightPosition.top - 8,
-            left: highlightPosition.left - 8,
-            width: highlightPosition.width + 16,
-            height: highlightPosition.height + 16,
-            background: 'transparent',
-            border: '3px solid #6366f1',
-            boxShadow: '0 0 0 4px rgba(99, 102, 241, 0.3), 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 0 9999px transparent'
-          }}
-        />
-      )}
-      
-      {/* Tooltip */}
-      <Card
-        className="z-[10000] w-80 shadow-2xl border-indigo-200 animate-in fade-in slide-in-from-bottom-4 duration-300"
-        style={getTooltipPosition()}
-      >
-        <div className="p-4">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-100 rounded-lg">
-                {step.icon}
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900">{step.title}</h3>
-                <p className="text-xs text-slate-500">
-                  Paso {currentStep + 1} de {tourSteps.length}
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-slate-400 hover:text-slate-600"
-              onClick={handleSkip}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          
-          {/* Content */}
-          {step.customContent && step.id === 'finish' ? (
-            <div className="space-y-3">
-              <p className="text-sm text-slate-600">
-                Ya conoces las funciones principales. Recuerda:
-              </p>
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  <span>Planifica tus tareas al inicio de cada semana</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  <span>Registra las horas reales al completar tareas</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  <span>Revisa tu índice de fiabilidad para mejorar</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  <span>Colabora con compañeros que necesiten ayuda</span>
-                </li>
-              </ul>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-600 mb-4">
-              {step.description}
-            </p>
-          )}
-          
-          {/* Progress dots */}
-          <div className="flex justify-center gap-1.5 my-4">
-            {tourSteps.map((_, index) => (
-              <div
-                key={index}
-                className={cn(
-                  "h-1.5 rounded-full transition-all duration-300",
-                  index === currentStep 
-                    ? "w-6 bg-indigo-600" 
-                    : index < currentStep 
-                      ? "w-1.5 bg-indigo-300"
-                      : "w-1.5 bg-slate-200"
-                )}
-              />
-            ))}
-          </div>
-          
-          {/* Navigation */}
-          <div className="flex justify-between items-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handlePrev}
-              disabled={currentStep === 0}
-              className={cn(currentStep === 0 && "invisible")}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Anterior
-            </Button>
-            
-            <Button
-              size="sm"
-              onClick={handleNext}
-              className="bg-indigo-600 hover:bg-indigo-700"
-            >
-              {currentStep === tourSteps.length - 1 ? (
-                '¡Empezar!'
-              ) : (
-                <>
-                  Siguiente
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </Card>
-    </>
+  const myTasks = allocations.filter(a => 
+    a.employeeId === employeeId && 
+    a.status !== 'completed' &&
+    isSameMonth(parseISO(a.weekStartDate), today)
   );
 
-  return createPortal(portalContent, document.body);
+  // Si no hay tareas pendientes
+  if (myTasks.length === 0) {
+    return (
+      <Card className="border shadow-sm bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 text-slate-700 h-full flex flex-col">
+        <CardHeader className="pb-2 border-b bg-slate-50/50">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            Sin pendientes
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 flex items-center justify-center p-4">
+          <p className="text-sm text-slate-500 text-center">
+            ✨ <strong>¡Todo al día!</strong><br/>
+            No tienes tareas pendientes este mes.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // 1. CRITERIO CRÍTICO: ¿ESTOY BLOQUEANDO A ALGUIEN?
+  const blockingTask = myTasks.find(t => 
+    allocations.some(other => other.dependencyId === t.id && other.status !== 'completed')
+  );
+
+  // 2. CRITERIO OPORTUNIDAD: ¿TAREA CASI TERMINADA? (< 2h restantes)
+  const quickWinTask = myTasks.find(t => {
+    const remaining = t.hoursAssigned - (t.hoursActual || 0);
+    return remaining > 0 && remaining <= 2;
+  });
+
+  // 3. TAREA MÁS PESADA
+  const heavyTask = myTasks.sort((a, b) => b.hoursAssigned - a.hoursAssigned)[0];
+
+  // Determinar qué mostrar
+  let recommendation: { icon: React.ReactNode; title: string; content: React.ReactNode; style: string };
+
+  if (blockingTask) {
+    const blockedTasks = allocations.filter(a => a.dependencyId === blockingTask.id && a.status !== 'completed');
+    const blockedUsers = blockedTasks.map(bt => employees.find(e => e.id === bt.employeeId)?.name || 'Alguien');
+    const proj = projects.find(p => p.id === blockingTask.projectId);
+    
+    recommendation = {
+      icon: <AlertTriangle className="w-5 h-5 text-red-600" />,
+      title: "🔥 URGENTE: Estás frenando al equipo",
+      content: (
+        <div className="space-y-3">
+          <div className="bg-white/60 rounded-lg p-3 border border-red-100">
+            <p className="text-[10px] uppercase tracking-wider text-red-400 font-bold mb-1">Tu tarea pendiente</p>
+            <p className="font-bold text-red-900">{blockingTask.taskName}</p>
+            <Badge variant="outline" className="mt-1 text-[9px] h-5 bg-white">
+              {formatProjectName(proj?.name || '')}
+            </Badge>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-red-400 font-bold mb-2 flex items-center gap-1">
+              <AlertOctagon className="w-3 h-3" /> Bloquea a:
+            </p>
+            <div className="space-y-1.5">
+              {blockedTasks.slice(0, 3).map((bt, i) => {
+                const user = employees.find(e => e.id === bt.employeeId);
+                return (
+                  <div key={i} className="flex items-center justify-between bg-white/40 rounded px-2 py-1.5">
+                    <span className="text-red-800 text-xs truncate max-w-[120px]">{bt.taskName}</span>
+                    <Badge className="bg-red-100 text-red-700 border-0 text-[10px] h-5 shrink-0">
+                      {user?.name || 'Alguien'}
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ),
+      style: 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200 text-red-900'
+    };
+  } else if (quickWinTask) {
+    const proj = projects.find(p => p.id === quickWinTask.projectId);
+    const remaining = quickWinTask.hoursAssigned - (quickWinTask.hoursActual || 0);
+    recommendation = {
+      icon: <CheckCircle2 className="w-5 h-5 text-emerald-600" />,
+      title: "Quick Win disponible",
+      content: (
+        <div className="space-y-2">
+          <p className="text-sm">
+            🎯 <strong>{quickWinTask.taskName}</strong> está casi terminada.
+          </p>
+          <p className="text-xs text-emerald-600">
+            Solo quedan <strong>{remaining.toFixed(1)}h</strong> para completarla en <em>{formatProjectName(proj?.name || '')}</em>.
+          </p>
+        </div>
+      ),
+      style: 'bg-emerald-50 border-emerald-200 text-emerald-900'
+    };
+  } else {
+    const proj = projects.find(p => p.id === heavyTask?.projectId);
+    recommendation = {
+      icon: <Zap className="w-5 h-5 text-amber-600" />,
+      title: "Recomendación",
+      content: (
+        <div className="space-y-2">
+          <p className="text-sm">
+            🚀 <strong>Foco:</strong> Empieza por <strong>{formatProjectName(proj?.name || '')}</strong>.
+          </p>
+          <p className="text-xs text-amber-700">
+            Es tu bloque más grande ({heavyTask?.hoursAssigned}h).
+          </p>
+        </div>
+      ),
+      style: 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 text-amber-900'
+    };
+  }
+
+  return (
+    <Card className={`border shadow-sm h-full flex flex-col ${recommendation.style}`}>
+      <CardHeader className="pb-2 border-b bg-white/30">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          {recommendation.icon}
+          {recommendation.title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex-1 p-4">
+        {recommendation.content}
+      </CardContent>
+    </Card>
+  );
+}
+
+// WIDGET 2: DEPENDENCIAS - Altura completa
+export function ProjectTeamPulse({ employeeId }: WidgetProps) {
+  const { allocations, projects, employees } = useApp();
+  const today = new Date();
+  
+  const myAllocations = allocations.filter(a => 
+    a.employeeId === employeeId && 
+    a.status !== 'completed' && 
+    isSameMonth(parseISO(a.weekStartDate), today)
+  );
+
+  const incomingDependencies = myAllocations
+    .filter(a => a.dependencyId) 
+    .map(a => {
+      const depTask = allocations.find(d => d.id === a.dependencyId);
+      const depOwner = employees.find(e => e.id === depTask?.employeeId);
+      const depProject = projects.find(p => p.id === depTask?.projectId);
+      const myProject = projects.find(p => p.id === a.projectId);
+      const isReady = depTask?.status === 'completed'; 
+      return { myTask: a, myProject, depTask, depOwner, depProject, isReady };
+    })
+    .filter(item => item.depTask !== undefined);
+
+  const outgoingBlocks = myAllocations
+    .map(a => {
+      const blockedTasks = allocations.filter(b => 
+        b.dependencyId === a.id && 
+        b.status !== 'completed'
+      );
+      const myProject = projects.find(p => p.id === a.projectId);
+      return { myTask: a, myProject, blockedTasks };
+    })
+    .filter(item => item.blockedTasks.length > 0);
+
+  return (
+    <Card className="border-slate-200 shadow-sm h-full flex flex-col">
+      <CardHeader className="pb-2 border-b bg-slate-50/50">
+        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <Users className="w-4 h-4 text-indigo-500" />
+          Dependencias
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+        
+        {incomingDependencies.length === 0 && outgoingBlocks.length === 0 && (
+          <div className="flex-1 flex items-center justify-center h-full min-h-[100px]">
+            <p className="text-xs text-slate-400 text-center">No hay bloqueos activos. ¡Todo fluido!</p>
+          </div>
+        )}
+
+        {/* DEPENDENCIAS DE ENTRADA (Espero por otros) */}
+        {incomingDependencies.length > 0 && (
+          <div>
+            <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase flex items-center gap-1">
+              <LinkIcon className="w-3 h-3"/> Dependencias
+            </h4>
+            <div className="space-y-2">
+              {incomingDependencies.map((item, i) => (
+                <div key={i} className={`text-xs rounded-lg border overflow-hidden ${item.isReady ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className="px-3 py-1.5 bg-white/50 border-b border-slate-100 flex items-center justify-between">
+                    <Badge variant="outline" className="text-[9px] h-5 bg-white border-slate-200 text-slate-600">
+                      {formatProjectName(item.myProject?.name || '')}
+                    </Badge>
+                    {item.isReady ? (
+                      <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
+                        <CheckCircle2 className="w-3 h-3"/> ¡Lista!
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] text-amber-700">
+                        <Clock className="w-3 h-3"/> Espera
+                      </span>
+                    )}
+                  </div>
+                  <div className="px-3 py-2">
+                    <p className="font-semibold text-slate-800 mb-1">{item.myTask.taskName}</p>
+                    <div className={`flex items-center gap-2 text-[11px] px-2 py-1 rounded ${item.isReady ? 'bg-emerald-100/50' : 'bg-amber-100/50'}`}>
+                      <ArrowRight className="w-3 h-3 text-slate-400" />
+                      <span className="text-slate-600">
+                        {item.isReady ? 'Desbloqueado por' : 'Esperando por'}:
+                      </span>
+                      <span className={`font-bold ${item.isReady ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {item.depOwner?.name}
+                      </span>
+                      <span className="text-slate-400 text-[10px] truncate max-w-[100px]">
+                        ({item.depTask?.taskName})
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* DEPENDENCIAS DE SALIDA (Yo bloqueo a otros) */}
+        {outgoingBlocks.length > 0 && (
+          <div>
+            {incomingDependencies.length > 0 && <div className="border-t border-slate-200 my-3"></div>}
+            <h4 className="text-xs font-bold text-red-600 mb-2 uppercase flex items-center gap-1">
+              <AlertOctagon className="w-3 h-3"/> Estás frenando a...
+            </h4>
+            <div className="space-y-2">
+              {outgoingBlocks.map((item, i) => (
+                <div key={i} className="text-xs bg-red-50 rounded-lg border border-red-200 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-white/50 border-b border-red-100 flex items-center justify-between">
+                    <Badge variant="outline" className="text-[9px] h-5 bg-white border-red-200 text-red-500">
+                      {formatProjectName(item.myProject?.name || '')}
+                    </Badge>
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                  </div>
+                  <div className="px-3 py-2">
+                    <p className="font-semibold text-red-900 mb-2">Tu tarea: {item.myTask.taskName}</p>
+                    <div className="space-y-1 pl-2 border-l-2 border-red-300">
+                      {item.blockedTasks.slice(0, 3).map(bt => {
+                        const blockedUser = employees.find(e => e.id === bt.employeeId);
+                        return (
+                          <div key={bt.id} className="flex items-center justify-between text-[11px]">
+                            <span className="text-red-800 truncate max-w-[120px]">{bt.taskName}</span>
+                            <Badge className="bg-red-100 text-red-700 border-0 text-[10px] h-5 ml-2 shrink-0">
+                              {blockedUser?.name}
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
