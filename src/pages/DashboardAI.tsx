@@ -29,10 +29,88 @@ const SUGGESTED_QUESTIONS = [
   { icon: <Users className="w-3 h-3" />, text: "¿Cómo está la carga del equipo?", category: "carga" },
   { icon: <AlertTriangle className="w-3 h-3" />, text: "¿Hay alguien bloqueando tareas?", category: "dependencias" },
   { icon: <TrendingDown className="w-3 h-3" />, text: "¿Quién se ha pasado de horas este mes?", category: "eficiencia" },
-  { icon: <Target className="w-3 h-3" />, text: "¿Qué proyectos van mal de presupuesto?", category: "proyectos" },
-  { icon: <Calendar className="w-3 h-3" />, text: "¿Hay empleados sin tareas planificadas?", category: "planificacion" },
+  { icon: <Calendar className="w-3 h-3" />, text: "¿Quién tiene tareas asignadas?", category: "planificacion" },
   { icon: <Zap className="w-3 h-3" />, text: "Dame un resumen ejecutivo del mes", category: "resumen" },
 ];
+
+// ============================================================
+// FUNCIÓN PARA PARSEAR MARKDOWN BÁSICO
+// ============================================================
+function parseSimpleMarkdown(text: string): React.ReactNode {
+  // Dividir por líneas
+  const lines = text.split('\n');
+  
+  const elements: React.ReactNode[] = [];
+  let listItems: string[] = [];
+  
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(
+        <ul key={`list-${elements.length}`} className="list-disc list-inside space-y-1 my-2">
+          {listItems.map((item, i) => (
+            <li key={i} className="text-sm">{parseLine(item)}</li>
+          ))}
+        </ul>
+      );
+      listItems = [];
+    }
+  };
+  
+  const parseLine = (line: string): React.ReactNode => {
+    // Parsear **bold** y *italic*
+    const parts: React.ReactNode[] = [];
+    let remaining = line;
+    let key = 0;
+    
+    while (remaining.length > 0) {
+      // Buscar **bold**
+      const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+      if (boldMatch && boldMatch.index !== undefined) {
+        if (boldMatch.index > 0) {
+          parts.push(<span key={key++}>{remaining.slice(0, boldMatch.index)}</span>);
+        }
+        parts.push(<strong key={key++} className="font-semibold">{boldMatch[1]}</strong>);
+        remaining = remaining.slice(boldMatch.index + boldMatch[0].length);
+        continue;
+      }
+      
+      // Si no hay más matches, añadir el resto
+      parts.push(<span key={key++}>{remaining}</span>);
+      break;
+    }
+    
+    return parts.length > 0 ? parts : line;
+  };
+  
+  lines.forEach((line, index) => {
+    const trimmedLine = line.trim();
+    
+    // Línea vacía
+    if (!trimmedLine) {
+      flushList();
+      elements.push(<br key={`br-${index}`} />);
+      return;
+    }
+    
+    // Lista con * o -
+    if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
+      listItems.push(trimmedLine.slice(2));
+      return;
+    }
+    
+    // Párrafo normal
+    flushList();
+    elements.push(
+      <p key={`p-${index}`} className="mb-1">
+        {parseLine(trimmedLine)}
+      </p>
+    );
+  });
+  
+  flushList();
+  
+  return <div className="space-y-1">{elements}</div>;
+}
 
 // ============================================================
 // SISTEMA DE IA CON FALLBACK
@@ -333,44 +411,47 @@ Eres Minguito, el analista de gestión de una agencia digital.
 PERSONALIDAD:
 - Eres directo, cercano y un poco brusco pero siempre con cariño
 - Usas expresiones coloquiales españolas ("ojo", "cuidadín", "menudo marrón", "crack", "tela marinera")
-- Nunca usas emojis excesivos, máximo 1-2 por respuesta
+- NO uses emojis
+- NO uses formato Markdown (ni **, ni *, ni #)
 - Eres constructivo: cuando señalas problemas, sugieres soluciones
 - No te enrollas: respuestas concisas pero útiles (máximo 4-5 frases)
 
 DATOS DEL MES (${analysisData.month}):
 
-📊 MÉTRICAS GLOBALES:
+MÉTRICAS GLOBALES:
 - Tareas totales: ${analysisData.global.totalTasks} (${analysisData.global.completedTasks} completadas, ${analysisData.global.pendingTasks} pendientes)
 - Horas estimadas: ${analysisData.global.totalHoursEstimated}h
 - Horas reales trabajadas: ${analysisData.global.totalHoursReal}h  
 - Horas computadas/facturables: ${analysisData.global.totalHoursComputed}h
-- BALANCE: ${analysisData.globalBalance}h (${analysisData.globalBalance >= 0 ? 'POSITIVO ✓' : 'NEGATIVO ✗'})
+- BALANCE: ${analysisData.globalBalance}h (${analysisData.globalBalance >= 0 ? 'POSITIVO' : 'NEGATIVO'})
 
-⚠️ ALERTAS ACTIVAS:
+ALERTAS ACTIVAS:
 ${analysisData.alerts.length > 0 ? analysisData.alerts.map(a => `- [${a.type.toUpperCase()}] ${a.message}`).join('\n') : '- Sin alertas críticas'}
 
-👥 ANÁLISIS POR EMPLEADO:
-${analysisData.employees.map(e => `
+EMPLEADOS CON TAREAS ESTE MES:
+${analysisData.employees.filter(e => e.tasks.total > 0).map(e => `
 ${e.name} (${e.department}):
-  - Carga: ${e.load.hours}h / ${e.load.capacity}h (${e.load.percentage}%) - Estado: ${e.load.status}
-  - Tareas: ${e.tasks.completed}/${e.tasks.total} completadas
-  - Eficiencia: ${e.efficiency.hoursReal}h reales → ${e.efficiency.hoursComputed}h computadas (${e.efficiency.balance >= 0 ? '+' : ''}${e.efficiency.balance}h)
-  - Bloquea a: ${e.dependencies.blocking.length > 0 ? e.dependencies.blocking.map(b => `"${b.taskName}" → ${b.blockedUsers.join(', ')}`).join('; ') : 'Nadie'}
-  - Espera por: ${e.dependencies.waitingFor.length > 0 ? e.dependencies.waitingFor.map(w => `"${w.taskName}" de ${w.waitingForUser}`).join('; ') : 'Nadie'}
-`).join('')}
+  - Carga: ${e.load.hours}h asignadas / ${e.load.capacity}h capacidad (${e.load.percentage}%)
+  - Tareas: ${e.tasks.completed} completadas de ${e.tasks.total} totales
+  - Eficiencia: trabajó ${e.efficiency.hoursReal}h reales, computó ${e.efficiency.hoursComputed}h (balance: ${e.efficiency.balance >= 0 ? '+' : ''}${e.efficiency.balance}h)
+  - Bloquea a otros: ${e.dependencies.blocking.length > 0 ? 'SÍ - ' + e.dependencies.blocking.map(b => `tarea "${b.taskName}" bloquea a ${b.blockedUsers.join(', ')}`).join('; ') : 'No'}
+  - Esperando por otros: ${e.dependencies.waitingFor.length > 0 ? 'SÍ - ' + e.dependencies.waitingFor.map(w => `"${w.taskName}" espera por ${w.waitingForUser}`).join('; ') : 'No'}
+`).join('') || 'Ningún empleado tiene tareas asignadas este mes.'}
 
-📁 ANÁLISIS POR PROYECTO (activos):
-${analysisData.projects.slice(0, 15).map(p => `
+EMPLEADOS SIN TAREAS ESTE MES:
+${analysisData.employees.filter(e => e.tasks.total === 0).map(e => e.name).join(', ') || 'Todos tienen tareas asignadas.'}
+
+PROYECTOS CON ACTIVIDAD ESTE MES (solo los que tienen tareas):
+${analysisData.projects.filter(p => p.tasksCount > 0).slice(0, 15).map(p => `
 ${p.name} [${p.clientName}]:
-  - Presupuesto: ${p.hoursUsed}h / ${p.budget}h (${p.budgetPercentage}%) ${p.isOverBudget ? '⚠️ EXCEDIDO' : p.isAtRisk ? '⚠️ EN RIESGO' : '✓'}
-  - Tareas: ${p.completedCount}/${p.tasksCount} completadas
-  - Equipo: ${p.assignedEmployees.join(', ') || 'Sin asignar'}
-`).join('')}
-${analysisData.projects.length > 15 ? `\n... y ${analysisData.projects.length - 15} proyectos más` : ''}
+  - Presupuesto: ${p.hoursUsed}h usadas de ${p.budget}h (${p.budgetPercentage}%) ${p.isOverBudget ? 'EXCEDIDO' : p.isAtRisk ? 'EN RIESGO' : 'OK'}
+  - Tareas: ${p.completedCount} completadas de ${p.tasksCount}
+  - Equipo asignado: ${p.assignedEmployees.join(', ') || 'Nadie'}
+`).join('') || 'Ningún proyecto tiene tareas este mes.'}
 
 PREGUNTA DEL USUARIO: "${messageText}"
 
-Responde basándote en los datos reales. Si el usuario pregunta algo que no está en los datos, dilo claramente.
+Responde basándote SOLO en los datos proporcionados. Si no hay información suficiente, dilo claramente. No inventes datos.
 `;
 
       // Usar el sistema de fallback: Gemini primero, Coco si falla
@@ -545,12 +626,12 @@ Responde basándote en los datos reales. Si el usuario pregunta algo que no est�
                     </AvatarFallback>
                   </Avatar>
                   <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm whitespace-pre-wrap ${
+                    <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
                       msg.role === 'user' 
-                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-tr-sm' 
+                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-tr-sm whitespace-pre-wrap' 
                         : 'bg-white border border-slate-100 text-slate-800 rounded-tl-sm'
                     }`}>
-                      {msg.text}
+                      {msg.role === 'assistant' ? parseSimpleMarkdown(msg.text) : msg.text}
                     </div>
                     <span className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1.5">
                       {format(msg.timestamp, 'HH:mm')}
