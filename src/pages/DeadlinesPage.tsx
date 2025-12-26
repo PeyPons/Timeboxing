@@ -15,7 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   Plus, Pencil, Trash2, Save, Search, Eye, EyeOff, ChevronDown, ChevronRight,
-  Calendar, Users, AlertTriangle, CheckCircle2, XCircle, Copy, Filter
+  Calendar, Users, AlertTriangle, CheckCircle2, XCircle, Copy, Filter, Sparkles
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
@@ -737,171 +737,91 @@ export default function DeadlinesPage() {
     );
   }
 
+  // Calcular tips inteligentes de redistribución
+  const getRedistributionTips = () => {
+    const tips: { from: string; to: string; reason: string; projects: string[] }[] = [];
+    const employeeLoads: { id: string; name: string; percentage: number; projects: string[] }[] = [];
+    
+    // Calcular carga y proyectos de cada empleado SEO (excluir PPC)
+    activeEmployees.forEach(emp => {
+      const capacityData = getMonthlyCapacity(emp.id);
+      const assigned = getEmployeeAssignedHours(emp.id);
+      const percentage = capacityData.available > 0 ? Math.round((assigned / capacityData.available) * 100) : 0;
+      
+      // Obtener proyectos donde está asignado
+      const empProjects: string[] = [];
+      deadlines.forEach(d => {
+        if ((d.employeeHours[emp.id] || 0) > 0) {
+          const project = projects.find(p => p.id === d.projectId);
+          if (project) empProjects.push(project.id);
+        }
+      });
+      
+      employeeLoads.push({ id: emp.id, name: emp.first_name || emp.name, percentage, projects: empProjects });
+    });
+    
+    // Encontrar empleados sobrecargados (>85%) y con capacidad (<70%)
+    const overloaded = employeeLoads.filter(e => e.percentage > 85);
+    const available = employeeLoads.filter(e => e.percentage < 70);
+    
+    overloaded.forEach(over => {
+      available.forEach(avail => {
+        // Solo sugerir si comparten proyectos
+        const sharedProjects = over.projects.filter(p => avail.projects.includes(p));
+        if (sharedProjects.length > 0) {
+          tips.push({
+            from: over.name,
+            to: avail.name,
+            reason: `${over.name} está al ${over.percentage}%, ${avail.name} al ${avail.percentage}%`,
+            projects: sharedProjects.map(pid => projects.find(p => p.id === pid)?.name || '').filter(Boolean)
+          });
+        }
+      });
+    });
+    
+    return tips.slice(0, 3); // Máximo 3 tips
+  };
+
+  const redistributionTips = getRedistributionTips();
+
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Deadlines</h1>
-          <p className="text-slate-500 mt-1">Asignación de horas por proyecto y empleado</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-[200px]">
-              <Calendar className="h-4 w-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {getMonthOptions().map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" onClick={copyFromPreviousMonth}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Copiar del mes anterior</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      </div>
-
-      {/* Resumen de Empleados - Cards completos */}
-      <div className="bg-white rounded-xl border shadow-sm p-4">
-        <h3 className="text-sm font-medium text-slate-500 mb-4 flex items-center gap-2">
-          <Users className="h-4 w-4" />
-          Resumen por Empleado
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {activeEmployees.map(emp => {
-            const capacityData = getMonthlyCapacity(emp.id);
-            const assigned = getEmployeeAssignedHours(emp.id);
-            const available = capacityData.available;
-            const percentage = available > 0 ? Math.round((assigned / available) * 100) : (assigned > 0 ? 999 : 0);
-            const status = percentage > 100 ? 'overload' : percentage > 85 ? 'warning' : 'healthy';
-            const remaining = available - assigned;
-            
-            return (
-              <div 
-                key={emp.id} 
-                className={cn(
-                  "p-3 rounded-lg border transition-colors",
-                  status === 'overload' && "bg-red-50 border-red-200",
-                  status === 'warning' && "bg-amber-50 border-amber-200",
-                  status === 'healthy' && "bg-slate-50 border-slate-200"
-                )}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={emp.avatarUrl} alt={emp.name} />
-                    <AvatarFallback className="bg-indigo-600 text-white text-xs">
-                      {(emp.first_name || emp.name)[0]}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">{emp.first_name || emp.name}</div>
-                  </div>
-                  {status === 'overload' && <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />}
-                  {status === 'warning' && <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />}
-                  {status === 'healthy' && <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />}
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="text-slate-500 cursor-help border-b border-dotted border-slate-300">Disponible</span>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="text-xs">
-                          <div className="space-y-0.5">
-                            <div>Base: {capacityData.total.toFixed(1)}h</div>
-                            {capacityData.absenceHours > 0 && <div className="text-red-400">Ausencias: -{capacityData.absenceHours.toFixed(1)}h</div>}
-                            {capacityData.eventHours > 0 && <div className="text-amber-400">Eventos: -{capacityData.eventHours.toFixed(1)}h</div>}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    <span className="font-mono font-medium">{available.toFixed(1)}h</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Asignado</span>
-                    <span className={cn(
-                      "font-mono font-medium",
-                      status === 'overload' ? "text-red-600" : status === 'warning' ? "text-amber-600" : ""
-                    )}>{assigned.toFixed(1)}h</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Libre</span>
-                    <span className={cn(
-                      "font-mono font-medium",
-                      remaining < 0 ? "text-red-600" : "text-emerald-600"
-                    )}>{remaining.toFixed(1)}h</span>
-                  </div>
-                  <Progress 
-                    value={Math.min(percentage, 100)} 
-                    className={cn(
-                      "h-1.5 mt-1",
-                      status === 'overload' && "[&>div]:bg-red-500",
-                      status === 'warning' && "[&>div]:bg-amber-500",
-                      status === 'healthy' && "[&>div]:bg-emerald-500"
-                    )}
-                  />
-                  <div className="text-right text-xs font-medium" style={{ color: status === 'overload' ? '#dc2626' : status === 'warning' ? '#d97706' : '#059669' }}>
-                    {percentage}%
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Asignaciones Globales - Diseño inline */}
-      <div className="bg-white rounded-xl border shadow-sm p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-slate-500">Tareas globales del mes</h3>
-          <Button onClick={() => openGlobalDialog()} size="sm" variant="ghost" className="gap-1 h-7 text-xs">
-            <Plus className="h-3 w-3" />
-            Añadir
-          </Button>
-        </div>
-        {globalAssignments.length === 0 ? (
-          <div className="text-sm text-slate-400 italic">
-            Sin tareas globales
+    <div className="flex gap-6 p-6 min-h-screen bg-slate-50">
+      {/* Columna principal - Proyectos */}
+      <div className="flex-1 min-w-0 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Deadline</h1>
+            <p className="text-sm text-slate-500">Asignación mensual de horas</p>
           </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {globalAssignments.map(assignment => (
-              <div key={assignment.id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full text-sm group">
-                <span>{assignment.name}</span>
-                <span className="font-mono text-indigo-600 font-medium">+{assignment.hours}h</span>
-                <button 
-                  onClick={() => openGlobalDialog(assignment)}
-                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 transition-opacity"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-                <button 
-                  onClick={() => handleDeleteGlobal(assignment.id)}
-                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
+          <div className="flex items-center gap-2">
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="w-[180px] h-9">
+                <Calendar className="h-4 w-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {getMonthOptions().map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={copyFromPreviousMonth}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Copiar del mes anterior</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Filtros - Diseño inline */}
+      {/* Filtros */}
       <div className="flex flex-wrap items-center gap-3 bg-white rounded-xl border shadow-sm p-3">
         <div className="flex-1 min-w-[200px]">
           <div className="relative">
@@ -959,221 +879,325 @@ export default function DeadlinesPage() {
         </Select>
       </div>
 
-      {/* Proyectos - Diseño compacto tipo tabla */}
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        {/* Header */}
-        <div className="grid grid-cols-[1fr,auto,auto,auto] gap-2 px-3 py-2 bg-slate-100 border-b text-xs font-medium text-slate-500 uppercase tracking-wide">
-          <div>Proyecto</div>
-          <div className="text-center w-32">Equipo</div>
-          <div className="text-right w-16">Total</div>
-          <div className="w-20"></div>
-        </div>
-        
+      {/* Proyectos por cliente */}
+      <div className="space-y-3">
         {Object.keys(projectsByClient).length === 0 ? (
-          <div className="text-center text-slate-500 py-8">
+          <div className="text-center text-slate-500 py-8 bg-white rounded-xl border">
             No hay proyectos para mostrar
           </div>
         ) : (
-          <div>
-            {Object.entries(projectsByClient).map(([clientId, clientProjects]) => {
-              const client = clients.find(c => c.id === clientId);
-              const isExpanded = expandedClients.has(clientId);
-              
-              return (
-                <div key={clientId} className="border-b last:border-b-0">
-                  {/* Fila del cliente */}
-                  <button
-                    onClick={() => toggleClient(clientId)}
-                    className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                    )}
-                    <div 
-                      className="w-2.5 h-2.5 rounded-full" 
-                      style={{ backgroundColor: client?.color || '#6b7280' }}
-                    />
-                    <span className="font-semibold text-sm text-slate-700">{client?.name || 'Sin cliente'}</span>
-                    <span className="text-xs text-slate-400">({clientProjects.length})</span>
-                  </button>
-                  
-                  {/* Proyectos del cliente */}
-                  {isExpanded && (
-                    <div>
-                      {clientProjects.map(project => {
-                        const deadline = getProjectDeadline(project.id);
-                        const isEditing = editingProjectId === project.id;
-                        const currentHours = isEditing ? inlineFormData.employeeHours : (deadline?.employeeHours || {});
-                        const totalAssigned = (Object.values(currentHours) as number[]).reduce((sum, h) => sum + (h || 0), 0);
-                        const isOverBudget = totalAssigned > (project.budgetHours || 0);
-                        const isUnderMin = project.minimumHours != null && project.minimumHours > 0 && totalAssigned < project.minimumHours;
-                        const isHidden = isEditing ? inlineFormData.isHidden : hiddenProjects.has(project.id);
-                        
-                        return (
-                          <div 
-                            key={project.id} 
-                            className={cn(
-                              "border-t border-slate-100",
-                              isHidden && "opacity-40",
-                              isEditing && "bg-indigo-50/30"
-                            )}
-                          >
-                            {/* Fila del proyecto */}
-                            <div className={cn(
-                              "grid grid-cols-[1fr,auto,auto,auto] gap-2 px-3 py-2 items-center",
-                              isOverBudget && "bg-red-50/50"
-                            )}>
-                              {/* Columna 1: Nombre proyecto */}
-                              <div className="pl-6 min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-sm text-slate-800 truncate">{project.name}</span>
-                                  {isHidden && <EyeOff className="h-3 w-3 text-slate-400 flex-shrink-0" />}
-                                </div>
-                                <div className="text-[11px] text-slate-400 font-mono">
-                                  {project.minimumHours != null && project.minimumHours > 0 && (
-                                    <span className="text-amber-500 mr-1">min {project.minimumHours}h</span>
-                                  )}
-                                  <span>{project.budgetHours}h</span>
-                                </div>
+          Object.entries(projectsByClient).map(([clientId, clientProjects]) => {
+            const client = clients.find(c => c.id === clientId);
+            const isExpanded = expandedClients.has(clientId);
+            
+            return (
+              <div key={clientId} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                {/* Cabecera del cliente */}
+                <button
+                  onClick={() => toggleClient(clientId)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left"
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  )}
+                  <div 
+                    className="w-3 h-3 rounded-full flex-shrink-0" 
+                    style={{ backgroundColor: client?.color || '#6b7280' }}
+                  />
+                  <span className="font-bold text-slate-800">{client?.name || 'Sin cliente'}</span>
+                  <span className="text-sm text-slate-400">({clientProjects.length} proyectos)</span>
+                </button>
+                
+                {/* Proyectos del cliente */}
+                {isExpanded && (
+                  <div className="border-t divide-y divide-slate-100">
+                    {clientProjects.map(project => {
+                      const deadline = getProjectDeadline(project.id);
+                      const isEditing = editingProjectId === project.id;
+                      const currentHours = isEditing ? inlineFormData.employeeHours : (deadline?.employeeHours || {});
+                      const totalAssigned = (Object.values(currentHours) as number[]).reduce((sum, h) => sum + (h || 0), 0);
+                      const isOverBudget = totalAssigned > (project.budgetHours || 0);
+                      const isUnderMin = project.minimumHours != null && project.minimumHours > 0 && totalAssigned < project.minimumHours;
+                      const isHidden = isEditing ? inlineFormData.isHidden : hiddenProjects.has(project.id);
+                      
+                      return (
+                        <div 
+                          key={project.id} 
+                          className={cn(
+                            isHidden && "opacity-40",
+                            isEditing && "bg-indigo-50/40",
+                            isOverBudget && !isEditing && "bg-red-50/40"
+                          )}
+                        >
+                          {/* Fila del proyecto */}
+                          <div className="flex items-center gap-3 px-4 py-2.5">
+                            {/* Info del proyecto */}
+                            {/* Info del proyecto */}
+                            <div className="min-w-[180px]">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-medium text-slate-800">{project.name}</span>
+                                {isHidden && <EyeOff className="h-3 w-3 text-slate-400 flex-shrink-0" />}
                               </div>
-                              
-                              {/* Columna 2: Equipo asignado */}
-                              <div className="w-32 flex items-center justify-end gap-0.5 flex-wrap">
-                                {!isEditing && activeEmployees.map(emp => {
-                                  const hours = (currentHours as Record<string, number>)[emp.id] || 0;
-                                  if (hours === 0) return null;
-                                  return (
-                                    <TooltipProvider key={emp.id}>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <div className="flex items-center gap-0.5 bg-slate-100 hover:bg-slate-200 rounded px-1.5 py-0.5 transition-colors">
-                                            <Avatar className="h-4 w-4">
-                                              <AvatarImage src={emp.avatarUrl} alt={emp.name} />
-                                              <AvatarFallback className="bg-indigo-500 text-white text-[8px]">
-                                                {(emp.first_name || emp.name)[0]}
-                                              </AvatarFallback>
-                                            </Avatar>
-                                            <span className="text-[11px] font-mono font-medium text-slate-700">{hours}</span>
-                                          </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                          {emp.first_name || emp.name}: {hours}h
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  );
-                                })}
-                                {!isEditing && totalAssigned === 0 && (
-                                  <span className="text-[11px] text-slate-300">—</span>
+                              <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                {project.minimumHours != null && project.minimumHours > 0 && (
+                                  <span className="text-amber-500 mr-1">mín {project.minimumHours}h ·</span>
                                 )}
-                              </div>
-                              
-                              {/* Columna 3: Total */}
-                              <div className={cn(
-                                "w-16 text-right font-mono font-bold text-sm",
-                                isOverBudget ? "text-red-600" : 
-                                isUnderMin ? "text-amber-500" : 
-                                totalAssigned > 0 ? "text-slate-700" : "text-slate-300"
-                              )}>
-                                {totalAssigned}h
-                              </div>
-                              
-                              {/* Columna 4: Acción */}
-                              <div className="w-20 flex justify-end">
-                                {!isEditing ? (
-                                  <Button
-                                    size="sm"
-                                    variant={totalAssigned === 0 ? "default" : "ghost"}
-                                    className={cn(
-                                      "h-7 text-xs gap-1",
-                                      totalAssigned === 0 && "bg-indigo-600 hover:bg-indigo-700"
-                                    )}
-                                    onClick={() => startEditingProject(project.id)}
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                    {totalAssigned === 0 ? 'Asignar' : 'Editar'}
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-xs text-slate-500"
-                                    onClick={cancelEditingProject}
-                                  >
-                                    Cancelar
-                                  </Button>
-                                )}
+                                <span>máx {project.budgetHours}h</span>
                               </div>
                             </div>
                             
-                            {/* Panel de edición inline */}
-                            {isEditing && (
-                              <div className="px-3 py-3 bg-slate-50 border-t border-slate-200">
-                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 mb-3">
-                                  {activeEmployees.map(emp => (
-                                    <div key={emp.id} className="text-center">
-                                      <Avatar className="h-6 w-6 mx-auto mb-1">
-                                        <AvatarImage src={emp.avatarUrl} alt={emp.name} />
-                                        <AvatarFallback className="bg-indigo-500 text-white text-[9px]">
-                                          {(emp.first_name || emp.name)[0]}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <div className="text-[10px] text-slate-500 truncate mb-1">{emp.first_name || emp.name}</div>
-                                      <Input
-                                        type="number"
-                                        min="0"
-                                        step="0.5"
-                                        value={inlineFormData.employeeHours[emp.id] || ''}
-                                        onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0)}
-                                        className="h-7 text-center font-mono text-sm w-full"
-                                        placeholder="0"
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
-                                  <Input
-                                    placeholder="Notas..."
-                                    value={inlineFormData.notes}
-                                    onChange={(e) => setInlineFormData(prev => ({ ...prev, notes: e.target.value }))}
-                                    className="h-7 text-xs flex-1 min-w-[150px]"
-                                  />
-                                  <label className="flex items-center gap-1 text-xs cursor-pointer">
-                                    <Switch
-                                      checked={inlineFormData.isHidden}
-                                      onCheckedChange={(checked) => setInlineFormData(prev => ({ ...prev, isHidden: checked }))}
-                                      className="scale-75"
-                                    />
-                                    <span className="text-slate-500">Ocultar</span>
-                                  </label>
-                                  <div className="flex-1" />
-                                  <span className="text-xs text-slate-500">
-                                    Total: <span className={cn("font-mono font-bold", isOverBudget ? "text-red-600" : "text-slate-700")}>{totalAssigned}h</span>
-                                    <span className="text-slate-400">/{project.budgetHours}h</span>
-                                  </span>
-                                  <Button
-                                    size="sm"
-                                    className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
-                                    onClick={() => saveInlineDeadline(project.id)}
-                                    disabled={isSaving}
+                            {/* Equipo asignado */}
+                            <div className="flex-1 flex items-center gap-1.5 flex-wrap">
+                              {!isEditing && activeEmployees.map(emp => {
+                                const hours = (currentHours as Record<string, number>)[emp.id] || 0;
+                                if (hours === 0) return null;
+                                return (
+                                  <div 
+                                    key={emp.id} 
+                                    className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 rounded-full px-2 py-1 transition-colors"
                                   >
-                                    {isSaving ? '...' : 'Guardar'}
-                                  </Button>
-                                </div>
+                                    <Avatar className="h-5 w-5">
+                                      <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                                      <AvatarFallback className="bg-indigo-500 text-white text-[9px]">
+                                        {(emp.first_name || emp.name)[0]}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-xs text-slate-600">{emp.first_name || emp.name}</span>
+                                    <span className="text-xs font-mono font-bold text-indigo-600">{hours}h</span>
+                                  </div>
+                                );
+                              })}
+                              {!isEditing && totalAssigned === 0 && (
+                                <span className="text-xs text-slate-400 italic">Sin asignar</span>
+                              )}
+                            </div>
+                            
+                            {/* Total y acción */}
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <span className={cn(
+                                  "font-mono font-bold text-sm",
+                                  isOverBudget ? "text-red-600" : 
+                                  isUnderMin ? "text-amber-500" : 
+                                  totalAssigned > 0 ? "text-slate-700" : "text-slate-400"
+                                )}>
+                                  {totalAssigned}h
+                                </span>
+                                <span className="text-xs text-slate-400">/{project.budgetHours}h</span>
                               </div>
-                            )}
+                              {!isEditing ? (
+                                <Button
+                                  size="sm"
+                                  variant={totalAssigned === 0 ? "default" : "outline"}
+                                  className={cn(
+                                    "h-7 text-xs",
+                                    totalAssigned === 0 && "bg-indigo-600 hover:bg-indigo-700"
+                                  )}
+                                  onClick={() => startEditingProject(project.id)}
+                                >
+                                  <Pencil className="h-3 w-3 mr-1" />
+                                  {totalAssigned === 0 ? 'Asignar' : 'Editar'}
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs text-slate-500"
+                                  onClick={cancelEditingProject}
+                                >
+                                  Cancelar
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                          
+                          {/* Panel de edición */}
+                          {isEditing && (
+                            <div className="px-4 py-3 bg-slate-50 border-t">
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {activeEmployees.map(emp => (
+                                  <div key={emp.id} className="flex items-center gap-2 bg-white border rounded-lg px-2.5 py-1.5">
+                                    <Avatar className="h-6 w-6">
+                                      <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                                      <AvatarFallback className="bg-indigo-500 text-white text-[9px]">
+                                        {(emp.first_name || emp.name)[0]}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-xs text-slate-600">{emp.first_name || emp.name}</span>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.5"
+                                      value={inlineFormData.employeeHours[emp.id] || ''}
+                                      onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0)}
+                                      className="h-6 w-14 text-center font-mono text-sm"
+                                      placeholder="0"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-200">
+                                <Input
+                                  placeholder="Notas..."
+                                  value={inlineFormData.notes}
+                                  onChange={(e) => setInlineFormData(prev => ({ ...prev, notes: e.target.value }))}
+                                  className="h-7 text-xs flex-1 min-w-[150px]"
+                                />
+                                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                  <Switch
+                                    checked={inlineFormData.isHidden}
+                                    onCheckedChange={(checked) => setInlineFormData(prev => ({ ...prev, isHidden: checked }))}
+                                    className="scale-75"
+                                  />
+                                  <span className="text-slate-500">Ocultar</span>
+                                </label>
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 ml-auto"
+                                  onClick={() => saveInlineDeadline(project.id)}
+                                  disabled={isSaving}
+                                >
+                                  {isSaving ? '...' : 'Guardar'}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
+      </div>
+      </div>
+
+      {/* Panel lateral sticky - Disponibilidad del equipo */}
+      <div className="w-64 flex-shrink-0">
+        <div className="sticky top-6 space-y-4">
+          {/* Disponibilidad en tiempo real */}
+          <div className="bg-white rounded-xl border shadow-sm p-3">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+              Disponibilidad
+            </h3>
+            <div className="space-y-2">
+              {activeEmployees.map(emp => {
+                const capacityData = getMonthlyCapacity(emp.id);
+                const assigned = getEmployeeAssignedHours(emp.id);
+                const available = capacityData.available;
+                const percentage = available > 0 ? Math.round((assigned / available) * 100) : 0;
+                const remaining = available - assigned;
+                const status = percentage > 100 ? 'overload' : percentage > 85 ? 'warning' : 'healthy';
+                
+                return (
+                  <div key={emp.id} className="flex items-center gap-2">
+                    <Avatar className="h-6 w-6 flex-shrink-0">
+                      <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                      <AvatarFallback className="bg-indigo-500 text-white text-[9px]">
+                        {(emp.first_name || emp.name)[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="truncate font-medium text-slate-700">
+                          {emp.first_name || emp.name}
+                        </span>
+                        <span className={cn(
+                          "font-mono font-bold",
+                          status === 'overload' ? "text-red-600" : 
+                          status === 'warning' ? "text-amber-600" : 
+                          "text-emerald-600"
+                        )}>
+                          {percentage}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <Progress 
+                          value={Math.min(percentage, 100)} 
+                          className={cn(
+                            "h-1 flex-1",
+                            status === 'overload' && "[&>div]:bg-red-500",
+                            status === 'warning' && "[&>div]:bg-amber-500",
+                            status === 'healthy' && "[&>div]:bg-emerald-500"
+                          )}
+                        />
+                        <span className={cn(
+                          "text-[10px] font-mono w-10 text-right",
+                          remaining < 0 ? "text-red-500" : "text-slate-400"
+                        )}>
+                          {remaining.toFixed(0)}h
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Tips de redistribución */}
+          {redistributionTips.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <h3 className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2 flex items-center gap-1">
+                <Sparkles className="h-3 w-3" />
+                Sugerencias
+              </h3>
+              <div className="space-y-2">
+                {redistributionTips.map((tip, i) => (
+                  <div key={i} className="text-xs text-amber-800 bg-amber-100/50 rounded p-2">
+                    <div className="font-medium mb-0.5">
+                      Pasar horas de {tip.from} → {tip.to}
+                    </div>
+                    <div className="text-amber-600 text-[10px]">
+                      {tip.reason}
+                    </div>
+                    {tip.projects.length > 0 && (
+                      <div className="text-[10px] text-amber-500 mt-1">
+                        Proyectos en común: {tip.projects.slice(0, 2).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tareas globales compactas */}
+          <div className="bg-white rounded-xl border shadow-sm p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Globales
+              </h3>
+              <Button onClick={() => openGlobalDialog()} size="sm" variant="ghost" className="h-6 w-6 p-0">
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
+            {globalAssignments.length === 0 ? (
+              <div className="text-[10px] text-slate-400 italic">Sin tareas</div>
+            ) : (
+              <div className="space-y-1">
+                {globalAssignments.map(a => (
+                  <div key={a.id} className="flex items-center justify-between text-xs group">
+                    <span className="truncate text-slate-600">{a.name}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-indigo-600">+{a.hours}h</span>
+                      <button 
+                        onClick={() => openGlobalDialog(a)}
+                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600"
+                      >
+                        <Pencil className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Dialog para asignaciones globales */}
