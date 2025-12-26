@@ -896,9 +896,20 @@ export default function DeadlinesPage() {
 
   // Funciones de edición inline
   const startEditingProject = async (projectId: string) => {
+    // Si ya estamos editando este proyecto, no hacer nada
+    if (editingProjectId === projectId) return;
+    
+    // Si estamos editando otro proyecto, cancelarlo primero
+    if (editingProjectId) {
+      await cancelEditingProject();
+    }
+    
     // Intentar adquirir el lock
     const lockAcquired = await acquireEditLock(projectId);
-    if (!lockAcquired) return;
+    if (!lockAcquired) {
+      // No se pudo adquirir el lock, no permitir editar
+      return;
+    }
     
     const deadline = getProjectDeadline(projectId);
     setEditingProjectId(projectId);
