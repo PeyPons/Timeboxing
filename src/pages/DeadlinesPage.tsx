@@ -1114,7 +1114,7 @@ export default function DeadlinesPage() {
                                     >
                                       {totalAssigned}h
                                     </Badge>
-                                    {isAdmin && !isEditing && (
+                                    {!isEditing && (
                                       <Button
                                         size="sm"
                                         variant={totalAssigned === 0 ? "default" : "outline"}
@@ -1240,35 +1240,33 @@ export default function DeadlinesPage() {
                                             No hay asignaciones para este proyecto
                                           </div>
                                         )}
-                                        {isAdmin && (
-                                          <div className="flex items-center gap-2 pt-2 border-t">
+                                        <div className="flex items-center gap-2 pt-2 border-t">
+                                          <Button
+                                            size="sm"
+                                            variant="default"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              startEditingProject(project.id);
+                                            }}
+                                            className="gap-1 bg-indigo-600 hover:bg-indigo-700"
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                            {deadline ? 'Editar asignaciones' : 'Asignar horas'}
+                                          </Button>
+                                          {deadline && (
                                             <Button
                                               size="sm"
-                                              variant="outline"
+                                              variant="ghost"
+                                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                startEditingProject(project.id);
+                                                handleDelete(deadline.id);
                                               }}
-                                              className="gap-1"
                                             >
-                                              <Pencil className="h-3 w-3" />
-                                              Editar asignaciones
+                                              <Trash2 className="h-3 w-3" />
                                             </Button>
-                                            {deadline && (
-                                              <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  handleDelete(deadline.id);
-                                                }}
-                                              >
-                                                <Trash2 className="h-3 w-3" />
-                                              </Button>
-                                            )}
-                                          </div>
-                                        )}
+                                          )}
+                                        </div>
                                       </div>
                                     )}
                                   </div>
