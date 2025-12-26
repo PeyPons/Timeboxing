@@ -1114,6 +1114,23 @@ export default function DeadlinesPage() {
                                     >
                                       {totalAssigned}h
                                     </Badge>
+                                    {isAdmin && !isEditing && (
+                                      <Button
+                                        size="sm"
+                                        variant={totalAssigned === 0 ? "default" : "outline"}
+                                        className={cn(
+                                          "gap-1 whitespace-nowrap",
+                                          totalAssigned === 0 && "bg-indigo-600 hover:bg-indigo-700"
+                                        )}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          startEditingProject(project.id);
+                                        }}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                        {totalAssigned === 0 ? 'Asignar' : 'Editar'}
+                                      </Button>
+                                    )}
                                   </div>
                                 </div>
                                 
