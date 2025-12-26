@@ -144,8 +144,9 @@ export default function DeadlinesPage() {
 
   // Suscripción en tiempo real para deadlines
   useEffect(() => {
+    const channelName = `deadlines-changes-${selectedMonth}-${Date.now()}`;
     const channel = supabase
-      .channel('deadlines-changes')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -155,6 +156,8 @@ export default function DeadlinesPage() {
           filter: `month=eq.${selectedMonth}`
         },
         (payload) => {
+          console.log('🔔 Realtime deadline change:', payload.eventType, payload);
+          
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const newDeadline = payload.new as any;
             setDeadlines(prev => {
@@ -200,17 +203,26 @@ export default function DeadlinesPage() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('📡 Realtime subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Suscrito a cambios de deadlines');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Error en suscripción Realtime');
+        }
+      });
 
     return () => {
+      console.log('🔌 Desconectando canal Realtime');
       supabase.removeChannel(channel);
     };
   }, [selectedMonth]);
 
   // Suscripción en tiempo real para global assignments
   useEffect(() => {
+    const channelName = `global-assignments-changes-${selectedMonth}-${Date.now()}`;
     const channel = supabase
-      .channel('global-assignments-changes')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -220,6 +232,8 @@ export default function DeadlinesPage() {
           filter: `month=eq.${selectedMonth}`
         },
         (payload) => {
+          console.log('🔔 Realtime global assignment change:', payload.eventType, payload);
+          
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const newAssignment = payload.new as any;
             setGlobalAssignments(prev => {
@@ -254,9 +268,17 @@ export default function DeadlinesPage() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('📡 Realtime global assignments subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Suscrito a cambios de global assignments');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Error en suscripción Realtime de global assignments');
+        }
+      });
 
     return () => {
+      console.log('🔌 Desconectando canal Realtime de global assignments');
       supabase.removeChannel(channel);
     };
   }, [selectedMonth]);

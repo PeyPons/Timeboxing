@@ -160,9 +160,17 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
       return;
     }
 
+    // Esperar a que currentUser esté disponible antes de decidir
+    if (currentUser === undefined) {
+      // Aún no se ha cargado el usuario, esperar
+      return;
+    }
+
     // Verificar desde la base de datos si el usuario está logueado
     if (currentUser) {
-      if (!currentUser.welcomeTourCompleted) {
+      // Si welcomeTourCompleted es null/undefined, tratarlo como false
+      const isCompleted = currentUser.welcomeTourCompleted === true;
+      if (!isCompleted) {
         const timer = setTimeout(() => setIsVisible(true), 500);
         return () => clearTimeout(timer);
       }
