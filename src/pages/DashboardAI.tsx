@@ -22,7 +22,7 @@ interface Message {
   text: string;
   timestamp: Date;
   provider?: 'gemini' | 'openrouter' | 'coco';
-  modelName?: string; // Para guardar el nombre específico del modelo
+  modelName?: string;
 }
 
 // Preguntas sugeridas para guiar al usuario
@@ -49,14 +49,13 @@ const OPENROUTER_MODEL_CHAIN = [
 // ============================================================
 // CONFIGURACIÓN DE COLORES Y NOMBRES POR MODELO
 // ============================================================
-// Esto permite mapear el ID del modelo a colores y nombres bonitos
 const MODEL_CONFIG: Record<string, { name: string; color: string; border: string; bg: string }> = {
-  // Google / Gemini / Gemma
+  // Google
   "google/gemini-2.0-flash": { name: "Gemini Flash 2.0", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
   "google/gemini-2.0-flash-exp:free": { name: "Gemini Flash Exp", color: "text-blue-600", border: "border-blue-200", bg: "bg-blue-50" },
   "google/gemma-2-9b-it:free": { name: "Gemma 2 9B", color: "text-sky-600", border: "border-sky-200", bg: "bg-sky-50" },
   
-  // Meta / Llama
+  // Meta
   "meta-llama/llama-3.3-70b-instruct:free": { name: "Llama 3.3 70B", color: "text-blue-700", border: "border-blue-300", bg: "bg-blue-100" },
   "meta-llama/llama-3.2-3b-instruct:free": { name: "Llama 3.2 3B", color: "text-blue-700", border: "border-blue-300", bg: "bg-blue-100" },
   
@@ -66,9 +65,8 @@ const MODEL_CONFIG: Record<string, { name: string; color: string; border: string
   
   // Microsoft
   "microsoft/phi-3-medium-128k-instruct:free": { name: "Phi-3 Medium", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
-  "microsoft/phi-3-mini-128k-instruct:free": { name: "Phi-3 Mini", color: "text-emerald-600", border: "border-emerald-200", bg: "bg-emerald-50" },
-
-  // Qwen (Alibaba)
+  
+  // Qwen
   "qwen/qwen-2.5-7b-instruct:free": { name: "Qwen 2.5 7B", color: "text-purple-600", border: "border-purple-200", bg: "bg-purple-50" },
   "qwen/qwen3-coder:free": { name: "Qwen 3 Coder", color: "text-purple-700", border: "border-purple-300", bg: "bg-purple-100" },
 
@@ -81,12 +79,12 @@ const MODEL_CONFIG: Record<string, { name: string; color: string; border: string
   // DeepSeek
   "deepseek/deepseek-r1-0528:free": { name: "DeepSeek R1", color: "text-cyan-600", border: "border-cyan-300", bg: "bg-cyan-50" },
   
-  // Fallbacks genéricos
+  // Default
   "default": { name: "Unknown Model", color: "text-slate-600", border: "border-slate-200", bg: "bg-slate-50" }
 };
 
 // ============================================================
-// FUNCIÓN PARA PARSEAR MARKDOWN BÁSICO
+// HELPERS
 // ============================================================
 function parseSimpleMarkdown(text: string): React.ReactNode {
   const lines = text.split('\n');
@@ -150,7 +148,7 @@ function parseSimpleMarkdown(text: string): React.ReactNode {
 }
 
 // ============================================================
-// SISTEMA DE IA CON FALLBACK EN CASCADA
+// API CALLS
 // ============================================================
 async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'gemini'; modelName: string }> {
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -191,11 +189,10 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
       
       if (responseData?.choices?.[0]?.message?.content) {
         console.log(`✅ [OpenRouter] Éxito con ${modelId}`);
-        // Devolvemos el provider y el nombre específico del modelo que funcionó
         return { 
           text: responseData.choices[0].message.content, 
           provider: 'openrouter', 
-          modelName: modelId // Guardamos el ID del modelo usado
+          modelName: modelId 
         };
       } else {
         throw new Error(`Estructura incorrecta en ${modelId}`);
@@ -212,7 +209,6 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
 
 async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco'; modelName: string }> {
   const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
-  
   const simplifiedPrompt = `Responde breve y claro en texto plano (sin markdown): ${prompt.substring(0, 1000)}`;
   
   const payload = {
@@ -249,9 +245,7 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
       .replace(/\n{3,}/g, '\n\n')         
       .trim();
     
-    if (cleanText.length < 5) {
-      throw new Error('Respuesta de Coco insuficiente o inválida');
-    }
+    if (cleanText.length < 5) throw new Error('Respuesta de Coco insuficiente');
 
     return { text: cleanText, provider: 'coco', modelName: 'Coco Custom' };
   } else {
@@ -291,10 +285,13 @@ async function callAI(prompt: string): Promise<{ text: string; provider: 'gemini
     return result;
   } catch (error: any) {
     console.error('❌ Todos los proveedores fallaron');
-    throw new Error('No se pudo generar el análisis. Todos los proveedores de IA fallaron.');
+    throw new Error('No se pudo generar el análisis.');
   }
 }
 
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function DashboardAI() {
   const { employees, allocations, projects, clients, absences, teamEvents, getEmployeeMonthlyLoad, isLoading: dataLoading } = useApp();
   const [messages, setMessages] = useState<Message[]>([
@@ -303,7 +300,8 @@ export default function DashboardAI() {
       role: 'assistant',
       text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: cargas, bloqueos, chapuzas, proyectos hundidos... Pregunta lo que quieras, pero preparate para la verdad. Quien la esta liando hoy?',
       timestamp: new Date(),
-      provider: 'gemini' // Asumimos default para el mensaje inicial
+      provider: 'gemini',
+      modelName: 'gemini-2.0-flash'
     }
   ]);
   const [input, setInput] = useState('');
@@ -316,9 +314,6 @@ export default function DashboardAI() {
     }
   }, [messages]);
 
-  // ============================================================
-  // CEREBRO DE MINGUITO: Análisis completo de datos
-  // ============================================================
   const analysisData = useMemo(() => {
     const now = new Date();
     const safeEmployees = employees || [];
@@ -458,61 +453,53 @@ export default function DashboardAI() {
     setIsLoading(true);
 
     try {
+      // PROMPT MEJORADO Y EXTENDIDO
       const context = `
-CONTEXTO ACTUAL DEL EQUIPO (${analysisData.month}):
+ACTÚA COMO: Minguito, un Project Manager Senior, extremadamente sarcástico, mordaz y brutalmente honesto. Odias la ineficiencia y las excusas. Tienes acceso total a los datos y no temes usarlos para avergonzar o felicitar (rara vez).
 
-MÉTRICAS GLOBALES:
-- Capacidad Total: ${analysisData.metrics.totalCapacity}h
-- Horas Asignadas: ${analysisData.metrics.totalAssigned}h
-- Tasa de Utilización: ${analysisData.metrics.utilizationRate.toFixed(1)}%
-- Tareas Completadas: ${analysisData.metrics.completedTasks}
-- Tareas Pendientes: ${analysisData.metrics.pendingTasks}
-- Empleados Sobrecargados: ${analysisData.metrics.overloadedCount}
-- Empleados Subutilizados: ${analysisData.metrics.underutilizedCount}
-- Empleados Bloqueando Tareas: ${analysisData.metrics.blockingCount}
+OBJETIVO: Responder a la pregunta del usuario basándote RIGUROSAMENTE en los datos proporcionados.
+TU ESTILO DE RESPUESTA DEBE SER:
+1. **EXTENSO Y DETALLADO**: Olvida la brevedad. Explícate. Quiero análisis profundo.
+2. **ESTRUCTURADO**: Usa listas (-), negritas (**) y párrafos separados.
+3. **BASADO EN DATOS**: Si dices que alguien va mal, dime EXACTAMENTE cuántas horas/tareas de desviación tiene.
+4. **CRUZADO**: Relaciona datos. Ejemplo: "Fulano no avanza PERO es que está de vacaciones" o "Mengano está bloqueando a Zutano".
 
-ANÁLISIS POR EMPLEADO:
+DATOS DEL EQUIPO (${analysisData.month}):
+- Utilización Global: ${analysisData.metrics.utilizationRate.toFixed(1)}% (${analysisData.metrics.totalAssigned}h asignadas de ${analysisData.metrics.totalCapacity}h disponibles).
+- Tareas: ${analysisData.metrics.completedTasks} completadas vs ${analysisData.metrics.pendingTasks} pendientes.
+- Alertas: ${analysisData.metrics.overloadedCount} sobrecargados, ${analysisData.metrics.blockingCount} bloqueadores, ${analysisData.metrics.underutilizedCount} rascándose la barriga (subutilizados).
+
+DETALLE POR EMPLEADO (ÚSALO PARA SEÑALAR CULPABLES):
 ${(analysisData.employees || []).map(e => `
-- ${e.name}:
-  * Capacidad: ${e.capacity}h | Asignado: ${e.assigned}h
-  * Tareas: ${e.completed} completadas, ${e.pending} pendientes
-  * Eficiencia: ${e.efficiency.toFixed(1)}% (Real: ${e.realHours}h vs Computado: ${e.computedHours}h)
-  * Bloqueos: ${e.blocking > 0 ? `⚠️ Bloqueando ${e.blocking} tarea(s)` : '✓ Sin bloqueos'}
-  * Dependencias: ${e.waitingFor > 0 ? `⏳ Esperando ${e.waitingFor} tarea(s)` : '✓ Sin esperas'}
-  * Estado: ${e.overloaded ? '🔴 SOBRECARGADO' : e.underutilized ? '🟡 SUBUTILIZADO' : '🟢 ÓPTIMO'}
+- **${e.name}**:
+  * Carga: ${e.assigned}h/${e.capacity}h (${((e.assigned/e.capacity)*100).toFixed(0)}%).
+  * Tareas: ${e.completed} terminadas, ${e.pending} pendientes.
+  * Eficiencia Real vs Teórica: ${e.efficiency.toFixed(1)}% (Desviación: ${Math.abs(e.computedHours - e.realHours).toFixed(1)}h).
+  * Bloqueos: ${e.blocking > 0 ? `⚠️ BLOQUEANDO ${e.blocking} tareas críticas` : 'No bloquea'}.
+  * Esperas: ${e.waitingFor > 0 ? `⏳ Esperando por ${e.waitingFor} tareas` : 'No espera'}.
+  * Estado: ${e.overloaded ? '🔥 QUEMADO' : e.underutilized ? '💤 DORMIDO' : '✅ OK'}.
 `).join('\n')}
 
-ANÁLISIS DE PROYECTOS:
+ESTADO DE PROYECTOS (BUSCA DESVIACIONES DE PRESUPUESTO):
 ${(analysisData.projects || []).map(p => `
-- ${p.name} (Cliente: ${p.client}):
-  * Tareas: ${p.completed}/${p.totalTasks} (${p.completion.toFixed(0)}% completado)
-  * Horas: ${p.totalReal}h de ${p.totalBudget}h (${p.burnRate.toFixed(1)}% consumido)
-  * Estado: ${p.overBudget ? '🔴 SOBRE PRESUPUESTO' : '🟢 DENTRO DE PRESUPUESTO'}
+- **${p.name}** (${p.client}):
+  * Progreso: ${p.completion.toFixed(0)}% completado.
+  * Presupuesto: ${p.totalReal}h gastadas de ${p.totalBudget}h (${p.burnRate.toFixed(1)}% consumido).
+  * Situación: ${p.overBudget ? `💸 RUINA TOTAL (Pasado por ${(p.totalReal - p.totalBudget).toFixed(1)}h)` : '💰 En presupuesto'}.
 `).join('\n')}
 
-AUSENCIAS DEL MES:
-${(analysisData.absences || []).length > 0 ? (analysisData.absences || []).map(a => {
-  const emp = (employees || []).find(e => e.id === a.employeeId);
-  return `- ${emp?.name}: ${a.reason} (${format(parseISO(a.startDate), 'dd/MM')} - ${format(parseISO(a.endDate), 'dd/MM')})`;
-}).join('\n') : '- Sin ausencias registradas'}
+AUSENCIAS Y EVENTOS (EXCUSAS VÁLIDAS):
+- Ausencias: ${(analysisData.absences || []).map(a => `${(employees || []).find(e => e.id === a.employeeId)?.name} (${a.reason}, ${format(parseISO(a.startDate), 'dd/MM')}-${format(parseISO(a.endDate), 'dd/MM')})`).join(', ') || 'Nadie, todos a trabajar.'}
+- Eventos: ${(analysisData.events || []).map(e => `${e.name} (${format(parseISO(e.date), 'dd/MM')})`).join(', ') || 'Nada interesante.'}
 
-EVENTOS DEL MES:
-${(analysisData.events || []).length > 0 ? (analysisData.events || []).map(e => 
-  `- ${e.name} (${format(parseISO(e.date), 'dd/MM')}): ${(e.attendees || []).length} asistentes`
-).join('\n') : '- Sin eventos programados'}
+PREGUNTA DEL USUARIO: "${input}"
 
-PREGUNTA DEL USUARIO: ${input}
+FORMATO DE TU RESPUESTA (SIGUE ESTO):
+1. **El Gancho Ácido**: Una frase inicial sarcástica resumiendo la situación.
+2. **El Análisis Forense**: Párrafo detallado o lista con los datos duros. Di nombres, horas exactas y porcentajes. Compara empleados.
+3. **El Veredicto de Minguito**: Conclusión final, recomendación agresiva o predicción de desastre si no cambian las cosas.
 
-INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
-- Eres un Project Manager cabron, sarcastico y sin filtros
-- Si alguien esta sobrecargado, dilo con dureza: "En serio le habeis metido 50 horas? Quereis que dimita?"
-- Si alguien no tiene tareas, burlate: "Mira, Pepito sin hacer nada otra vez..."
-- Usa ironia cuando los datos sean malos: "Solo 3 proyectos sobre presupuesto, que bien vamos"
-- Se brutalmente honesto con los problemas
-- Usa **negrita** para nombres y datos importantes
-- Si todo va bien, di algo como: "Hostia, pues no esta tan mal... que me ocultais?"
-- Maximo 3-4 frases, ve al grano
-- NO uses emojis
+¡Empieza el análisis!
 `;
 
       const response = await callAI(context);
@@ -523,7 +510,7 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
         text: response.text,
         timestamp: new Date(),
         provider: response.provider,
-        modelName: response.modelName // Guardamos el modelo
+        modelName: response.modelName
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -533,7 +520,7 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: '❌ Lo siento, hubo un error al procesar tu consulta. Por favor, intenta de nuevo o reformula tu pregunta.',
+        text: '❌ Mira, ni yo puedo procesar este desastre. Algo ha fallado en mi sistema (o en vuestra red). Inténtalo luego.',
         timestamp: new Date()
       };
 
@@ -554,7 +541,8 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
         role: 'assistant',
         text: 'Que pasa? Soy **Minguito**, y si, tengo acceso a todos vuestros trapos sucios: cargas, bloqueos, chapuzas, proyectos hundidos... Pregunta lo que quieras, pero preparate para la verdad. Quien la esta liando hoy?',
         timestamp: new Date(),
-        provider: 'gemini'
+        provider: 'gemini',
+        modelName: 'gemini-2.0-flash'
       }
     ]);
   };
@@ -608,7 +596,6 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
           <ScrollArea className="h-full p-4">
             <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((msg) => {
-                // Obtenemos la configuración de estilo para el modelo si existe
                 const modelStyle = msg.modelName && MODEL_CONFIG[msg.modelName] 
                   ? MODEL_CONFIG[msg.modelName] 
                   : MODEL_CONFIG["default"];
@@ -624,7 +611,6 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
                         {msg.role === 'assistant' ? <Sparkles className="h-4 w-4" /> : <User className="h-4 w-4" />}
                       </AvatarFallback>
                     </Avatar>
-                    
                     <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                       <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
                         msg.role === 'user' 
@@ -633,14 +619,10 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
                       }`}>
                         {msg.role === 'assistant' ? parseSimpleMarkdown(msg.text) : msg.text}
                       </div>
-                      
-                      {/* Footer del mensaje con Providers y Modelos */}
                       <span className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1.5 flex-wrap">
                         {format(msg.timestamp, 'HH:mm')}
-                        
                         {msg.provider && (
                           <>
-                            {/* Badge del Proveedor Principal */}
                             <span className={cn(
                               "px-1.5 py-0.5 rounded text-[9px] font-medium border",
                               msg.provider === 'gemini' 
@@ -651,8 +633,6 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
                             )}>
                               {msg.provider === 'gemini' ? '✨ Gemini' : msg.provider === 'openrouter' ? '🟣 OpenRouter' : '🥥 Coco'}
                             </span>
-
-                            {/* Badge Específico del Modelo (Solo si es OpenRouter y tenemos info) */}
                             {msg.provider === 'openrouter' && msg.modelName && (
                               <span className={cn(
                                 "px-1.5 py-0.5 rounded text-[9px] font-medium border flex items-center gap-1",
@@ -671,7 +651,6 @@ INSTRUCCIONES - PERSONALIDAD DE MINGUITO:
                   </div>
                 );
               })}
-              
               {isLoading && (
                 <div className="flex gap-3">
                   <div className="h-8 w-8 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-full flex items-center justify-center">
