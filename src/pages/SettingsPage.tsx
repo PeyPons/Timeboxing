@@ -65,7 +65,7 @@ export default function SettingsPage() {
                             </Select>
                         </div>
                         <div className="space-y-2 w-full md:w-2/4">
-                            <Label>ID de la Cuenta</Label>
+                            <Label>ID de la cuenta</Label>
                             <Input 
                                 placeholder={platform === 'meta' ? 'Ej: act_123456789' : 'Ej: 123-456-7890'} 
                                 value={accountId} 
@@ -88,7 +88,7 @@ export default function SettingsPage() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-emerald-600"/> Estado del Sistema</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-emerald-600"/> Estado del sistema</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="text-sm text-slate-600">

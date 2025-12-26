@@ -100,7 +100,7 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
       const proj = projects.find(p => p.id === quickWinTask.projectId);
       recommendation = {
           icon: <Flag className="w-5 h-5 text-emerald-600" />,
-          title: "Cierre Rápido",
+          title: "Cierre rápido",
           content: (
               <p className="text-sm">
                   🏁 <strong>A punto:</strong> Te queda muy poco en <em>{formatProjectName(proj?.name || '')}</em>. ¡Liquídala hoy mismo!

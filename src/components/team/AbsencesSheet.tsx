@@ -69,7 +69,7 @@ export function AbsencesSheet({ open, onOpenChange, employeeId }: AbsencesSheetP
                 <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Hasta (Opcional)</Label>
+                <Label>Hasta (opcional)</Label>
                 <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
               </div>
             </div>
@@ -103,7 +103,7 @@ export function AbsencesSheet({ open, onOpenChange, employeeId }: AbsencesSheetP
             </div>
 
             <div className="space-y-2">
-                <Label>Motivo (Opcional)</Label>
+                <Label>Motivo (opcional)</Label>
                 <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Ej: Cita médica..." />
             </div>
 
