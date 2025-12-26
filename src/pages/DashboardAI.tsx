@@ -134,7 +134,7 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
       "X-Title": "Timeboxing App"
     },
     body: JSON.stringify({
-      model: "google/gemini-2.0-flash-exp:free",
+      model: "openrouter/auto", // CORRECCIÓN: Deja que OpenRouter elija (usa tus preferencias de la web)
       messages: [
         {
           role: "user",
@@ -162,7 +162,7 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
   const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
   
   // Simplificar prompt para Coco - no soporta bien markdown
-  const simplifiedPrompt = prompt + "\n\nIMPORTANTE: Responde en texto plano sin asteriscos ni guiones. Usa frases completas.";
+  const simplifiedPrompt = prompt + "\n\nIMPORTANTE: Responde SOLO con texto plano. NO uses bloques de código, ni asteriscos, ni guiones sueltos. Sé breve.";
   
   const payload = {
     message: simplifiedPrompt,
@@ -189,12 +189,16 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
   const responseData = await response.json();
   
   if (responseData && responseData.data) {
-    // Limpiar respuesta de Coco - quitar formato roto
+    // CORRECCIÓN: Limpieza AGRESIVA de la respuesta de Coco para evitar bloques rotos
     let cleanText = responseData.data
-      .replace(/\*\s*\n/g, '')
-      .replace(/^\*\s*/gm, '- ')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/\n{3,}/g, '\n\n')
+      .replace(/```/g, '')               // Eliminar las comillas de código que rompen todo
+      .replace(/<[^>]*>/g, '')           // Eliminar cualquier tag HTML residual
+      .replace(/^\s*[\*\-]\s*$/gm, '')   // Eliminar líneas que solo tienen un punto o guión
+      .replace(/\*\*/g, '')              // Eliminar negritas rotas
+      .replace(/\*\s*\n/g, '\n')         // Eliminar asteriscos al final de línea
+      .replace(/^\*\s*/gm, '- ')         // Normalizar listas
+      .replace(/<br\s*\/?>/gi, '\n')     // Cambiar BR por saltos de línea
+      .replace(/\n{3,}/g, '\n\n')        // Eliminar excesivos saltos de línea
       .trim();
     return { text: cleanText, provider: 'coco' };
   } else {
