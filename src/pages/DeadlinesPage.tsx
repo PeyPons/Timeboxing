@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -56,6 +56,8 @@ export default function DeadlinesPage() {
     isHidden: boolean;
   }>({ employeeHours: {}, notes: '', isHidden: false });
   const [isSaving, setIsSaving] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [formData, setFormData] = useState({
     projectId: '',
@@ -575,14 +577,87 @@ export default function DeadlinesPage() {
     });
   };
 
-  const updateInlineEmployeeHours = (employeeId: string, hours: number) => {
-    setInlineFormData(prev => ({
-      ...prev,
+  const updateInlineEmployeeHours = (employeeId: string, hours: number, projectId: string) => {
+    const newFormData = {
+      ...inlineFormData,
       employeeHours: {
-        ...prev.employeeHours,
+        ...inlineFormData.employeeHours,
         [employeeId]: hours >= 0 ? hours : 0
       }
-    }));
+    };
+    setInlineFormData(newFormData);
+    
+    // Disparar autoguardado con debounce
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    setAutoSaveStatus('idle');
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSaveDeadline(projectId, newFormData);
+    }, 800);
+  };
+
+  const autoSaveDeadline = async (projectId: string, formData: typeof inlineFormData) => {
+    setAutoSaveStatus('saving');
+    try {
+      const existingDeadline = getProjectDeadline(projectId);
+      const deadlineData = {
+        project_id: projectId,
+        month: selectedMonth,
+        notes: formData.notes || null,
+        employee_hours: formData.employeeHours,
+        is_hidden: formData.isHidden
+      };
+
+      if (existingDeadline) {
+        const { error } = await supabase
+          .from('deadlines')
+          .update(deadlineData)
+          .eq('id', existingDeadline.id);
+
+        if (error) throw error;
+
+        setDeadlines(prev => prev.map(d => 
+          d.id === existingDeadline.id 
+            ? { ...d, projectId, month: selectedMonth, notes: formData.notes, employeeHours: formData.employeeHours, isHidden: formData.isHidden }
+            : d
+        ));
+      } else {
+        const { data, error } = await supabase
+          .from('deadlines')
+          .insert(deadlineData)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setDeadlines(prev => [...prev, {
+          id: data.id,
+          projectId: data.project_id,
+          month: data.month,
+          notes: data.notes,
+          employeeHours: data.employee_hours || {},
+          isHidden: data.is_hidden || false
+        }]);
+      }
+
+      if (formData.isHidden) {
+        setHiddenProjects(prev => new Set([...prev, projectId]));
+      } else {
+        setHiddenProjects(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(projectId);
+          return newSet;
+        });
+      }
+
+      setAutoSaveStatus('saved');
+      setTimeout(() => setAutoSaveStatus('idle'), 1500);
+    } catch (error: any) {
+      console.error('Error auto-saving:', error);
+      setAutoSaveStatus('idle');
+      toast.error('Error al guardar');
+    }
   };
 
   const saveInlineDeadline = async (projectId: string) => {
@@ -1050,19 +1125,6 @@ export default function DeadlinesPage() {
                                 </span>
                                 <span className="text-xs text-slate-400">/{project.budgetHours}h</span>
                               </div>
-                              {isEditing && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 text-xs text-slate-500"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    cancelEditingProject();
-                                  }}
-                                >
-                                  Cancelar
-                                </Button>
-                              )}
                             </div>
                           </div>
                           
@@ -1084,7 +1146,7 @@ export default function DeadlinesPage() {
                                       min="0"
                                       step="0.5"
                                       value={inlineFormData.employeeHours[emp.id] || ''}
-                                      onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0)}
+                                      onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0, project.id)}
                                       className="h-7 w-20 text-center font-mono text-sm px-2"
                                       placeholder="0"
                                     />
@@ -1095,25 +1157,53 @@ export default function DeadlinesPage() {
                                 <Input
                                   placeholder="Notas..."
                                   value={inlineFormData.notes}
-                                  onChange={(e) => setInlineFormData(prev => ({ ...prev, notes: e.target.value }))}
+                                  onChange={(e) => {
+                                    const newNotes = e.target.value;
+                                    const newFormData = { ...inlineFormData, notes: newNotes };
+                                    setInlineFormData(newFormData);
+                                    // Autoguardar notas
+                                    if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
+                                    autoSaveTimeoutRef.current = setTimeout(() => {
+                                      autoSaveDeadline(project.id, newFormData);
+                                    }, 800);
+                                  }}
                                   className="h-7 text-xs flex-1 min-w-[150px]"
                                 />
                                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                                   <Switch
                                     checked={inlineFormData.isHidden}
-                                    onCheckedChange={(checked) => setInlineFormData(prev => ({ ...prev, isHidden: checked }))}
+                                    onCheckedChange={(checked) => {
+                                      const newFormData = { ...inlineFormData, isHidden: checked };
+                                      setInlineFormData(newFormData);
+                                      // Guardar inmediatamente al cambiar ocultar
+                                      autoSaveDeadline(project.id, newFormData);
+                                    }}
                                     className="scale-75"
                                   />
                                   <span className="text-slate-500">Ocultar</span>
                                 </label>
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 ml-auto"
-                                  onClick={() => saveInlineDeadline(project.id)}
-                                  disabled={isSaving}
-                                >
-                                  {isSaving ? '...' : 'Guardar'}
-                                </Button>
+                                <div className="ml-auto flex items-center gap-2 text-xs">
+                                  {autoSaveStatus === 'saving' && (
+                                    <span className="text-slate-400 animate-pulse">Guardando...</span>
+                                  )}
+                                  {autoSaveStatus === 'saved' && (
+                                    <span className="text-emerald-600 flex items-center gap-1">
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      Guardado
+                                    </span>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs text-slate-500"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingProjectId(null);
+                                    }}
+                                  >
+                                    Cerrar
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           )}
