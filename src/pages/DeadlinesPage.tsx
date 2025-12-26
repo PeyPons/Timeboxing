@@ -41,6 +41,7 @@ export default function DeadlinesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [onlySEO, setOnlySEO] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
+  const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [filterByEmployee, setFilterByEmployee] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'client' | 'assigned' | 'remaining'>('client');
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
@@ -148,7 +149,7 @@ export default function DeadlinesPage() {
   // Calcular capacidad mensual de un empleado (restando ausencias y eventos)
   const getMonthlyCapacity = (employeeId: string) => {
     const employee = employees.find(e => e.id === employeeId);
-    if (!employee) return { total: 0, absenceHours: 0, eventHours: 0, available: 0 };
+    if (!employee) return { total: 0, absenceHours: 0, eventHours: 0, available: 0, absenceDetails: [], eventDetails: [] };
     
     const [year, month] = selectedMonth.split('-').map(Number);
     const monthStart = startOfMonth(new Date(year, month - 1));
@@ -165,16 +166,46 @@ export default function DeadlinesPage() {
       baseHours += workSchedule[dayKey as keyof typeof workSchedule] || 0;
     }
     
-    // Restar ausencias
+    // Restar ausencias (con detalles)
     const employeeAbsences = absences.filter(a => a.employeeId === employeeId);
     const absenceHours = getAbsenceHoursInRange(monthStart, monthEnd, employeeAbsences, workSchedule);
     
-    // Restar eventos del equipo
+    // Calcular detalle de cada ausencia que afecta este mes
+    const absenceDetails = employeeAbsences
+      .filter(a => {
+        const start = new Date(a.startDate);
+        const end = new Date(a.endDate);
+        return start <= monthEnd && end >= monthStart;
+      })
+      .map(a => {
+        const hours = getAbsenceHoursInRange(monthStart, monthEnd, [a], workSchedule);
+        return {
+          type: a.type,
+          startDate: a.startDate,
+          endDate: a.endDate,
+          hours
+        };
+      })
+      .filter(a => a.hours > 0);
+    
+    // Restar eventos del equipo (con detalles)
     const eventHours = getTeamEventHoursInRange(monthStart, monthEnd, employeeId, teamEvents, workSchedule, employeeAbsences);
+    
+    // Calcular detalle de cada evento que afecta este mes
+    const eventDetails = teamEvents
+      .filter(e => {
+        const eventDate = new Date(e.date);
+        return eventDate >= monthStart && eventDate <= monthEnd;
+      })
+      .map(e => ({
+        name: e.name,
+        date: e.date,
+        hours: e.hoursOff
+      }));
     
     const available = Math.max(0, baseHours - absenceHours - eventHours);
     
-    return { total: baseHours, absenceHours, eventHours, available };
+    return { total: baseHours, absenceHours, eventHours, available, absenceDetails, eventDetails };
   };
 
   // Calcular horas asignadas a un empleado (deadlines + globales)
@@ -238,6 +269,16 @@ export default function DeadlinesPage() {
       });
     }
     
+    // Filtrar solo proyectos sin asignar
+    if (showUnassignedOnly) {
+      filtered = filtered.filter(p => {
+        const deadline = deadlines.find(d => d.projectId === p.id && d.month === selectedMonth);
+        if (!deadline) return true; // Sin deadline = sin asignar
+        const totalAssigned = (Object.values(deadline.employeeHours) as number[]).reduce((s, h) => s + (h || 0), 0);
+        return totalAssigned === 0;
+      });
+    }
+    
     // Ordenar proyectos
     filtered.sort((a, b) => {
       if (sortBy === 'client') {
@@ -262,7 +303,7 @@ export default function DeadlinesPage() {
     });
     
     return filtered;
-  }, [projects, clients, searchTerm, onlySEO, showHidden, hiddenProjects, filterByEmployee, deadlines, selectedMonth, sortBy]);
+  }, [projects, clients, searchTerm, onlySEO, showHidden, showUnassignedOnly, hiddenProjects, filterByEmployee, deadlines, selectedMonth, sortBy]);
 
   // Agrupar proyectos por cliente
   const projectsByClient = useMemo(() => {
@@ -853,6 +894,15 @@ export default function DeadlinesPage() {
             />
             <span className="text-slate-600">Ocultos</span>
           </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch
+              id="show-unassigned"
+              checked={showUnassignedOnly}
+              onCheckedChange={setShowUnassignedOnly}
+              className="scale-90"
+            />
+            <span className="text-orange-600 font-medium">Sin asignar</span>
+          </label>
         </div>
         <Select value={filterByEmployee} onValueChange={setFilterByEmployee}>
           <SelectTrigger className="w-[140px] h-9 text-sm">
@@ -1035,7 +1085,7 @@ export default function DeadlinesPage() {
                                       step="0.5"
                                       value={inlineFormData.employeeHours[emp.id] || ''}
                                       onChange={(e) => updateInlineEmployeeHours(emp.id, parseFloat(e.target.value) || 0)}
-                                      className="h-6 w-14 text-center font-mono text-sm"
+                                      className="h-7 w-20 text-center font-mono text-sm px-2"
                                       placeholder="0"
                                     />
                                   </div>
@@ -1143,19 +1193,39 @@ export default function DeadlinesPage() {
                           </div>
                         </div>
                       </TooltipTrigger>
-                      <TooltipContent side="left" className="text-xs">
-                        <div className="space-y-1">
-                          <div className="font-medium">{emp.first_name || emp.name}</div>
-                          <div className="text-slate-400">Base: {capacityData.total.toFixed(1)}h</div>
-                          {capacityData.absenceHours > 0 && (
-                            <div className="text-red-400">Ausencias: -{capacityData.absenceHours.toFixed(1)}h</div>
+                      <TooltipContent side="left" className="text-xs max-w-[250px]">
+                        <div className="space-y-1.5">
+                          <div className="font-medium text-slate-100">{emp.first_name || emp.name}</div>
+                          <div className="text-slate-400">Base mensual: {capacityData.total.toFixed(1)}h</div>
+                          
+                          {capacityData.absenceDetails.length > 0 && (
+                            <div className="space-y-0.5">
+                              <div className="text-red-400 font-medium">Ausencias:</div>
+                              {capacityData.absenceDetails.map((a, i) => (
+                                <div key={i} className="text-red-300 pl-2 text-[11px]">
+                                  • {a.type === 'vacation' ? 'Vacaciones' : 
+                                     a.type === 'sick' ? 'Baja médica' : 
+                                     a.type === 'personal' ? 'Personal' : a.type}
+                                  : -{a.hours.toFixed(1)}h
+                                </div>
+                              ))}
+                            </div>
                           )}
-                          {capacityData.eventHours > 0 && (
-                            <div className="text-orange-400">Eventos: -{capacityData.eventHours.toFixed(1)}h</div>
+                          
+                          {capacityData.eventDetails.length > 0 && (
+                            <div className="space-y-0.5">
+                              <div className="text-orange-400 font-medium">Eventos:</div>
+                              {capacityData.eventDetails.map((e, i) => (
+                                <div key={i} className="text-orange-300 pl-2 text-[11px]">
+                                  • {e.name}: -{e.hours}h
+                                </div>
+                              ))}
+                            </div>
                           )}
-                          <div className="border-t pt-1 mt-1">
-                            <span className="text-slate-300">Disponible: </span>
-                            <span className="font-mono font-medium">{available.toFixed(1)}h</span>
+                          
+                          <div className="border-t border-slate-600 pt-1.5 mt-1.5">
+                            <span className="text-slate-400">Disponible: </span>
+                            <span className="font-mono font-bold text-white">{available.toFixed(1)}h</span>
                           </div>
                         </div>
                       </TooltipContent>
