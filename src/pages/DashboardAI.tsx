@@ -125,6 +125,10 @@ async function callGeminiAPI(prompt: string, apiKey: string): Promise<{ text: st
 async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text: string; provider: 'openrouter' }> {
   const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
   
+  // SOLUCIÓN: En lugar de "auto" (que puede elegir modelos de pago), pasamos una lista separada por comas.
+  // OpenRouter intentará el primero, si falla, el segundo, etc. Todos estos son gratuitos.
+  const FREE_MODELS_CHAIN = "google/gemini-2.0-flash-exp:free,meta-llama/llama-3.3-70b-instruct:free,microsoft/phi-3-medium-128k-instruct:free";
+
   const response = await fetch(OPENROUTER_API_URL, {
     method: 'POST',
     headers: {
@@ -134,7 +138,7 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
       "X-Title": "Timeboxing App"
     },
     body: JSON.stringify({
-      model: "openrouter/auto", // CORRECCIÓN: Deja que OpenRouter elija (usa tus preferencias de la web)
+      model: FREE_MODELS_CHAIN, 
       messages: [
         {
           role: "user",
@@ -154,15 +158,15 @@ async function callOpenRouterAPI(prompt: string, apiKey: string): Promise<{ text
   if (responseData?.choices?.[0]?.message?.content) {
     return { text: responseData.choices[0].message.content, provider: 'openrouter' };
   } else {
-    throw new Error('Respuesta inesperada de OpenRouter API');
+    throw new Error('Respuesta inesperada de OpenRouter API: Estructura incorrecta');
   }
 }
 
 async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'coco' }> {
   const COCO_API_URL = 'https://ws.cocosolution.com/api/ia/?noAuth=true&action=text/generateResume&app=CHATBOT&rol=user&method=POST&';
   
-  // Simplificar prompt para Coco - no soporta bien markdown
-  const simplifiedPrompt = prompt + "\n\nIMPORTANTE: Responde SOLO con texto plano. NO uses bloques de código, ni asteriscos, ni guiones sueltos. Sé breve.";
+  // Simplificar prompt drásticamente para Coco
+  const simplifiedPrompt = `Responde breve y claro en texto plano (sin markdown): ${prompt.substring(0, 1000)}`;
   
   const payload = {
     message: simplifiedPrompt,
@@ -189,17 +193,23 @@ async function callCocoAPI(prompt: string): Promise<{ text: string; provider: 'c
   const responseData = await response.json();
   
   if (responseData && responseData.data) {
-    // CORRECCIÓN: Limpieza AGRESIVA de la respuesta de Coco para evitar bloques rotos
+    // Limpieza AGRESIVA para evitar el output "0h. 0h:"
     let cleanText = responseData.data
-      .replace(/```/g, '')               // Eliminar las comillas de código que rompen todo
-      .replace(/<[^>]*>/g, '')           // Eliminar cualquier tag HTML residual
-      .replace(/^\s*[\*\-]\s*$/gm, '')   // Eliminar líneas que solo tienen un punto o guión
-      .replace(/\*\*/g, '')              // Eliminar negritas rotas
-      .replace(/\*\s*\n/g, '\n')         // Eliminar asteriscos al final de línea
-      .replace(/^\*\s*/gm, '- ')         // Normalizar listas
-      .replace(/<br\s*\/?>/gi, '\n')     // Cambiar BR por saltos de línea
-      .replace(/\n{3,}/g, '\n\n')        // Eliminar excesivos saltos de línea
+      .replace(/```/g, '')               
+      .replace(/<[^>]*>/g, '')           
+      .replace(/^\s*[\*\-]\s*$/gm, '')   
+      .replace(/\*\*/g, '')              
+      .replace(/\*\s*\n/g, '\n')         
+      .replace(/^\*\s*/gm, '- ')         
+      .replace(/<br\s*\/?>/gi, '\n')     
+      .replace(/\n{3,}/g, '\n\n')        
       .trim();
+    
+    // Si la respuesta sigue siendo basura muy corta (ej: "0h"), lanzar error para que no se muestre
+    if (cleanText.length < 5) {
+      throw new Error('Respuesta de Coco insuficiente o inválida');
+    }
+
     return { text: cleanText, provider: 'coco' };
   } else {
     throw new Error('Respuesta inesperada de Coco API');
