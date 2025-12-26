@@ -69,7 +69,7 @@ export function PlannerGrid() {
   
   const handleCellClick = (employeeId: string, weekStart: Date) => setSelectedCell({ employeeId, weekStart });
 
-  // --- LÓGICA MINGUITO ---
+  // --- LÓGICA MINGUITO MEJORADA ---
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setInsights(null);
@@ -82,72 +82,113 @@ export function PlannerGrid() {
     }
 
     try {
-        const relevantData = filteredEmployees.map(e => {
-            const empAllocations = allocations.filter(a => 
-                a.employeeId === e.id && 
-                a.status === 'completed' &&
-                isSameMonth(parseISO(a.weekStartDate), currentMonth)
-            );
-
-            const problematicTasks = empAllocations.filter(a => {
-                const real = a.hoursActual || 0;
-                const comp = a.hoursComputed || 0;
-                const loss = real - comp; 
-                return loss > 0.5;
-            }).map(a => `${a.taskName}: Perdió ${Math.round((a.hoursActual! - a.hoursComputed!) * 10) / 10}h`);
-
-            const goodTasks = empAllocations.filter(a => {
-                const real = a.hoursActual || 0;
-                const comp = a.hoursComputed || 0;
-                const gain = comp - real;
-                return gain > 0.5;
-            }).map(a => `${a.taskName}: Ganó ${Math.round((a.hoursComputed! - a.hoursActual!) * 10) / 10}h`);
-
-            if (problematicTasks.length === 0 && goodTasks.length === 0) return null;
-
+        // Recopilar datos completos del mes
+        const monthAllocations = allocations.filter(a => 
+            isSameMonth(parseISO(a.weekStartDate), currentMonth)
+        );
+        
+        const completedTasks = monthAllocations.filter(a => a.status === 'completed');
+        const pendingTasks = monthAllocations.filter(a => a.status !== 'completed');
+        
+        // Análisis por empleado
+        const employeeData = filteredEmployees.map(e => {
+            const load = getEmployeeMonthlyLoad(e.id, year, month);
+            const empTasks = monthAllocations.filter(a => a.employeeId === e.id);
+            const empCompleted = empTasks.filter(a => a.status === 'completed');
+            const empPending = empTasks.filter(a => a.status !== 'completed');
+            
+            // Eficiencia
+            const totalReal = empCompleted.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
+            const totalComp = empCompleted.reduce((sum, a) => sum + (a.hoursComputed || 0), 0);
+            const balance = totalComp - totalReal;
+            
+            // Dependencias: ¿bloquea a otros?
+            const blocking = empPending.filter(task => 
+                allocations.some(other => other.dependencyId === task.id && other.status !== 'completed')
+            ).length;
+            
             return {
-                Name: e.name,
-                Problemas: problematicTasks,
-                Victorias: goodTasks
+                name: e.name,
+                department: e.department || 'N/A',
+                loadPercentage: load.percentage,
+                loadStatus: load.status,
+                tasksTotal: empTasks.length,
+                tasksPending: empPending.length,
+                hoursReal: Math.round(totalReal * 10) / 10,
+                hoursComputed: Math.round(totalComp * 10) / 10,
+                balance: Math.round(balance * 10) / 10,
+                blockingOthers: blocking
             };
-        }).filter(item => item !== null);
-
-        if (relevantData.length === 0) {
-            setInsights([{ type: 'info', text: 'Todo parece tranquilo este mes. Sin desviaciones graves > 30min.' }]);
-            setIsAnalyzing(false);
-            return;
-        }
+        });
+        
+        // Métricas globales
+        const globalReal = completedTasks.reduce((s, a) => s + (a.hoursActual || 0), 0);
+        const globalComp = completedTasks.reduce((s, a) => s + (a.hoursComputed || 0), 0);
+        const globalBalance = globalComp - globalReal;
+        
+        // Proyectos problemáticos
+        const activeProjects = projects.filter(p => p.status === 'active');
+        const projectIssues = activeProjects.map(p => {
+            const projTasks = monthAllocations.filter(a => a.projectId === p.id);
+            const hoursUsed = projTasks.reduce((sum, a) => {
+                if (a.status === 'completed') return sum + (a.hoursActual || a.hoursAssigned);
+                return sum + a.hoursAssigned;
+            }, 0);
+            const percentage = p.budgetHours > 0 ? (hoursUsed / p.budgetHours * 100) : 0;
+            
+            if (percentage > 90) {
+                return { name: p.name, percentage: Math.round(percentage), budget: p.budgetHours };
+            }
+            return null;
+        }).filter(Boolean);
+        
+        // Construir contexto compacto para la IA
+        const analysisContext = {
+            mes: format(currentMonth, 'MMMM yyyy', { locale: es }),
+            global: {
+                tareasTotales: monthAllocations.length,
+                completadas: completedTasks.length,
+                pendientes: pendingTasks.length,
+                horasReales: Math.round(globalReal),
+                horasComputadas: Math.round(globalComp),
+                balance: Math.round(globalBalance * 10) / 10
+            },
+            empleados: employeeData,
+            proyectosEnRiesgo: projectIssues
+        };
 
         const prompt = `
-            Eres Minguito, un Project Manager veterano, sarcástico y obsesionado con la RENTABILIDAD.
-            Analiza estos datos de desviaciones: ${JSON.stringify(relevantData)}
-            
-            Tu misión:
-            1. Detecta quién está "tirando el dinero" (Problemas).
-            2. Detecta quién está "facturando aire" (Victorias).
-            3. Dame 3 frases cortas y directas en JSON.
-            
-            Formato respuesta JSON estrictamente:
-            [{"type":"warning"|"success"|"info", "text":"Frase de Minguito aquí"}]
-        `;
+Eres Minguito, analista de gestión veterano. Analiza estos datos y dame EXACTAMENTE 3 insights clave:
+
+DATOS: ${JSON.stringify(analysisContext)}
+
+REGLAS:
+- Prioriza: 1) Bloqueos entre personas, 2) Sobrecarga/infracarga, 3) Proyectos en riesgo, 4) Balance de eficiencia
+- Sé directo y usa expresiones coloquiales españolas ("ojo con", "cuidadín", "menudo marrón")
+- Máximo 15 palabras por insight
+- Si todo va bien, reconócelo
+
+Responde SOLO con JSON válido:
+[{"type":"warning"|"success"|"info", "text":"Frase aquí"}]
+`;
 
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         const result = await model.generateContent(prompt);
         const text = result.response.text();
         
-        const jsonMatch = text.match(/\[[\s\S]*\]/); 
+        const jsonMatch = text.match(/\[[\s\S]*?\]/); 
         
         if (jsonMatch) {
             const jsonString = jsonMatch[0];
             setInsights(JSON.parse(jsonString));
         } else {
-            setInsights([{ type: 'warning', text: 'Minguito ha soltado un discurso pero no me ha dado los datos en limpio.' }]);
+            setInsights([{ type: 'info', text: 'Minguito está procesando los datos...' }]);
         }
 
     } catch (e: any) {
         console.error("Error Minguito:", e);
-        setInsights([{ type: 'warning', text: 'Minguito se ha mareado (Error API).' }]);
+        setInsights([{ type: 'warning', text: 'Minguito se ha quedado frito. Inténtalo de nuevo.' }]);
     } finally {
         setIsAnalyzing(false);
     }
