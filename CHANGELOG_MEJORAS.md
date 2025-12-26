@@ -238,5 +238,29 @@ Se han implementado **mejoras de alta y media prioridad** que mejoran significat
 ---
 
 **Fecha de implementación**: $(date)
-**Versión**: 1.0.0
+**Versión**: 1.1.0
+
+---
+
+## 🧹 Limpieza de Archivos Huérfanos (v1.1.0)
+
+Se eliminaron archivos que no se estaban utilizando en el código real:
+
+### Archivos Eliminados:
+- **Hooks no usados**: `useFormState`, `useAsyncOperation`, `useDebounce`, `useFormValidation`, `useLoadingState`, `useSupabaseQuery`
+- **Schemas no usados**: `projectSchema`, `deadlineSchema`, `employeeSchema`
+- **Componentes no usados**: `OptimizedCard`, `OptimizedButton`
+- **Utilidades no usadas**: `formatters`, `validators`
+- **Tests asociados**: Tests de los hooks y utilidades eliminados
+- **Documentación**: README de hooks (ya no aplicable)
+
+### Archivos Mantenidos (en uso real):
+- ✅ `AIService` - Usado en 3 archivos
+- ✅ `ErrorService` - Usado en varios componentes
+- ✅ `logger` - Usado en varios componentes
+- ✅ `constants.ts` - Usado en aiReportUtils
+- ✅ Componentes con `React.memo` que SÍ se usan (`StatCard`, `ClientCard`)
+- ✅ Tests de servicios que SÍ se usan
+
+**Resultado**: Código más limpio, sin archivos innecesarios que puedan confundir.
 
