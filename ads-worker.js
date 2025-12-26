@@ -68,7 +68,7 @@ async function getClientAccounts(accessToken) {
   return clients;
 }
 
-// AQUÍ ESTÁ LA CORRECCIÓN: Agregación en memoria
+// Agregación por DÍA para gráficos diarios en informes
 async function getAccountData(customerId, accessToken, dateRange) {
   const query = `
     SELECT 
@@ -93,7 +93,7 @@ async function getAccountData(customerId, accessToken, dateRange) {
     body: JSON.stringify({ query }),
   });
 
-  const aggregator = new Map(); // Usamos un Map para sumar días repetidos
+  const aggregator = new Map(); // Usamos un Map para agregar por campaña+día
 
   if (response.ok) {
     const data = await response.json();
@@ -102,8 +102,8 @@ async function getAccountData(customerId, accessToken, dateRange) {
         if (batch.results) { 
           batch.results.forEach(row => { 
             const campaignId = String(row.campaign.id);
-            const monthDate = row.segments.date.substring(0, 7) + '-01'; // Agrupar por mes
-            const key = `${campaignId}_${monthDate}`; // Clave única: ID + MES
+            const dailyDate = row.segments.date; // Usar fecha completa (YYYY-MM-DD)
+            const key = `${campaignId}_${dailyDate}`; // Clave única: ID + DÍA
 
             if (!aggregator.has(key)) {
                 aggregator.set(key, {
@@ -111,7 +111,7 @@ async function getAccountData(customerId, accessToken, dateRange) {
                     campaign_id: campaignId,
                     campaign_name: row.campaign.name,
                     status: row.campaign.status,
-                    date: monthDate,
+                    date: dailyDate,
                     cost: 0,
                     daily_budget: row.campaignBudget ? (parseInt(row.campaignBudget.amountMicros || '0') / 1000000) : 0,
                     conversions_value: 0,
@@ -121,7 +121,7 @@ async function getAccountData(customerId, accessToken, dateRange) {
                 });
             }
 
-            // SUMAR MÉTRICAS (Agregación)
+            // SUMAR MÉTRICAS (Agregación por día)
             const entry = aggregator.get(key);
             entry.cost += parseInt(row.metrics.costMicros || '0') / 1000000;
             entry.conversions_value += parseFloat(row.metrics.conversionsValue || 0);

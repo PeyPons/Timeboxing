@@ -175,7 +175,7 @@ export default function AdsReportGenerator() {
         };
         fetchClients();
     }, []);
-    
+
     // 2. Suscribirse a cambios del job de sincronización
     useEffect(() => {
         if (!syncJobId) return;
@@ -350,10 +350,30 @@ export default function AdsReportGenerator() {
             roas: historicalStats[historicalStats.length - 2].roas
         } : { cost: 0, conversions: 0, value: 0, cpa: 0, roas: 0 };
 
-        // NOTA: Los datos del worker están agregados por mes (día 01)
-        // Si quieres datos diarios, hay que modificar el worker
-        // Por ahora, mostramos la evolución mensual que es lo que tenemos
         const hasRevenue = currStats.value > 0;
+
+        // Crear datos diarios para el gráfico de evolución diaria
+        const dailyMap = new Map<string, { date: string; cost: number; conversions: number; value: number }>();
+        currentRows?.forEach(row => {
+            const date = row.date;
+            if (!dailyMap.has(date)) {
+                dailyMap.set(date, { date, cost: 0, conversions: 0, value: 0 });
+            }
+            const entry = dailyMap.get(date)!;
+            entry.cost += Number(row.cost || 0);
+            entry.conversions += Number(row.conversions || 0);
+            entry.value += Number(row.conversions_value || 0);
+        });
+        
+        const dailyChartData = Array.from(dailyMap.values())
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(d => ({
+                date: d.date,
+                shortDate: format(parseISO(d.date), 'dd MMM', { locale: es }),
+                Inversión: Math.round(d.cost),
+                Conversiones: Math.round(d.conversions),
+                Ingresos: Math.round(d.value)
+            }));
 
         // Top Campaigns con más detalles
         const campaigns = currentRows?.reduce((acc: any[], row) => {
@@ -387,9 +407,10 @@ export default function AdsReportGenerator() {
         setReportData({ 
             currStats, 
             prevStats, 
-            campaigns, 
+            campaigns,
             hasRevenue,
             historicalStats,
+            dailyChartData,
             changeLogs: enrichedChangeLogs
         });
         
@@ -614,6 +635,70 @@ export default function AdsReportGenerator() {
                             </div>
                         )}
 
+                        {/* GRÁFICA DE EVOLUCIÓN DIARIA (mes actual) */}
+                        {reportData.dailyChartData && reportData.dailyChartData.length > 1 && (
+                        <div className="bg-white p-4 rounded-lg border border-slate-200">
+                                <h3 className="text-sm font-bold text-slate-600 mb-4 uppercase tracking-wider">
+                                    Evolución Diaria ({format(new Date(), 'MMMM yyyy', { locale: es })})
+                                </h3>
+                            <div className="h-64 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <ComposedChart data={reportData.dailyChartData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis 
+                                            dataKey="shortDate" 
+                                            tick={{fontSize: 10}} 
+                                            tickLine={false} 
+                                            axisLine={false}
+                                                interval="preserveStartEnd"
+                                        />
+                                        <YAxis 
+                                            yAxisId="left"
+                                            orientation="left"
+                                            tick={{fontSize: 10}} 
+                                            tickLine={false} 
+                                            axisLine={false}
+                                                tickFormatter={formatEuro}
+                                        />
+                                        <YAxis 
+                                            yAxisId="right" 
+                                            orientation="right" 
+                                            tick={{fontSize: 10}} 
+                                            tickLine={false} 
+                                            axisLine={false}
+                                        />
+                                            <Tooltip content={<CustomTooltip />} />
+                                            <Legend wrapperStyle={{fontSize: '12px', paddingTop: '10px'}}/>
+                                            <Bar 
+                                                yAxisId="left" 
+                                                dataKey="Inversión" 
+                                                fill="#6366f1" 
+                                                radius={[4, 4, 0, 0]}
+                                                barSize={12}
+                                            />
+                                        {reportData.hasRevenue && (
+                                                <Bar 
+                                                    yAxisId="left" 
+                                                    dataKey="Ingresos" 
+                                                    fill="#10b981" 
+                                                    radius={[4, 4, 0, 0]}
+                                                    barSize={12}
+                                                />
+                                            )}
+                                        <Line 
+                                            yAxisId="right" 
+                                            type="monotone" 
+                                                dataKey="Conversiones" 
+                                            stroke="#f59e0b" 
+                                                strokeWidth={2} 
+                                            dot={{r: 3, fill: '#f59e0b'}} 
+                                        />
+                                    </ComposedChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                        )}
+
                         {/* RESUMEN EJECUTIVO (IA) */}
                         <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100">
                             <h3 className="flex items-center gap-2 text-indigo-900 font-bold mb-3">
@@ -628,9 +713,9 @@ export default function AdsReportGenerator() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="text-indigo-900 text-sm leading-relaxed whitespace-pre-line">
+                            <div className="text-indigo-900 text-sm leading-relaxed whitespace-pre-line">
                                     {aiSummary || 'Haz clic en "Generar Informe con IA" para obtener el análisis.'}
-                                </div>
+                            </div>
                             )}
                         </div>
 
