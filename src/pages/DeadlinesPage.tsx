@@ -801,43 +801,64 @@ export default function DeadlinesPage() {
         .delete()
         .lt('expires_at', new Date().toISOString());
       
-      // Intentar adquirir el lock
-      const { data, error } = await supabase
+      // PRIMERO verificar si ya existe un lock activo de otro usuario
+      const { data: existingLock } = await supabase
         .from('project_editing_locks')
-        .upsert({
+        .select('*, employees!inner(id, first_name, name)')
+        .eq('project_id', projectId)
+        .eq('month', selectedMonth)
+        .gt('expires_at', new Date().toISOString())
+        .single();
+      
+      if (existingLock) {
+        // Si el lock es de otro usuario, rechazar
+        if (existingLock.employee_id !== currentUser.id) {
+          const editor = employees.find(e => e.id === existingLock.employee_id);
+          toast.warning(`${editor?.first_name || editor?.name || 'Alguien'} está editando este proyecto. Espera a que termine.`);
+          return false;
+        }
+        // Si es nuestro lock, renovarlo y continuar
+        await supabase
+          .from('project_editing_locks')
+          .update({
+            expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+          })
+          .eq('id', existingLock.id);
+        return true;
+      }
+      
+      // No hay lock existente, crear uno nuevo
+      const { error } = await supabase
+        .from('project_editing_locks')
+        .insert({
           project_id: projectId,
           employee_id: currentUser.id,
           month: selectedMonth,
-          expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 minutos
-        }, {
-          onConflict: 'project_id,month',
-          ignoreDuplicates: false
-        })
-        .select()
-        .single();
+          expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+        });
       
       if (error) {
-        // Si hay un lock existente, verificar si es nuestro
-        const { data: existing } = await supabase
+        console.error('Error creando lock:', error);
+        // Si falla por conflicto, verificar de nuevo
+        const { data: conflictLock } = await supabase
           .from('project_editing_locks')
           .select('*, employees!inner(id, first_name, name)')
           .eq('project_id', projectId)
           .eq('month', selectedMonth)
+          .gt('expires_at', new Date().toISOString())
           .single();
         
-        if (existing && existing.employee_id !== currentUser.id) {
-          const editor = employees.find(e => e.id === existing.employee_id);
-          toast.warning(`${editor?.first_name || editor?.name || 'Alguien'} está editando este proyecto`);
+        if (conflictLock && conflictLock.employee_id !== currentUser.id) {
+          const editor = employees.find(e => e.id === conflictLock.employee_id);
+          toast.warning(`${editor?.first_name || editor?.name || 'Alguien'} está editando este proyecto. Espera a que termine.`);
           return false;
         }
-        // Si es nuestro lock, continuar
-        return true;
       }
       
       return true;
     } catch (error) {
       console.error('Error adquiriendo lock:', error);
-      return true; // Continuar de todas formas
+      return false; // Cambiar a false para ser más estricto
     }
   };
 

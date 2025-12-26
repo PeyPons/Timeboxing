@@ -83,8 +83,14 @@ export default function EmployeeDashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUser(user);
-        const linked = employees.find(e => e.user_id === user.id);
-        if (linked) setMyEmployeeProfile(linked);
+        // Buscar por user_id o por email (como hace AppContext)
+        const linked = employees.find(e => 
+          e.user_id === user.id || 
+          (e.email && user.email && e.email.toLowerCase() === user.email.toLowerCase())
+        );
+        if (linked) {
+          setMyEmployeeProfile(linked);
+        }
       }
     };
     if (!isGlobalLoading && employees.length > 0) checkUserLink();
