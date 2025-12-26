@@ -922,6 +922,8 @@ export default function DeadlinesPage() {
                       const isUnderMin = project.minimumHours != null && project.minimumHours > 0 && totalAssigned < project.minimumHours;
                       const isHidden = isEditing ? inlineFormData.isHidden : hiddenProjects.has(project.id);
                       
+                      const projectNotes = deadline?.notes;
+                      
                       return (
                         <div 
                           key={project.id} 
@@ -931,9 +933,14 @@ export default function DeadlinesPage() {
                             isOverBudget && !isEditing && "bg-red-50/40"
                           )}
                         >
-                          {/* Fila del proyecto */}
-                          <div className="flex items-center gap-3 px-4 py-2.5">
-                            {/* Info del proyecto */}
+                          {/* Fila del proyecto - clickeable para editar */}
+                          <div 
+                            className={cn(
+                              "flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50 transition-colors",
+                              isEditing && "hover:bg-indigo-50/40"
+                            )}
+                            onClick={() => !isEditing && startEditingProject(project.id)}
+                          >
                             {/* Info del proyecto */}
                             <div className="min-w-[180px]">
                               <div className="flex items-center gap-1.5">
@@ -942,10 +949,16 @@ export default function DeadlinesPage() {
                               </div>
                               <div className="text-[11px] text-slate-400 font-mono mt-0.5">
                                 {project.minimumHours != null && project.minimumHours > 0 && (
-                                  <span className="text-amber-500 mr-1">mín {project.minimumHours}h ·</span>
+                                  <span className="text-orange-500 mr-1">mín {project.minimumHours}h ·</span>
                                 )}
                                 <span>máx {project.budgetHours}h</span>
                               </div>
+                              {/* Notas visibles si existen */}
+                              {projectNotes && !isEditing && (
+                                <div className="text-[11px] text-indigo-500 mt-0.5 italic truncate max-w-[200px]">
+                                  📝 {projectNotes}
+                                </div>
+                              )}
                             </div>
                             
                             {/* Equipo asignado */}
@@ -956,7 +969,7 @@ export default function DeadlinesPage() {
                                 return (
                                   <div 
                                     key={emp.id} 
-                                    className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 rounded-full px-2 py-1 transition-colors"
+                                    className="flex items-center gap-1.5 bg-slate-100 rounded-full px-2 py-1"
                                   >
                                     <Avatar className="h-5 w-5">
                                       <AvatarImage src={emp.avatarUrl} alt={emp.name} />
@@ -970,42 +983,32 @@ export default function DeadlinesPage() {
                                 );
                               })}
                               {!isEditing && totalAssigned === 0 && (
-                                <span className="text-xs text-slate-400 italic">Sin asignar</span>
+                                <span className="text-xs text-slate-400 italic">Clic para asignar</span>
                               )}
                             </div>
                             
-                            {/* Total y acción */}
+                            {/* Total */}
                             <div className="flex items-center gap-3">
                               <div className="text-right">
                                 <span className={cn(
                                   "font-mono font-bold text-sm",
                                   isOverBudget ? "text-red-600" : 
-                                  isUnderMin ? "text-amber-500" : 
+                                  isUnderMin ? "text-orange-500" : 
                                   totalAssigned > 0 ? "text-slate-700" : "text-slate-400"
                                 )}>
                                   {totalAssigned}h
                                 </span>
                                 <span className="text-xs text-slate-400">/{project.budgetHours}h</span>
                               </div>
-                              {!isEditing ? (
-                                <Button
-                                  size="sm"
-                                  variant={totalAssigned === 0 ? "default" : "outline"}
-                                  className={cn(
-                                    "h-7 text-xs",
-                                    totalAssigned === 0 && "bg-indigo-600 hover:bg-indigo-700"
-                                  )}
-                                  onClick={() => startEditingProject(project.id)}
-                                >
-                                  <Pencil className="h-3 w-3 mr-1" />
-                                  {totalAssigned === 0 ? 'Asignar' : 'Editar'}
-                                </Button>
-                              ) : (
+                              {isEditing && (
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   className="h-7 text-xs text-slate-500"
-                                  onClick={cancelEditingProject}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    cancelEditingProject();
+                                  }}
                                 >
                                   Cancelar
                                 </Button>
@@ -1092,48 +1095,72 @@ export default function DeadlinesPage() {
                 const percentage = available > 0 ? Math.round((assigned / available) * 100) : 0;
                 const remaining = available - assigned;
                 const status = percentage > 100 ? 'overload' : percentage > 85 ? 'warning' : 'healthy';
+                const hasReductions = capacityData.absenceHours > 0 || capacityData.eventHours > 0;
                 
                 return (
-                  <div key={emp.id} className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6 flex-shrink-0">
-                      <AvatarImage src={emp.avatarUrl} alt={emp.name} />
-                      <AvatarFallback className="bg-indigo-500 text-white text-[9px]">
-                        {(emp.first_name || emp.name)[0]}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="truncate font-medium text-slate-700">
-                          {emp.first_name || emp.name}
-                        </span>
-                        <span className={cn(
-                          "font-mono font-bold",
-                          status === 'overload' ? "text-red-600" : 
-                          status === 'warning' ? "text-amber-600" : 
-                          "text-emerald-600"
-                        )}>
-                          {percentage}%
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <Progress 
-                          value={Math.min(percentage, 100)} 
-                          className={cn(
-                            "h-1 flex-1",
-                            status === 'overload' && "[&>div]:bg-red-500",
-                            status === 'warning' && "[&>div]:bg-amber-500",
-                            status === 'healthy' && "[&>div]:bg-emerald-500"
+                  <TooltipProvider key={emp.id}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2 cursor-help">
+                          <Avatar className="h-6 w-6 flex-shrink-0">
+                            <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                            <AvatarFallback className="bg-indigo-500 text-white text-[9px]">
+                              {(emp.first_name || emp.name)[0]}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="truncate font-medium text-slate-700">
+                                {emp.first_name || emp.name}
+                                {hasReductions && <span className="text-orange-400 ml-1">*</span>}
+                              </span>
+                              <span className={cn(
+                                "font-mono font-bold",
+                                status === 'overload' ? "text-red-600" : 
+                                status === 'warning' ? "text-orange-600" : 
+                                "text-emerald-600"
+                              )}>
+                                {percentage}%
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <Progress 
+                                value={Math.min(percentage, 100)} 
+                                className={cn(
+                                  "h-1 flex-1",
+                                  status === 'overload' && "[&>div]:bg-red-500",
+                                  status === 'warning' && "[&>div]:bg-orange-500",
+                                  status === 'healthy' && "[&>div]:bg-emerald-500"
+                                )}
+                              />
+                              <span className={cn(
+                                "text-[10px] font-mono w-10 text-right",
+                                remaining < 0 ? "text-red-500" : "text-slate-400"
+                              )}>
+                                {remaining.toFixed(0)}h
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="text-xs">
+                        <div className="space-y-1">
+                          <div className="font-medium">{emp.first_name || emp.name}</div>
+                          <div className="text-slate-400">Base: {capacityData.total.toFixed(1)}h</div>
+                          {capacityData.absenceHours > 0 && (
+                            <div className="text-red-400">Ausencias: -{capacityData.absenceHours.toFixed(1)}h</div>
                           )}
-                        />
-                        <span className={cn(
-                          "text-[10px] font-mono w-10 text-right",
-                          remaining < 0 ? "text-red-500" : "text-slate-400"
-                        )}>
-                          {remaining.toFixed(0)}h
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                          {capacityData.eventHours > 0 && (
+                            <div className="text-orange-400">Eventos: -{capacityData.eventHours.toFixed(1)}h</div>
+                          )}
+                          <div className="border-t pt-1 mt-1">
+                            <span className="text-slate-300">Disponible: </span>
+                            <span className="font-mono font-medium">{available.toFixed(1)}h</span>
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 );
               })}
             </div>
@@ -1141,23 +1168,23 @@ export default function DeadlinesPage() {
 
           {/* Tips de redistribución */}
           {redistributionTips.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-              <h3 className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+              <h3 className="text-xs font-semibold text-orange-800 uppercase tracking-wide mb-2 flex items-center gap-1">
                 <Sparkles className="h-3 w-3" />
                 Sugerencias
               </h3>
               <div className="space-y-2">
                 {redistributionTips.map((tip, i) => (
-                  <div key={i} className="text-xs text-amber-800 bg-amber-100/50 rounded p-2">
-                    <div className="font-medium mb-0.5">
-                      Pasar horas de {tip.from} → {tip.to}
+                  <div key={i} className="text-xs bg-white border border-orange-100 rounded p-2">
+                    <div className="font-medium text-slate-800 mb-0.5">
+                      {tip.from} → {tip.to}
                     </div>
-                    <div className="text-amber-600 text-[10px]">
+                    <div className="text-slate-500 text-[10px]">
                       {tip.reason}
                     </div>
                     {tip.projects.length > 0 && (
-                      <div className="text-[10px] text-amber-500 mt-1">
-                        Proyectos en común: {tip.projects.slice(0, 2).join(', ')}
+                      <div className="text-[10px] text-orange-600 mt-1">
+                        En común: {tip.projects.slice(0, 2).join(', ')}
                       </div>
                     )}
                   </div>
@@ -1170,14 +1197,14 @@ export default function DeadlinesPage() {
           <div className="bg-white rounded-xl border shadow-sm p-3">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Globales
+                Otras asignaciones
               </h3>
               <Button onClick={() => openGlobalDialog()} size="sm" variant="ghost" className="h-6 w-6 p-0">
                 <Plus className="h-3 w-3" />
               </Button>
             </div>
             {globalAssignments.length === 0 ? (
-              <div className="text-[10px] text-slate-400 italic">Sin tareas</div>
+              <div className="text-[10px] text-slate-400 italic">Sin asignaciones extra</div>
             ) : (
               <div className="space-y-1">
                 {globalAssignments.map(a => (
@@ -1228,8 +1255,9 @@ export default function DeadlinesPage() {
                 type="number"
                 min="0"
                 step="0.5"
-                value={globalFormData.hours}
+                value={globalFormData.hours || ''}
                 onChange={(e) => setGlobalFormData(prev => ({ ...prev, hours: parseFloat(e.target.value) || 0 }))}
+                placeholder="Ej: 2.5"
               />
             </div>
 
