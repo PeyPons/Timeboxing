@@ -455,23 +455,25 @@ export default function EmployeeDashboard() {
         </div>
       </Card>
 
-      {/* 4. ALERTAS Y MÉTRICAS - Reorganizado: Urgentes + Fiabilidad arriba, Dependencias abajo */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* 4. ALERTAS (izq) + DEPENDENCIAS (der) - Misma altura */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Columna izquierda: Alertas urgentes (bloqueos) */}
-        <div className="lg:col-span-1" data-tour="priority-widget">
-          <PriorityInsights employeeId={myEmployeeProfile.id} />
+        <div data-tour="priority-widget" className="flex">
+          <div className="w-full">
+            <PriorityInsights employeeId={myEmployeeProfile.id} />
+          </div>
         </div>
         
-        {/* Columna derecha: Índice de fiabilidad */}
-        <div className="lg:col-span-2">
-          <ReliabilityIndexCard employeeId={myEmployeeProfile.id} />
+        {/* Columna derecha: Dependencias */}
+        <div data-tour="dependencies-widget" className="flex">
+          <div className="w-full">
+            <ProjectTeamPulse employeeId={myEmployeeProfile.id} />
+          </div>
         </div>
       </div>
 
-      {/* 5. DEPENDENCIAS - Panel completo */}
-      <div data-tour="dependencies-widget">
-        <ProjectTeamPulse employeeId={myEmployeeProfile.id} />
-      </div>
+      {/* 5. ÍNDICE DE FIABILIDAD - Ancho completo */}
+      <ReliabilityIndexCard employeeId={myEmployeeProfile.id} />
 
       {/* 6. PROYECTOS DEL MES - Con colaboradores y ayuda integrados */}
       <div data-tour="projects-summary">
