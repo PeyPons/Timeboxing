@@ -312,10 +312,7 @@ export default function DeadlinesPage() {
       try {
         const { data, error } = await supabase
           .from('project_editing_locks')
-          .select(`
-            *,
-            employees!inner(id, first_name, name)
-          `)
+          .select('*')
           .eq('month', selectedMonth)
           .gt('expires_at', new Date().toISOString());
         
@@ -861,7 +858,7 @@ export default function DeadlinesPage() {
       // PRIMERO verificar si ya existe un lock activo de otro usuario
       const { data: existingLock } = await supabase
         .from('project_editing_locks')
-        .select('*, employees!inner(id, first_name, name)')
+        .select('*')
         .eq('project_id', projectId)
         .eq('month', selectedMonth)
         .gt('expires_at', new Date().toISOString())
