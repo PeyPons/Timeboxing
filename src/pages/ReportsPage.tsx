@@ -366,7 +366,7 @@ export default function ReportsPage() {
       achievements.push({
         type: 'accuracy',
         icon: 'trophy',
-        title: 'Estimador Preciso',
+        title: 'Estimador preciso',
         description: `${mostAccurate.name} tiene el índice de fiabilidad más preciso (${mostAccurate.reliability.index.toFixed(0)}%)`,
         employeeId: mostAccurate.id,
         employeeName: mostAccurate.name
@@ -382,7 +382,7 @@ export default function ReportsPage() {
       achievements.push({
         type: 'efficiency',
         icon: 'star',
-        title: 'Alta Eficiencia',
+        title: 'Alta eficiencia',
         description: `${mostEfficient.name} logró ${mostEfficient.efficiency.toFixed(0)}% de rentabilidad`,
         employeeId: mostEfficient.id,
         employeeName: mostEfficient.name
@@ -415,7 +415,7 @@ export default function ReportsPage() {
       achievements.push({
         type: 'completion',
         icon: 'star',
-        title: 'Máquina de Entregas',
+        title: 'Máquina de entregas',
         description: `${topCompleter.name} completó ${topCompleter.completedTasks} tareas este mes`,
         employeeId: topCompleter.id,
         employeeName: topCompleter.name
@@ -430,7 +430,7 @@ export default function ReportsPage() {
       achievements.push({
         type: 'team',
         icon: 'award',
-        title: 'Equipo Rentable',
+        title: 'Equipo rentable',
         description: `Rentabilidad promedio del equipo: ${teamAvgEfficiency.toFixed(0)}%`
       });
     }
@@ -440,7 +440,7 @@ export default function ReportsPage() {
       achievements.push({
         type: 'team',
         icon: 'award',
-        title: 'Todo Bajo Control',
+        title: 'Todo bajo control',
         description: 'Ningún proyecto con alertas de riesgo este mes'
       });
     }
@@ -708,7 +708,7 @@ export default function ReportsPage() {
             <div>
                 <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
                     <BarChart3 className="h-8 w-8 text-indigo-600" />
-                    Reportes y Métricas
+                    Reportes y métricas
                 </h1>
                 <p className="text-muted-foreground">
                     Análisis de rendimiento {selectedEmployeeId !== 'all' ? 'individual' : 'del equipo'}.
@@ -837,7 +837,7 @@ export default function ReportsPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <AlertTriangle className="h-5 w-5 text-red-500" />
-                  Proyectos en Riesgo
+                  Proyectos en riesgo
                 </CardTitle>
                 <CardDescription>Proyectos que superan o se acercan al presupuesto</CardDescription>
               </CardHeader>
@@ -932,7 +932,7 @@ export default function ReportsPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Link2 className="h-5 w-5 text-orange-500" />
-                  Tareas Bloqueadas por Dependencias
+                  Tareas bloqueadas por dependencias
                   <Badge variant="secondary" className="ml-2">{blockedDependencies.length}</Badge>
                 </CardTitle>
                 <CardDescription>
@@ -994,7 +994,7 @@ export default function ReportsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                Mapa de Carga Semanal
+                Mapa de carga semanal
               </CardTitle>
               <CardDescription>
                 Visualización de la ocupación por empleado y semana.
@@ -1069,7 +1069,7 @@ export default function ReportsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CalendarDays className="h-5 w-5" />
-                Predicción de Carga - Mes Siguiente
+                Predicción de carga - Mes siguiente
               </CardTitle>
               <CardDescription>
                 Estimación de disponibilidad basada en histórico de deadlines anteriores.
@@ -1276,8 +1276,8 @@ export default function ReportsPage() {
         <TabsContent value="team" className="space-y-4">
             <Card>
                 <CardHeader>
-                    <CardTitle>Desglose por Empleado</CardTitle>
-                    <CardDescription>Análisis de Ocupación (Plan), Rentabilidad (Real vs Comp) y Fiabilidad de Estimación (Histórico).</CardDescription>
+                    <CardTitle>Desglose por empleado</CardTitle>
+                    <CardDescription>Análisis de ocupación (Plan), Rentabilidad (Real vs Comp) y Fiabilidad de estimación (Histórico).</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <TooltipProvider>
@@ -1311,7 +1311,7 @@ export default function ReportsPage() {
                                                 <TooltipContent side="right" className="max-w-[280px]">
                                                     <div className="space-y-2">
                                                         <p className="font-semibold text-sm">
-                                                            Índice de Fiabilidad: {getReliabilityLabel(emp.reliability)}
+                                                            Índice de fiabilidad: {getReliabilityLabel(emp.reliability)}
                                                         </p>
                                                         {emp.reliability.tasksAnalyzed >= 5 ? (
                                                             <>

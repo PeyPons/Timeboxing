@@ -85,7 +85,7 @@ export default function ClientReportsPage() {
         <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
                 <FileDown className="h-8 w-8 text-indigo-600" />
-                Informes de Clientes
+                Informes de clientes
             </h1>
             <p className="text-muted-foreground">
                 Genera el resumen mensual para enviar (Formato Horizontal).
@@ -127,7 +127,7 @@ export default function ClientReportsPage() {
             {/* Cabecera del Informe */}
             <div className="flex justify-between items-end border-b-2 border-indigo-600 pb-4 mb-6">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900 uppercase tracking-tight">Informe de Horas</h2>
+                    <h2 className="text-3xl font-bold text-slate-900 uppercase tracking-tight">Informe de horas</h2>
                     <p className="text-base text-slate-500 mt-1">Resumen ejecutivo de actividad y computación</p>
                 </div>
                 <div className="text-right">

@@ -118,7 +118,7 @@ export const ReliabilityIndexCard = memo(function ReliabilityIndexCard({ employe
           <CardTitle className="flex items-center justify-between text-base">
             <div className="flex items-center gap-2">
               <Compass className="h-5 w-5 text-indigo-600" />
-              <span>Precisión de Planificación</span>
+              <span>Precisión de planificación</span>
             </div>
             <Tooltip>
               <TooltipTrigger>

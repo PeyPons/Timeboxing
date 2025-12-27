@@ -876,7 +876,7 @@ export default function AdsPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Nombre del Grupo (Holding)</Label>
+              <Label>Nombre del grupo (Holding)</Label>
               <Input 
                 value={editingClient?.group || ''} 
                 onChange={(e) => setEditingClient(prev => prev ? {...prev, group: e.target.value} : null)} 
@@ -888,7 +888,7 @@ export default function AdsPage() {
             </div>
             <div className="flex justify-between items-center py-3 border-t">
               <div>
-                <Label>Cuenta de Ventas (ROAS)</Label>
+                <Label>Cuenta de ventas (ROAS)</Label>
                 <p className="text-xs text-slate-500">Mostrar métricas de conversión</p>
               </div>
               <Switch 

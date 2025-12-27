@@ -46,7 +46,7 @@ export default function SettingsPage() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <PlusCircle className="w-5 h-5 text-blue-600"/> 
-                        Gestión de Cuentas Publicitarias
+                        Gestión de cuentas publicitarias
                     </CardTitle>
                     <CardDescription>
                         Añade aquí los IDs de las cuentas de tus clientes para que el sistema las sincronice.

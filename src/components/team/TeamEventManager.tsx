@@ -61,7 +61,7 @@ export function TeamEventManager() {
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
             <Users className="h-5 w-5 text-indigo-600" />
-            Eventos y Festivos
+            Eventos y festivos
         </CardTitle>
         <CardDescription>Añade festivos o eventos de equipo.</CardDescription>
       </CardHeader>
