@@ -515,6 +515,9 @@ export default function ReportsPage() {
     const weeks = getWeeksForMonth(currentMonth);
 
     return employees.filter(e => e.isActive).map(emp => {
+      // Obtener ausencias del empleado para el mes actual
+      const employeeAbsences = (absences || []).filter(a => a.employeeId === emp.id);
+      
       const weeklyLoad = weeks.map((week, index) => {
         // Convertir weekStart a formato ISO string para comparar con weekStartDate
         const weekStr = format(week.weekStart, 'yyyy-MM-dd');
@@ -539,17 +542,41 @@ export default function ReportsPage() {
         const workingDays = week.effectiveEnd.getDate() - week.effectiveStart.getDate() + 1;
         // Asegurar que no exceda 5 días (semana laboral estándar)
         const actualWorkingDays = Math.min(workingDays, 5);
-        const weeklyCapacity = emp.workSchedule?.defaultHoursPerDay
+        const baseWeeklyCapacity = emp.workSchedule?.defaultHoursPerDay
           ? emp.workSchedule.defaultHoursPerDay * actualWorkingDays
           : 40 * (actualWorkingDays / 5);
         
-        const percentage = weeklyCapacity > 0 ? (hoursPlanned / weeklyCapacity) * 100 : 0;
+        // Restar ausencias de esta semana
+        const weekAbsenceHours = getAbsenceHoursInRange(
+          week.effectiveStart,
+          week.effectiveEnd,
+          employeeAbsences,
+          emp.workSchedule || {}
+        );
+        
+        // Restar eventos del equipo de esta semana
+        const weekEventHours = getTeamEventHoursInRange(
+          week.effectiveStart,
+          week.effectiveEnd,
+          emp.id,
+          teamEvents || [],
+          emp.workSchedule || {},
+          employeeAbsences
+        );
+        
+        // Capacidad disponible después de restar ausencias y eventos
+        const availableCapacity = Math.max(0, baseWeeklyCapacity - weekAbsenceHours - weekEventHours);
+        
+        const percentage = availableCapacity > 0 ? (hoursPlanned / availableCapacity) * 100 : 0;
 
         return {
           week: weekStr,
           weekLabel: `Sem ${index + 1}`,
           hours: hoursPlanned,
-          capacity: weeklyCapacity,
+          capacity: availableCapacity,
+          baseCapacity: baseWeeklyCapacity,
+          absenceHours: weekAbsenceHours,
+          eventHours: weekEventHours,
           percentage
         };
       });
@@ -560,7 +587,7 @@ export default function ReportsPage() {
         weeklyLoad
       };
     });
-  }, [employees, allocations, currentMonth, monthStart, monthEnd]);
+  }, [employees, allocations, currentMonth, monthStart, monthEnd, absences, teamEvents]);
 
   // Estado para deadlines y global assignments del mes siguiente
   const [nextMonthDeadlines, setNextMonthDeadlines] = useState<Deadline[]>([]);
