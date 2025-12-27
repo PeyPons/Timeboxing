@@ -69,8 +69,7 @@ export default function ClientReportsPage() {
             progress: round2(progress),
             contracted: round2(budget),
             computed: round2(computedHours),
-            minimum: round2(minimum),
-            status: project.healthStatus
+            minimum: round2(minimum)
         };
     }).filter(row => row.contracted > 0 || row.computed > 0)
       .sort((a, b) => b.progress - a.progress);

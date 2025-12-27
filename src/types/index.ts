@@ -52,13 +52,12 @@ export interface Project {
   status: 'active' | 'archived' | 'completed';
   budgetHours: number;
   minimumHours?: number;
-  healthStatus?: 'healthy' | 'needs_attention' | 'at_risk';
   monthlyFee?: number;
   lastMeetingDate?: string;
   okrs?: OKR[];
   deliverables_log?: Record<string, string[]>;
-  externalId?: number;    // NUEVO: ID del proyecto en el CRM
-  projectType?: string;   // NUEVO: 'PPC' | 'Entregable' | 'Mensual'
+  externalId?: number;    // ID del proyecto en el CRM
+  projectType?: string;   // 'PPC' | 'Entregable' | 'Mensual'
 }
 
 export interface OKR {
