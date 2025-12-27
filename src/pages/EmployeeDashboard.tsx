@@ -5,6 +5,7 @@ import { MyWeekView } from '@/components/employee/MyWeekView';
 import { PriorityInsights, ProjectTeamPulse } from '@/components/employee/DashboardWidgets'; 
 import { ReliabilityIndexCard } from '@/components/employee/ReliabilityIndexCard';
 import { CollaborationCards } from '@/components/employee/CollaborationCards';
+import { MonthlyBalanceCard } from '@/components/employee/MonthlyBalanceCard';
 import { WelcomeTour, useWelcomeTour } from '@/components/employee/WelcomeTour';
 import { EmployeeSettings } from '@/components/employee/EmployeeSettings';
 import { Card } from '@/components/ui/card';
@@ -514,7 +515,7 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      {/* 6. ÍNDICE DE FIABILIDAD (Estimaciones) */}
+      {/* 6. PRECISIÓN DE PLANIFICACIÓN */}
       <div data-tour="reliability-index">
         <ReliabilityIndexCard employeeId={myEmployeeProfile.id} />
       </div>
@@ -523,6 +524,9 @@ export default function EmployeeDashboard() {
       <div data-tour="projects-summary">
         <MyWeekView employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
       </div>
+
+      {/* 8. BALANCE MOTIVACIONAL DEL MES */}
+      <MonthlyBalanceCard employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
 
       {/* MODALES */}
       {selectedCell && (
