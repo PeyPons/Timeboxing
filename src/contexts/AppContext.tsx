@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Employee, Client, Project, Allocation, LoadStatus, Absence, TeamEvent, ProfessionalGoal } from '@/types';
 import { getWorkingDaysInRange, getMonthlyCapacity, getWeeksForMonth, getStorageKey } from '@/utils/dateUtils';
@@ -170,18 +170,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthInitialized, fetchData]);
 
-  // Reaccionar a cambios de usuario (login/logout)
+  // Ref para evitar vinculaciones duplicadas
+  const hasLinkedUserRef = useRef<string | null>(null);
+
+  // Reaccionar a cambios de usuario (login/logout) - SOLO cuando employees esté cargado
   useEffect(() => {
+    // No hacer nada si auth no está inicializado
     if (!isAuthInitialized) return;
+    
+    // No hacer nada si aún estamos cargando datos
+    if (isLoading) return;
+    
+    // No hacer nada si employees aún no se ha cargado
+    if (employees.length === 0) return;
 
     if (authUser) {
-      // Usuario logueado - buscar y vincular empleado
+      // Evitar vincular múltiples veces al mismo usuario
+      if (hasLinkedUserRef.current === authUser.id) {
+        return;
+      }
+
+      // Buscar empleado por user_id o por email
       const foundEmployee = employees.find(e => 
         e.user_id === authUser.id || 
         (e.email && authUser.email && e.email.toLowerCase() === authUser.email.toLowerCase())
       );
 
       if (foundEmployee) {
+        // Marcar como vinculado
+        hasLinkedUserRef.current = authUser.id;
+
         // Si el empleado no tiene user_id pero el email coincide, vincular automáticamente
         if (!foundEmployee.user_id && authUser.id) {
           console.log('[AppContext] Vinculando empleado existente con usuario Auth:', foundEmployee.email);
@@ -203,14 +221,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCurrentUser(foundEmployee);
         }
       } else {
+        // Solo mostrar warning si realmente no existe (employees ya cargado)
         console.warn('[AppContext] No se encontró empleado para usuario Auth:', authUser.email);
         setCurrentUser(undefined);
       }
     } else {
-      // Usuario deslogueado
+      // Usuario deslogueado - resetear
+      hasLinkedUserRef.current = null;
       setCurrentUser(undefined);
     }
-  }, [authUser, isAuthInitialized, employees]);
+  }, [authUser, isAuthInitialized, isLoading, employees]);
 
   const addEmployee = useCallback(async (employee: Omit<Employee, 'id'>) => {
     const { data, error } = await supabase.from('employees').insert({

@@ -33,6 +33,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(initialSession?.user ?? null);
           setLoading(false);
           setIsInitialized(true);
+          
+          // Marcar como procesado para evitar duplicados del listener
+          if (initialSession?.user) {
+            lastEventRef.current = { 
+              event: 'INITIAL_SESSION', 
+              userId: initialSession.user.id, 
+              timestamp: Date.now() 
+            };
+          }
         }
       } catch (error) {
         console.error('[AuthContext] Error obteniendo sesión inicial:', error);
@@ -52,12 +61,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userId = newSession?.user?.id || null;
       const now = Date.now();
 
-      // Prevenir procesamiento de eventos duplicados (mismo evento, mismo usuario, dentro de 2 segundos)
+      // Ignorar INITIAL_SESSION si ya procesamos la sesión inicial
+      if (event === 'INITIAL_SESSION' && lastEventRef.current?.event === 'INITIAL_SESSION') {
+        console.log('[AuthContext] Ignorando INITIAL_SESSION duplicado');
+        return;
+      }
+
+      // Prevenir procesamiento de eventos duplicados (mismo evento, mismo usuario, dentro de 3 segundos)
       if (
         lastEventRef.current &&
         lastEventRef.current.event === event &&
         lastEventRef.current.userId === userId &&
-        now - lastEventRef.current.timestamp < 2000
+        now - lastEventRef.current.timestamp < 3000
       ) {
         console.log('[AuthContext] Ignorando evento duplicado:', event);
         return;
