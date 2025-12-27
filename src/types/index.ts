@@ -128,4 +128,5 @@ export interface GlobalAssignment {
   hours: number;
   affectsAll: boolean; // Si afecta a todos los empleados
   affectedEmployeeIds?: string[]; // Si no afecta a todos, lista de IDs
+  employeeId?: string; // ID del empleado que creó la asignación
 }

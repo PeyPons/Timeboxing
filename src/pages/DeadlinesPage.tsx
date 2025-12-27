@@ -136,7 +136,8 @@ export default function DeadlinesPage() {
           name: g.name,
           hours: Number(g.hours),
           affectsAll: g.affects_all,
-          affectedEmployeeIds: (g.affected_employee_ids || []) as string[]
+          affectedEmployeeIds: (g.affected_employee_ids || []) as string[],
+          employeeId: g.employee_id || g.created_by
         })));
       }
     } catch (error: any) {
@@ -271,7 +272,8 @@ export default function DeadlinesPage() {
                         hours: newAssignment.hours,
                         affectsAll: newAssignment.affects_all,
                         affectedEmployeeIds: (newAssignment.affected_employee_ids || []) as string[],
-                        month: newAssignment.month
+                        month: newAssignment.month,
+                        employeeId: newAssignment.employee_id || newAssignment.created_by
                       }
                     : a
                 );
@@ -282,7 +284,8 @@ export default function DeadlinesPage() {
                   hours: newAssignment.hours,
                   affectsAll: newAssignment.affects_all,
                   affectedEmployeeIds: (newAssignment.affected_employee_ids || []) as string[],
-                  month: newAssignment.month
+                  month: newAssignment.month,
+                  employeeId: newAssignment.employee_id || newAssignment.created_by
                 }];
               }
             });
@@ -764,13 +767,18 @@ export default function DeadlinesPage() {
     }
 
     try {
-      const assignmentData = {
+      const assignmentData: any = {
         month: selectedMonth,
         name: globalFormData.name,
         hours: globalFormData.hours,
         affects_all: globalFormData.affectsAll,
         affected_employee_ids: globalFormData.affectsAll ? null : globalFormData.affectedEmployeeIds
       };
+
+      // Al crear, guardar el employee_id del usuario actual
+      if (!editingGlobal && currentUser) {
+        assignmentData.employee_id = currentUser.id;
+      }
 
       if (editingGlobal) {
         const { error } = await supabase
@@ -782,7 +790,7 @@ export default function DeadlinesPage() {
 
         setGlobalAssignments(prev => prev.map(a => 
           a.id === editingGlobal.id 
-            ? { ...a, ...assignmentData, month: selectedMonth, name: globalFormData.name, hours: globalFormData.hours, affectsAll: globalFormData.affectsAll, affectedEmployeeIds: globalFormData.affectedEmployeeIds }
+            ? { ...a, ...assignmentData, month: selectedMonth, name: globalFormData.name, hours: globalFormData.hours, affectsAll: globalFormData.affectsAll, affectedEmployeeIds: globalFormData.affectedEmployeeIds, employeeId: editingGlobal.employeeId }
             : a
         ));
         toast.success('Asignación global actualizada');
@@ -801,7 +809,8 @@ export default function DeadlinesPage() {
           name: data.name,
           hours: data.hours,
           affectsAll: data.affects_all,
-          affectedEmployeeIds: data.affected_employee_ids || []
+          affectedEmployeeIds: data.affected_employee_ids || [],
+          employeeId: data.employee_id || data.created_by
         }]);
         toast.success('Asignación global creada');
       }
@@ -842,6 +851,23 @@ export default function DeadlinesPage() {
   };
 
   const handleDeleteGlobal = async (id: string) => {
+    if (!currentUser) {
+      toast.error('No hay usuario autenticado');
+      return;
+    }
+
+    const assignment = globalAssignments.find(a => a.id === id);
+    if (!assignment) {
+      toast.error('Asignación no encontrada');
+      return;
+    }
+
+    // Solo permitir eliminar asignaciones propias
+    if (assignment.employeeId && assignment.employeeId !== currentUser.id) {
+      toast.error('Solo puedes eliminar tus propias asignaciones');
+      return;
+    }
+
     if (!confirm('¿Estás seguro de eliminar esta asignación global?')) return;
 
     try {
@@ -1970,20 +1996,34 @@ export default function DeadlinesPage() {
               <div className="text-[10px] text-slate-400 italic">Sin asignaciones extra</div>
             ) : (
               <div className="space-y-1">
-                {globalAssignments.map(a => (
-                  <div key={a.id} className="flex items-center justify-between text-xs group">
-                    <span className="truncate text-slate-600">{a.name}</span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-mono text-indigo-600">+{a.hours}h</span>
-                      <button 
-                        onClick={() => openGlobalDialog(a)}
-                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600"
-                      >
-                        <Pencil className="h-2.5 w-2.5" />
-                      </button>
+                {globalAssignments.map(a => {
+                  const canDelete = !a.employeeId || a.employeeId === currentUser?.id;
+                  return (
+                    <div key={a.id} className="flex items-center justify-between text-xs group">
+                      <span className="truncate text-slate-600">{a.name}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="font-mono text-indigo-600">+{a.hours}h</span>
+                        <button 
+                          onClick={() => openGlobalDialog(a)}
+                          className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600"
+                        >
+                          <Pencil className="h-2.5 w-2.5" />
+                        </button>
+                        {canDelete && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteGlobal(a.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600"
+                          >
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
