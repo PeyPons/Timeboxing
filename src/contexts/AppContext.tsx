@@ -105,8 +105,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             e.user_id === authUser.id || 
             (e.email && authUser.email && e.email.toLowerCase() === authUser.email.toLowerCase())
           );
+          
           if (foundUser) {
-            setCurrentUser(foundUser);
+            // ✅ Vincular automáticamente si el empleado no tiene user_id pero el email coincide
+            if (!foundUser.user_id && authUser.id) {
+              console.log('[AppContext] Vinculando empleado existente con usuario Auth:', foundUser.email);
+              // Actualizar en la base de datos
+              await supabase
+                .from('employees')
+                .update({ user_id: authUser.id })
+                .eq('id', foundUser.id);
+              
+              // Actualizar en el estado local
+              const updatedUser = { ...foundUser, user_id: authUser.id };
+              setEmployees(prev => prev.map(e => e.id === foundUser.id ? updatedUser : e));
+              setCurrentUser(updatedUser);
+            } else {
+              setCurrentUser(foundUser);
+            }
           }
         }
       }

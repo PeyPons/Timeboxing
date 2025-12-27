@@ -151,9 +151,15 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
   const [highlightPos, setHighlightPos] = useState<HighlightPosition | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [hasBeenCompleted, setHasBeenCompleted] = useState(false); // ✅ Estado local para evitar múltiples ejecuciones
 
   // Verificar si debe mostrarse
   useEffect(() => {
+    // Si ya se completó localmente, no mostrar nunca más
+    if (hasBeenCompleted) {
+      return;
+    }
+
     if (forceShow) {
       setIsVisible(true);
       setCurrentStep(0);
@@ -174,16 +180,19 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
       return;
     }
 
-    // Verificar si el tour ya fue completado
-    const isCompleted = currentUser.welcomeTourCompleted === true;
-    if (!isCompleted) {
+    // Verificar si el tour ya fue completado (en BD o localmente)
+    const isCompleted = currentUser.welcomeTourCompleted === true || hasBeenCompleted;
+    if (!isCompleted && !isVisible) {
       console.log('[WelcomeTour] Tour no completado, mostrando...');
-      const timer = setTimeout(() => setIsVisible(true), 500);
+      const timer = setTimeout(() => {
+        setIsVisible(true);
+      }, 500);
       return () => clearTimeout(timer);
     } else {
       console.log('[WelcomeTour] Tour ya completado');
+      setIsVisible(false);
     }
-  }, [forceShow, currentUser]);
+  }, [forceShow, currentUser, hasBeenCompleted, isVisible]);
 
   // Calcular posiciones
   const calculatePositions = useCallback(() => {
@@ -313,6 +322,8 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
   }, [currentStep]);
 
   const handleComplete = useCallback(async () => {
+    // ✅ Marcar como completado inmediatamente para evitar que se muestre de nuevo
+    setHasBeenCompleted(true);
     setIsVisible(false);
     
     // Guardar en la base de datos si hay usuario
@@ -323,6 +334,7 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
           welcomeTourCompleted: true
         };
         await updateEmployee(updatedEmployee);
+        console.log('[WelcomeTour] Tour completado y guardado en BD');
       } catch (error) {
         console.error('Error guardando estado del tour:', error);
       }
