@@ -42,6 +42,7 @@ export default function DeadlinesPage() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [searchTerm, setSearchTerm] = useState('');
   const [onlySEO, setOnlySEO] = useState(true);
+  const [onlyPPC, setOnlyPPC] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [filterByEmployee, setFilterByEmployee] = useState<string>('all');
@@ -561,14 +562,26 @@ export default function DeadlinesPage() {
       });
     }
     
-    // Filtrar solo SEO (excluir SEM, RRSS, Social, DV360)
+    // Filtrar solo SEO (excluir SEM, RRSS, Social, PPC, DV360)
     if (onlySEO) {
       filtered = filtered.filter(p => {
         const projectName = p.name.toUpperCase();
         return !projectName.includes('SEM') && 
                !projectName.includes('RRSS') && 
                !projectName.includes('SOCIAL') && 
+               !projectName.includes('PPC') &&
                !projectName.includes('DV360');
+      });
+    }
+    
+    // Filtrar solo PPC (incluir SEM, Social, PPC, DV360)
+    if (onlyPPC) {
+      filtered = filtered.filter(p => {
+        const projectName = p.name.toUpperCase();
+        return projectName.includes('SEM') || 
+               projectName.includes('SOCIAL') || 
+               projectName.includes('PPC') ||
+               projectName.includes('DV360');
       });
     }
     
@@ -619,7 +632,7 @@ export default function DeadlinesPage() {
     });
     
     return filtered;
-  }, [projects, clients, searchTerm, onlySEO, showHidden, showUnassignedOnly, hiddenProjects, filterByEmployee, deadlines, selectedMonth, sortBy]);
+  }, [projects, clients, searchTerm, onlySEO, onlyPPC, showHidden, showUnassignedOnly, hiddenProjects, filterByEmployee, deadlines, selectedMonth, sortBy]);
 
   // Agrupar proyectos por cliente (unificando Kit Digital)
   const projectsByClient = useMemo(() => {
@@ -1541,31 +1554,46 @@ export default function DeadlinesPage() {
         </div>
         <div className="flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-slate-600 whitespace-nowrap">Solo SEO</span>
             <Switch
               id="only-seo"
               checked={onlySEO}
-              onCheckedChange={setOnlySEO}
+              onCheckedChange={(checked) => {
+                setOnlySEO(checked);
+                if (checked) setOnlyPPC(false); // Mutuamente exclusivo
+              }}
               className="scale-90"
             />
-            <span className="text-slate-600">Solo SEO</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-slate-600 whitespace-nowrap">Solo PPC</span>
+            <Switch
+              id="only-ppc"
+              checked={onlyPPC}
+              onCheckedChange={(checked) => {
+                setOnlyPPC(checked);
+                if (checked) setOnlySEO(false); // Mutuamente exclusivo
+              }}
+              className="scale-90"
+            />
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-slate-600 whitespace-nowrap">Ocultos</span>
             <Switch
               id="show-hidden"
               checked={showHidden}
               onCheckedChange={setShowHidden}
               className="scale-90"
             />
-            <span className="text-slate-600">Ocultos</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-orange-600 font-medium whitespace-nowrap">Sin asignar</span>
             <Switch
               id="show-unassigned"
               checked={showUnassignedOnly}
               onCheckedChange={setShowUnassignedOnly}
               className="scale-90"
             />
-            <span className="text-orange-600 font-medium">Sin asignar</span>
           </label>
         </div>
         <Select value={filterByEmployee} onValueChange={setFilterByEmployee}>
