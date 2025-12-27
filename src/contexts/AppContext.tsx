@@ -243,8 +243,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (lastProcessedEvent && 
             lastProcessedEvent.event === event && 
             lastProcessedEvent.userId === userId &&
-            now - lastProcessedEvent.timestamp < 2000) {
-          // Ignorar si es el mismo evento para el mismo usuario en menos de 2 segundos
+            now - lastProcessedEvent.timestamp < 3000) {
+          // Ignorar si es el mismo evento para el mismo usuario en menos de 3 segundos
           console.log('[AppContext] Ignorando evento duplicado:', event, userId);
           return;
         }
@@ -258,10 +258,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         // ✅ NO hacer nada en SIGNED_IN porque fetchData() ya se ejecutó al montar
         // y maneja la vinculación automática. Procesar SIGNED_IN aquí causa bucles.
+        // ProtectedRoute maneja la navegación automáticamente.
       });
       
       subscription = sub;
-    }, 100);
+    }, 200); // Aumentar delay para dar más tiempo a fetchData
     
     return () => {
       clearTimeout(timeoutId);

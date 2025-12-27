@@ -24,14 +24,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    // 2. Escuchar cambios (login, logout, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    // ✅ NO crear listener aquí - AppContext y ProtectedRoute ya lo manejan
+    // Crear múltiples listeners causa bucles y navegaciones duplicadas
+    // Este contexto solo mantiene el estado de sesión para compatibilidad
   }, []);
 
   const signOut = async () => {

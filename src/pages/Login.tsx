@@ -19,7 +19,10 @@ export default function Login() {
   // Si ya estamos logueados, redirigir a la ruta original o al dashboard
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) navigate(from, { replace: true });
+      if (session) {
+        // Usar replace: true para evitar agregar al historial
+        navigate(from, { replace: true });
+      }
     });
   }, [navigate, from]);
 
@@ -37,8 +40,11 @@ export default function Login() {
       setLoading(false);
     } else {
       toast.success("¡Bienvenido!");
-      // Redirigir a la ruta original o al dashboard
-      navigate(from, { replace: true });
+      // ✅ Navegar después de un pequeño delay para que los listeners se actualicen
+      // Esto evita conflictos con múltiples navegaciones
+      setTimeout(() => {
+        navigate(from, { replace: true });
+      }, 100);
     }
   };
 
