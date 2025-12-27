@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { isSameMonth, parseISO } from 'date-fns';
-import { Users, HandHelping } from 'lucide-react';
+import { Sparkles, HeartHandshake } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CollaborationCardsProps {
@@ -123,15 +123,22 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
     return null;
   }
 
+  // Función helper para mostrar disponibilidad de forma amigable
+  const getAvailabilityText = (occupancy: number) => {
+    if (occupancy < 50) return "Muy disponible";
+    if (occupancy < 70) return "Disponible";
+    return "Algo ocupado";
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {/* Colaboradores frecuentes */}
+      {/* Tu equipo principal */}
       {frequentCollaborators.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <Users className="h-4 w-4 text-indigo-600" />
-              Colaboradores frecuentes
+              <Sparkles className="h-4 w-4 text-indigo-600" />
+              Tu equipo este mes
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -142,7 +149,7 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
                   <AvatarFallback className="text-xs">{collab.name.substring(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{collab.name}</p>
+                  <p className="text-sm font-medium truncate">{collab.name.split(' ')[0]}</p>
                   <p className="text-xs text-muted-foreground">
                     {collab.sharedProjects} {collab.sharedProjects === 1 ? 'proyecto' : 'proyectos'} · {round2(collab.totalHoursTogether)}h juntos
                   </p>
@@ -153,7 +160,7 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
                     : collab.occupancy > 70 ? "text-amber-600 border-amber-200"
                     : "text-emerald-600 border-emerald-200"
                 )}>
-                  {collab.occupancy}%
+                  {collab.occupancy < 80 ? getAvailabilityText(collab.occupancy) : `${Math.round(collab.occupancy)}% carga`}
                 </Badge>
               </div>
             ))}
@@ -161,18 +168,18 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
         </Card>
       )}
 
-      {/* Compañeros con disponibilidad */}
+      {/* Compañeros que pueden echarte una mano */}
       {availableHelpers.length > 0 && (
         <Card className="border-emerald-200 bg-emerald-50/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2 text-emerald-700">
-              <HandHelping className="h-4 w-4" />
-              ¿Necesitas ayuda?
+              <HeartHandshake className="h-4 w-4" />
+              ¿Necesitas apoyo?
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <p className="text-xs text-emerald-600 mb-3">
-              Estos compañeros comparten proyectos contigo y tienen disponibilidad:
+              Estos compañeros comparten proyectos contigo y tienen margen para ayudarte:
             </p>
             {availableHelpers.map(helper => (
               <div key={helper.id} className="flex items-center gap-3 p-2 rounded-lg bg-white border border-emerald-100">
@@ -181,13 +188,13 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
                   <AvatarFallback className="text-xs">{helper.name.substring(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{helper.name}</p>
+                  <p className="text-sm font-medium truncate">{helper.name.split(' ')[0]}</p>
                   <p className="text-xs text-muted-foreground">
-                    Ocupación: {helper.occupancy}%
+                    {getAvailabilityText(helper.occupancy)}
                   </p>
                 </div>
                 <Badge className="bg-emerald-100 text-emerald-700 border-0">
-                  Disponible
+                  Puede ayudar
                 </Badge>
               </div>
             ))}
