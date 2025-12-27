@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useMemo, useEffect, useState } from 'react';
+import { useMemo, useEffect, useState, useRef } from 'react';
 
 interface PermissionProtectedRouteProps {
   children: React.ReactNode;
@@ -20,6 +20,9 @@ export function PermissionProtectedRoute({ children, requiredPermission }: Permi
   
   // Estado para dar tiempo a la vinculación
   const [hasWaitedForLink, setHasWaitedForLink] = useState(false);
+  
+  // Ref para evitar logs duplicados
+  const hasLoggedWarningRef = useRef(false);
 
   // Dar un pequeño margen de tiempo para que AppContext vincule el usuario
   useEffect(() => {
@@ -27,11 +30,12 @@ export function PermissionProtectedRoute({ children, requiredPermission }: Permi
       // Si tenemos sesión, employees cargados, pero no currentUser, esperar un momento
       const timeout = setTimeout(() => {
         setHasWaitedForLink(true);
-      }, 500); // Esperar 500ms para la vinculación
+      }, 500);
       return () => clearTimeout(timeout);
     } else if (currentUser) {
       // Si ya tenemos currentUser, no necesitamos esperar
       setHasWaitedForLink(true);
+      hasLoggedWarningRef.current = false; // Reset para futuras sesiones
     }
   }, [isAuthInitialized, isAppLoading, session, currentUser, employees]);
 
@@ -62,8 +66,9 @@ export function PermissionProtectedRoute({ children, requiredPermission }: Permi
 
   // Si hay sesión pero no se encontró el empleado vinculado (después de esperar)
   if (!currentUser) {
-    // Solo loguear en desarrollo, no en cada render
-    if (process.env.NODE_ENV === 'development') {
+    // Solo loguear una vez para evitar spam en consola
+    if (!hasLoggedWarningRef.current) {
+      hasLoggedWarningRef.current = true;
       console.warn('[PermissionProtectedRoute] Sesión activa pero sin empleado vinculado. Redirigiendo a /');
     }
     return <Navigate to="/" replace />;
