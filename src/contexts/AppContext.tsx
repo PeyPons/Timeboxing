@@ -101,29 +101,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setEmployees(mappedEmployees);
 
         if (authUser) {
-          const foundUser = mappedEmployees.find(e => 
-            e.user_id === authUser.id || 
-            (e.email && authUser.email && e.email.toLowerCase() === authUser.email.toLowerCase())
-          );
+          // Buscar primero por user_id (más rápido y preciso)
+          let foundUser = mappedEmployees.find(e => e.user_id === authUser.id);
+          
+          // Si no se encuentra por user_id, buscar por email
+          if (!foundUser && authUser.email) {
+            foundUser = mappedEmployees.find(e => 
+              e.email && e.email.toLowerCase() === authUser.email.toLowerCase()
+            );
+          }
           
           if (foundUser) {
             // ✅ Vincular automáticamente si el empleado no tiene user_id pero el email coincide
             if (!foundUser.user_id && authUser.id) {
               console.log('[AppContext] Vinculando empleado existente con usuario Auth:', foundUser.email);
-              // Actualizar en la base de datos
-              await supabase
-                .from('employees')
-                .update({ user_id: authUser.id })
-                .eq('id', foundUser.id);
-              
-              // Actualizar en el estado local
-              const updatedUser = { ...foundUser, user_id: authUser.id };
-              setEmployees(prev => prev.map(e => e.id === foundUser.id ? updatedUser : e));
-              setCurrentUser(updatedUser);
+              try {
+                // Actualizar en la base de datos
+                const { error: updateError } = await supabase
+                  .from('employees')
+                  .update({ user_id: authUser.id })
+                  .eq('id', foundUser.id);
+                
+                if (updateError) {
+                  console.error('[AppContext] Error actualizando user_id:', updateError);
+                  // Continuar de todas formas con el usuario encontrado
+                } else {
+                  console.log('[AppContext] user_id actualizado correctamente');
+                }
+                
+                // Actualizar en el estado local inmediatamente
+                const updatedUser = { ...foundUser, user_id: authUser.id };
+                setEmployees(prev => prev.map(e => e.id === foundUser.id ? updatedUser : e));
+                setCurrentUser(updatedUser);
+              } catch (error) {
+                console.error('[AppContext] Error en vinculación automática:', error);
+                // Si falla, usar el usuario sin user_id de todas formas
+                setCurrentUser(foundUser);
+              }
             } else {
               setCurrentUser(foundUser);
             }
+          } else {
+            console.warn('[AppContext] No se encontró empleado para usuario Auth:', authUser.email);
+            // No establecer currentUser si no se encuentra el empleado
+            setCurrentUser(undefined);
           }
+        } else {
+          // No hay usuario autenticado
+          setCurrentUser(undefined);
         }
       }
 
@@ -181,6 +206,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error("Error cargando datos:", error);
+      // Asegurarse de que isLoading se desactive incluso si hay error
+      setIsLoading(false);
     } finally {
       if (!skipLoading) {
         setIsLoading(false);
@@ -196,26 +223,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Escuchar cambios de autenticación (separado para evitar bucles)
   useEffect(() => {
     let isInitialMount = true;
+    let subscription: any = null;
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Ignorar el primer evento (que es el estado inicial al montar)
-      // Ya se cargó todo en el useEffect anterior con fetchData()
-      if (isInitialMount) {
-        isInitialMount = false;
-        return;
-      }
+    // Pequeño delay para asegurar que fetchData() se ejecute primero
+    const timeoutId = setTimeout(() => {
+      const { data: { subscription: sub } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        // Ignorar el primer evento (que es el estado inicial al montar)
+        // Ya se cargó todo en el useEffect anterior con fetchData()
+        if (isInitialMount) {
+          isInitialMount = false;
+          return;
+        }
+        
+        console.log('[AppContext] Auth state changed:', event, session?.user?.email);
+        
+        if (event === 'SIGNED_OUT') {
+          setCurrentUser(undefined);
+          setIsLoading(false);
+        } else if (event === 'SIGNED_IN' && session?.user) {
+          // Solo refrescar si realmente acabamos de hacer login (no al recargar)
+          // Verificar si ya tenemos currentUser para evitar refrescos innecesarios
+          console.log('[AppContext] Usuario hizo login, verificando vinculación...');
+          // No refrescar fetchData completo, solo verificar vinculación si es necesario
+          // fetchData() ya se ejecutó al montar y maneja la vinculación automática
+        }
+      });
       
-      console.log('[AppContext] Auth state changed:', event, session?.user?.email);
-      
-      if (event === 'SIGNED_OUT') {
-        setCurrentUser(undefined);
-        setIsLoading(false);
-      }
-      // No hacer nada en SIGNED_IN porque fetchData() ya se ejecutó al montar
-      // y refrescar aquí causaría bucles infinitos al recargar la página
-    });
+      subscription = sub;
+    }, 100);
     
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeoutId);
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+    };
   }, []); // Sin dependencias para evitar bucles
 
   const addEmployee = useCallback(async (employee: Omit<Employee, 'id'>) => {
