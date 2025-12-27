@@ -23,26 +23,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let subscription: { unsubscribe: () => void } | null = null;
 
-    // 1. Obtener sesión inicial
     const initializeAuth = async () => {
       try {
         const { data: { session: initialSession } } = await supabase.auth.getSession();
-        if (mounted) {
-          setSession(initialSession);
-          setUser(initialSession?.user ?? null);
-          setLoading(false);
-          setIsInitialized(true);
-          
-          // Marcar como procesado para evitar duplicados del listener
-          if (initialSession?.user) {
-            lastEventRef.current = { 
-              event: 'INITIAL_SESSION', 
-              userId: initialSession.user.id, 
-              timestamp: Date.now() 
-            };
-          }
+        
+        if (!mounted) return;
+        
+        setSession(initialSession);
+        setUser(initialSession?.user ?? null);
+        
+        // Marcar la sesión inicial como procesada ANTES de registrar el listener
+        if (initialSession?.user) {
+          lastEventRef.current = { 
+            event: 'INITIAL_SESSION', 
+            userId: initialSession.user.id, 
+            timestamp: Date.now() 
+          };
+          console.log('[AuthContext] Sesión inicial cargada:', initialSession.user.email);
         }
+        
+        setLoading(false);
+        setIsInitialized(true);
+
+        // AHORA registrar el listener (después de procesar la sesión inicial)
+        const { data } = supabase.auth.onAuthStateChange((event, newSession) => {
+          if (!mounted) return;
+
+          const userId = newSession?.user?.id || null;
+          const now = Date.now();
+
+          // Ignorar INITIAL_SESSION completamente (ya lo procesamos arriba)
+          if (event === 'INITIAL_SESSION') {
+            return;
+          }
+
+          // Prevenir eventos duplicados (mismo evento, mismo usuario, dentro de 3 segundos)
+          if (
+            lastEventRef.current &&
+            lastEventRef.current.event === event &&
+            lastEventRef.current.userId === userId &&
+            now - lastEventRef.current.timestamp < 3000
+          ) {
+            return;
+          }
+
+          lastEventRef.current = { event, userId, timestamp: now };
+          console.log('[AuthContext] Auth state changed:', event, newSession?.user?.email);
+
+          setSession(newSession);
+          setUser(newSession?.user ?? null);
+        });
+        
+        subscription = data.subscription;
+        
       } catch (error) {
         console.error('[AuthContext] Error obteniendo sesión inicial:', error);
         if (mounted) {
@@ -54,42 +89,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initializeAuth();
 
-    // 2. Listener ÚNICO para cambios de autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
-      if (!mounted) return;
-
-      const userId = newSession?.user?.id || null;
-      const now = Date.now();
-
-      // Ignorar INITIAL_SESSION si ya procesamos la sesión inicial
-      if (event === 'INITIAL_SESSION' && lastEventRef.current?.event === 'INITIAL_SESSION') {
-        console.log('[AuthContext] Ignorando INITIAL_SESSION duplicado');
-        return;
-      }
-
-      // Prevenir procesamiento de eventos duplicados (mismo evento, mismo usuario, dentro de 3 segundos)
-      if (
-        lastEventRef.current &&
-        lastEventRef.current.event === event &&
-        lastEventRef.current.userId === userId &&
-        now - lastEventRef.current.timestamp < 3000
-      ) {
-        console.log('[AuthContext] Ignorando evento duplicado:', event);
-        return;
-      }
-
-      lastEventRef.current = { event, userId, timestamp: now };
-      console.log('[AuthContext] Auth state changed:', event, newSession?.user?.email);
-
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-      setLoading(false);
-      setIsInitialized(true);
-    });
-
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      if (subscription) {
+        subscription.unsubscribe();
+      }
     };
   }, []);
 

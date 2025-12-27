@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 
 interface PermissionProtectedRouteProps {
   children: React.ReactNode;
@@ -15,19 +15,36 @@ interface PermissionProtectedRouteProps {
 export function PermissionProtectedRoute({ children, requiredPermission }: PermissionProtectedRouteProps) {
   const location = useLocation();
   const { canAccess } = usePermissions();
-  const { currentUser, isLoading: isAppLoading } = useApp();
+  const { currentUser, isLoading: isAppLoading, employees } = useApp();
   const { session, isInitialized: isAuthInitialized } = useAuth();
+  
+  // Estado para dar tiempo a la vinculación
+  const [hasWaitedForLink, setHasWaitedForLink] = useState(false);
+
+  // Dar un pequeño margen de tiempo para que AppContext vincule el usuario
+  useEffect(() => {
+    if (isAuthInitialized && !isAppLoading && session && !currentUser && employees.length > 0) {
+      // Si tenemos sesión, employees cargados, pero no currentUser, esperar un momento
+      const timeout = setTimeout(() => {
+        setHasWaitedForLink(true);
+      }, 500); // Esperar 500ms para la vinculación
+      return () => clearTimeout(timeout);
+    } else if (currentUser) {
+      // Si ya tenemos currentUser, no necesitamos esperar
+      setHasWaitedForLink(true);
+    }
+  }, [isAuthInitialized, isAppLoading, session, currentUser, employees]);
 
   // Determinar si todavía estamos en proceso de carga
   const isStillLoading = useMemo(() => {
     // Si auth no está inicializado, seguimos cargando
     if (!isAuthInitialized) return true;
-    // Si hay sesión pero AppContext aún está cargando, seguimos cargando
-    if (session && isAppLoading) return true;
-    // Si hay sesión pero currentUser aún no está disponible, esperamos un poco más
-    if (session && !currentUser && isAppLoading) return true;
+    // Si AppContext está cargando, seguimos cargando
+    if (isAppLoading) return true;
+    // Si hay sesión pero aún no hemos esperado para la vinculación
+    if (session && !currentUser && !hasWaitedForLink) return true;
     return false;
-  }, [isAuthInitialized, session, isAppLoading, currentUser]);
+  }, [isAuthInitialized, isAppLoading, session, currentUser, hasWaitedForLink]);
 
   // Mientras carga, mostrar spinner
   if (isStillLoading) {
@@ -38,15 +55,17 @@ export function PermissionProtectedRoute({ children, requiredPermission }: Permi
     );
   }
 
-  // Si no hay sesión (ya verificado por ProtectedRoute, pero por seguridad)
+  // Si no hay sesión, redirigir al login
   if (!session) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Si hay sesión pero no se encontró el empleado vinculado
+  // Si hay sesión pero no se encontró el empleado vinculado (después de esperar)
   if (!currentUser) {
-    console.warn('[PermissionProtectedRoute] Sesión activa pero sin empleado vinculado');
-    // Redirigir a una página de error o al dashboard básico
+    // Solo loguear en desarrollo, no en cada render
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[PermissionProtectedRoute] Sesión activa pero sin empleado vinculado. Redirigiendo a /');
+    }
     return <Navigate to="/" replace />;
   }
 
@@ -55,7 +74,6 @@ export function PermissionProtectedRoute({ children, requiredPermission }: Permi
   const hasPermission = canAccess(permissionToCheck);
 
   if (!hasPermission) {
-    // Redirigir a la página principal si no tiene permiso
     return <Navigate to="/" replace />;
   }
 

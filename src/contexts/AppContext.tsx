@@ -172,13 +172,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Ref para evitar vinculaciones duplicadas
   const hasLinkedUserRef = useRef<string | null>(null);
+  const linkAttemptedRef = useRef(false);
 
   // Reaccionar a cambios de usuario (login/logout) - SOLO cuando employees esté cargado
   useEffect(() => {
     // No hacer nada si auth no está inicializado
     if (!isAuthInitialized) return;
     
-    // No hacer nada si aún estamos cargando datos
+    // No hacer nada si aún estamos cargando datos iniciales
     if (isLoading) return;
     
     // No hacer nada si employees aún no se ha cargado
@@ -197,12 +198,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
 
       if (foundEmployee) {
-        // Marcar como vinculado
+        // Marcar como vinculado INMEDIATAMENTE
         hasLinkedUserRef.current = authUser.id;
+        linkAttemptedRef.current = true;
 
         // Si el empleado no tiene user_id pero el email coincide, vincular automáticamente
         if (!foundEmployee.user_id && authUser.id) {
           console.log('[AppContext] Vinculando empleado existente con usuario Auth:', foundEmployee.email);
+          
+          // Actualizar currentUser PRIMERO (optimistic update)
+          const updatedEmployee = { ...foundEmployee, user_id: authUser.id };
+          setCurrentUser(updatedEmployee);
+          
+          // Luego persistir en BD
           supabase
             .from('employees')
             .update({ user_id: authUser.id })
@@ -211,23 +219,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               if (error) {
                 console.error('[AppContext] Error actualizando user_id:', error);
               } else {
-                console.log('[AppContext] user_id actualizado correctamente');
-                const updatedEmployee = { ...foundEmployee, user_id: authUser.id };
+                console.log('[AppContext] user_id actualizado correctamente en BD');
                 setEmployees(prev => prev.map(e => e.id === foundEmployee.id ? updatedEmployee : e));
-                setCurrentUser(updatedEmployee);
               }
             });
         } else {
+          console.log('[AppContext] Empleado encontrado:', foundEmployee.email);
           setCurrentUser(foundEmployee);
         }
       } else {
-        // Solo mostrar warning si realmente no existe (employees ya cargado)
-        console.warn('[AppContext] No se encontró empleado para usuario Auth:', authUser.email);
+        // Solo advertir si ya se intentó y realmente no existe
+        if (!linkAttemptedRef.current) {
+          linkAttemptedRef.current = true;
+          console.warn('[AppContext] No se encontró empleado para usuario Auth:', authUser.email);
+        }
         setCurrentUser(undefined);
       }
     } else {
       // Usuario deslogueado - resetear
       hasLinkedUserRef.current = null;
+      linkAttemptedRef.current = false;
       setCurrentUser(undefined);
     }
   }, [authUser, isAuthInitialized, isLoading, employees]);
