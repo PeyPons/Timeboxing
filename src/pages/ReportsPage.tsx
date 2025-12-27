@@ -33,10 +33,10 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getMonthlyCapacity } from '@/utils/dateUtils';
+import { getMonthlyCapacity, getWeeksForMonth } from '@/utils/dateUtils';
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
-import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInWeeks, startOfWeek, addWeeks, getWeek, getDate } from 'date-fns';
+import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInWeeks, startOfWeek, addWeeks, getWeek, getDate, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase';
 import { Deadline, GlobalAssignment } from '@/types';
@@ -510,31 +510,39 @@ export default function ReportsPage() {
 
   // Mapa de calor: carga semanal por empleado
   const heatmapData = useMemo(() => {
-    // Obtener las semanas del mes actual basándonos en las allocations existentes
-    const weekDatesInMonth = new Set<string>();
-    (allocations || []).forEach(a => {
-      try {
-        const weekDate = parseISO(a.weekStartDate);
-        if (isSameMonth(weekDate, currentMonth) ||
-            (weekDate >= monthStart && weekDate <= monthEnd)) {
-          weekDatesInMonth.add(a.weekStartDate);
-        }
-      } catch { /* ignorar fechas inválidas */ }
-    });
-
-    // Ordenar las semanas cronológicamente
-    const sortedWeeks = Array.from(weekDatesInMonth).sort();
+    // Obtener todas las semanas del mes actual usando getWeeksForMonth
+    // Esto asegura que se muestren todas las semanas, incluso si son 5 (como diciembre)
+    const weeks = getWeeksForMonth(currentMonth);
 
     return employees.filter(e => e.isActive).map(emp => {
-      const weeklyLoad = sortedWeeks.map((weekStr, index) => {
-        const weekAllocations = (allocations || []).filter(a =>
-          a.employeeId === emp.id && a.weekStartDate === weekStr
-        );
+      const weeklyLoad = weeks.map((week, index) => {
+        // Convertir weekStart a formato ISO string para comparar con weekStartDate
+        const weekStr = format(week.weekStart, 'yyyy-MM-dd');
+        
+        // Buscar allocations que coincidan con esta semana
+        // weekStartDate en allocations es el lunes de la semana, igual que week.weekStart
+        const weekAllocations = (allocations || []).filter(a => {
+          try {
+            const allocationWeekDate = parseISO(a.weekStartDate);
+            // Comparar si el inicio de semana de la allocation coincide con esta semana
+            return a.employeeId === emp.id && 
+                   isSameDay(allocationWeekDate, week.weekStart);
+          } catch { 
+            return false; 
+          }
+        });
+        
         const hoursPlanned = round2(weekAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
-        // Capacidad semanal aproximada (asumiendo jornada estándar de 5 días)
+        
+        // Capacidad semanal basada en los días laborables de esta semana específica
+        // Usar effectiveStart y effectiveEnd para calcular días reales de trabajo
+        const workingDays = week.effectiveEnd.getDate() - week.effectiveStart.getDate() + 1;
+        // Asegurar que no exceda 5 días (semana laboral estándar)
+        const actualWorkingDays = Math.min(workingDays, 5);
         const weeklyCapacity = emp.workSchedule?.defaultHoursPerDay
-          ? emp.workSchedule.defaultHoursPerDay * 5
-          : 40;
+          ? emp.workSchedule.defaultHoursPerDay * actualWorkingDays
+          : 40 * (actualWorkingDays / 5);
+        
         const percentage = weeklyCapacity > 0 ? (hoursPlanned / weeklyCapacity) * 100 : 0;
 
         return {
