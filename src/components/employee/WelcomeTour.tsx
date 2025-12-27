@@ -181,14 +181,28 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
       return;
     }
 
-    // ✅ Verificar si el tour ya fue completado ANTES de verificar el ref
-    // Esto previene condiciones de carrera cuando se actualiza desde BD
-    const isCompleted = currentUser.welcomeTourCompleted === true || hasBeenCompleted;
+    // ✅ Verificar si el tour ya fue completado (localStorage primero, luego BD)
+    // Esto previene condiciones de carrera: localStorage es inmediato, BD es persistente
+    const localStorageKey = `timeboxing_welcome_tour_completed_${currentUser.id}`;
+    const completedInLocalStorage = localStorage.getItem(localStorageKey) === 'true';
+    const completedInDB = currentUser.welcomeTourCompleted === true;
+    const isCompleted = completedInLocalStorage || completedInDB || hasBeenCompleted;
+    
     if (isCompleted) {
-      console.log('[WelcomeTour] Tour ya completado para usuario:', currentUser.id);
+      console.log('[WelcomeTour] Tour ya completado para usuario:', currentUser.id, {
+        localStorage: completedInLocalStorage,
+        db: completedInDB,
+        local: hasBeenCompleted
+      });
       setIsVisible(false);
       // Actualizar el ref para evitar verificaciones futuras
       lastCheckedUserIdRef.current = currentUser.id;
+      // Si está en localStorage pero no en BD, sincronizar (puede pasar si cambió de dispositivo)
+      if (completedInLocalStorage && !completedInDB && currentUser.id) {
+        updateEmployee({ ...currentUser, welcomeTourCompleted: true }).catch(err => {
+          console.error('Error sincronizando tour a BD:', err);
+        });
+      }
       return;
     }
 
@@ -343,17 +357,23 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     // ✅ Actualizar el ref inmediatamente para evitar que se vuelva a verificar
     if (currentUser?.id) {
       lastCheckedUserIdRef.current = currentUser.id;
+      // ✅ Guardar en localStorage INMEDIATAMENTE (síncrono, sin delay)
+      localStorage.setItem(`timeboxing_welcome_tour_completed_${currentUser.id}`, 'true');
     }
     
-    // Guardar en la base de datos si hay usuario
+    // Guardar en la base de datos en segundo plano (asíncrono)
     if (currentUser) {
       try {
         const updatedEmployee = {
           ...currentUser,
           welcomeTourCompleted: true
         };
-        await updateEmployee(updatedEmployee);
-        console.log('[WelcomeTour] Tour completado y guardado en BD');
+        // No esperar, dejar que se guarde en segundo plano
+        updateEmployee(updatedEmployee).then(() => {
+          console.log('[WelcomeTour] Tour completado y guardado en BD');
+        }).catch((error) => {
+          console.error('Error guardando estado del tour en BD:', error);
+        });
       } catch (error) {
         console.error('Error guardando estado del tour:', error);
       }
