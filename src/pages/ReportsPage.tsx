@@ -558,48 +558,6 @@ export default function ReportsPage() {
   const [nextMonthDeadlines, setNextMonthDeadlines] = useState<Deadline[]>([]);
   const [nextMonthGlobalAssignments, setNextMonthGlobalAssignments] = useState<GlobalAssignment[]>([]);
 
-  // Cargar deadlines y global assignments del mes siguiente
-  useEffect(() => {
-    const nextMonth = addMonths(startOfMonth(new Date()), 1);
-    const nextMonthStr = format(nextMonth, 'yyyy-MM');
-
-    // Cargar deadlines
-    supabase
-      .from('deadlines')
-      .select('*')
-      .eq('month', nextMonthStr)
-      .then(({ data, error }) => {
-        if (!error && data) {
-          setNextMonthDeadlines(data.map((d: any) => ({
-            id: d.id,
-            projectId: d.project_id,
-            month: d.month,
-            notes: d.notes,
-            employeeHours: d.employee_hours || {},
-            isHidden: d.is_hidden || false
-          })));
-        }
-      });
-
-    // Cargar global assignments
-    supabase
-      .from('global_assignments')
-      .select('*')
-      .eq('month', nextMonthStr)
-      .then(({ data, error }) => {
-        if (!error && data) {
-          setNextMonthGlobalAssignments(data.map((g: any) => ({
-            id: g.id,
-            month: g.month,
-            name: g.name,
-            hours: Number(g.hours),
-            affectsAll: g.affects_all,
-            affectedEmployeeIds: (g.affected_employee_ids || []) as string[],
-            employeeId: g.employee_id || g.created_by
-          })));
-        }
-      });
-  }, []);
 
   // Predicción de disponibilidad futura con Modelo de Mezcla Ponderada
   const futureAvailability = useMemo(() => {
@@ -607,6 +565,7 @@ export default function ReportsPage() {
     const nextMonth = addMonths(thisMonth, 1);
     const nextMonthStart = startOfMonth(nextMonth);
     const nextMonthEnd = endOfMonth(nextMonth);
+    const nextMonthStr = format(nextMonth, 'yyyy-MM');
 
     return employees.filter(e => e.isActive).map(emp => {
       // 1. CÁLCULO DE CAPACIDAD NETA REAJUSTADA
@@ -708,7 +667,7 @@ export default function ReportsPage() {
         ? historicalMonths.reduce((sum, m) => sum + m.hours, 0) / historicalMonths.length
         : 0;
 
-      // C. Compromisos Reales (20%): Horas de deadlines/tareas ya creadas para el mes siguiente
+      // C. Compromisos Reales: Horas de deadlines/tareas ya creadas para el mes siguiente
       const nextMonthDeadlineHours = nextMonthDeadlines
         .filter(d => !d.isHidden)
         .reduce((sum, d) => sum + (d.employeeHours[emp.id] || 0), 0);
@@ -719,17 +678,58 @@ export default function ReportsPage() {
 
       const committedHours = nextMonthDeadlineHours + nextMonthGlobalHours;
 
-      // Si hay muchos compromisos, aumentar su peso
-      const committedWeight = committedHours > adjustedCapacity * 0.3 ? 0.4 : 0.2;
-      const inertiaWeight = committedHours > adjustedCapacity * 0.3 ? 0.3 : 0.4;
-      const historicalWeight = committedHours > adjustedCapacity * 0.3 ? 0.3 : 0.4;
+      // LÓGICA MEJORADA: Priorizar compromisos reales cuando existen
+      let estimatedHoursNextMonth: number;
 
-      // Mezcla ponderada
-      let estimatedHoursNextMonth = round2(
-        (previousMonthTotalHours * inertiaWeight) +
-        (historicalAvgHours * historicalWeight) +
-        (committedHours * committedWeight)
-      );
+      // Si hay compromisos reales, usarlos como base principal
+      if (committedHours > 0) {
+        // Los compromisos reales son la base, solo ajustar ligeramente con histórico si hay datos suficientes
+        if (historicalMonths.length >= 3) {
+          // Hay suficiente histórico (3+ meses): compromisos reales (85%) + ajuste histórico (15%)
+          // El ajuste histórico solo se aplica si hay una tendencia clara de carga adicional
+          const committedWeight = 0.85;
+          const historicalWeight = 0.15;
+          
+          // Solo ajustar si históricamente hay más carga que los compromisos base
+          const historicalAdjustment = historicalAvgHours > committedHours 
+            ? (historicalAvgHours - committedHours) * 0.3  // Solo 30% de la diferencia
+            : 0;
+          
+          estimatedHoursNextMonth = round2(committedHours + historicalAdjustment);
+          
+          // Asegurar que nunca sea menor que los compromisos reales
+          estimatedHoursNextMonth = Math.max(estimatedHoursNextMonth, committedHours);
+        } else if (historicalMonths.length >= 1) {
+          // Hay algo de histórico (1-2 meses): compromisos reales (90%) + pequeño ajuste (10%)
+          const committedWeight = 0.9;
+          const historicalWeight = 0.1;
+          
+          estimatedHoursNextMonth = round2(
+            (committedHours * committedWeight) +
+            (historicalAvgHours * historicalWeight)
+          );
+          
+          // Asegurar que nunca sea menor que los compromisos reales
+          estimatedHoursNextMonth = Math.max(estimatedHoursNextMonth, committedHours);
+        } else {
+          // Sin histórico suficiente: usar compromisos reales directamente
+          // Aplicar un pequeño buffer (5%) solo para tareas no planificadas
+          estimatedHoursNextMonth = round2(committedHours * 1.05);
+        }
+      } else {
+        // Sin compromisos reales: usar inercia e histórico
+        if (historicalMonths.length >= 1) {
+          const inertiaWeight = 0.4;
+          const historicalWeight = 0.6;
+          estimatedHoursNextMonth = round2(
+            (previousMonthTotalHours * inertiaWeight) +
+            (historicalAvgHours * historicalWeight)
+          );
+        } else {
+          // Sin datos: estimación conservadora basada en capacidad
+          estimatedHoursNextMonth = round2(adjustedCapacity * 0.3); // 30% de capacidad como estimación conservadora
+        }
+      }
 
       // 3. INTEGRACIÓN DE RENTABILIDAD (GANANCIA)
       // Calcular ratio entre Horas Reales y Horas Computadas del mes actual
@@ -793,7 +793,13 @@ export default function ReportsPage() {
           estimated: round2(estimatedHoursNextMonth),
           estimatedAvailable,
           hasDeadlines: committedHours > 0,
-          percentage: adjustedCapacity > 0 ? round2((estimatedHoursNextMonth / adjustedCapacity) * 100) : 0
+          percentage: adjustedCapacity > 0 ? round2((estimatedHoursNextMonth / adjustedCapacity) * 100) : 0,
+          // Desglose para debug
+          breakdown: {
+            deadlineHours: round2(nextMonthDeadlineHours),
+            globalHours: round2(nextMonthGlobalHours),
+            committedTotal: round2(committedHours)
+          }
         },
         // Histórico y calidad de datos
         historical: {
@@ -816,6 +822,51 @@ export default function ReportsPage() {
       };
     }).sort((a, b) => b.nextMonth.estimatedAvailable - a.nextMonth.estimatedAvailable);
   }, [employees, allocations, monthAllocations, reliabilityByEmployee, year, month, absences, teamEvents, nextMonthDeadlines, nextMonthGlobalAssignments]);
+  
+  // Recargar deadlines y global assignments cuando cambie el mes actual (para calcular el siguiente)
+  useEffect(() => {
+    const loadNextMonthData = async () => {
+      const nextMonth = addMonths(startOfMonth(new Date()), 1);
+      const nextMonthStr = format(nextMonth, 'yyyy-MM');
+
+      // Cargar deadlines
+      const { data: deadlinesData, error: deadlinesError } = await supabase
+        .from('deadlines')
+        .select('*')
+        .eq('month', nextMonthStr);
+
+      if (!deadlinesError && deadlinesData) {
+        setNextMonthDeadlines(deadlinesData.map((d: any) => ({
+          id: d.id,
+          projectId: d.project_id,
+          month: d.month,
+          notes: d.notes,
+          employeeHours: d.employee_hours || {},
+          isHidden: d.is_hidden || false
+        })));
+      }
+
+      // Cargar global assignments
+      const { data: globalData, error: globalError } = await supabase
+        .from('global_assignments')
+        .select('*')
+        .eq('month', nextMonthStr);
+
+      if (!globalError && globalData) {
+        setNextMonthGlobalAssignments(globalData.map((g: any) => ({
+          id: g.id,
+          month: g.month,
+          name: g.name,
+          hours: Number(g.hours),
+          affectsAll: g.affects_all,
+          affectedEmployeeIds: (g.affected_employee_ids || []) as string[],
+          employeeId: g.employee_id || g.created_by
+        })));
+      }
+    };
+
+    loadNextMonthData();
+  }, [currentMonth]); // Recargar cuando cambie el mes actual
 
   const stats = [
     {
@@ -1290,7 +1341,7 @@ export default function ReportsPage() {
                           emp.nextMonth.estimatedAvailable >= 20 ? "text-emerald-600" :
                           emp.nextMonth.estimatedAvailable >= 8 ? "text-amber-600" : "text-red-600"
                         )}>
-                          {emp.nextMonth.estimatedAvailable}h
+                          {emp.nextMonth.estimatedAvailable.toFixed(1)}h
                         </p>
                         <p className="text-xs text-muted-foreground">disponibles (estimado)</p>
                       </div>
@@ -1330,9 +1381,11 @@ export default function ReportsPage() {
                         </p>
                         <div className="flex justify-between items-baseline">
                           <span className="text-sm font-medium">
-                            {emp.nextMonth.hasDeadlines ? emp.nextMonth.assigned : `~${emp.nextMonth.estimated}`}h
+                            {emp.nextMonth.hasDeadlines 
+                              ? `${emp.nextMonth.assigned}h` 
+                              : `~${emp.nextMonth.estimated.toFixed(1)}h`}
                           </span>
-                          <span className="text-xs text-muted-foreground">de {emp.nextMonth.capacity}h</span>
+                          <span className="text-xs text-muted-foreground">de {emp.nextMonth.capacity.toFixed(1)}h</span>
                         </div>
                         <Progress
                           value={Math.min(emp.nextMonth.percentage, 100)}
@@ -1343,8 +1396,24 @@ export default function ReportsPage() {
                           )}
                         />
                         <p className="text-[10px] text-muted-foreground mt-1">
-                          ~{emp.nextMonth.estimatedAvailable}h libres ({(100 - emp.nextMonth.percentage).toFixed(0)}%)
+                          ~{emp.nextMonth.estimatedAvailable.toFixed(1)}h libres ({(100 - emp.nextMonth.percentage).toFixed(0)}%)
                         </p>
+                        {emp.nextMonth.hasDeadlines && (
+                          <p className="text-[10px] text-indigo-600 mt-0.5">
+                            {emp.nextMonth.breakdown.deadlineHours > 0 && `${emp.nextMonth.breakdown.deadlineHours}h deadlines`}
+                            {emp.nextMonth.breakdown.globalHours > 0 && (
+                              <span className="ml-1">
+                                {emp.nextMonth.breakdown.deadlineHours > 0 ? '+' : ''}
+                                {emp.nextMonth.breakdown.globalHours}h otras asignaciones
+                              </span>
+                            )}
+                          </p>
+                        )}
+                        {emp.nextMonth.absenceHours > 0 && (
+                          <p className="text-[10px] text-orange-600 mt-0.5">
+                            -{emp.nextMonth.absenceHours.toFixed(1)}h por ausencias
+                          </p>
+                        )}
                       </div>
                     </div>
 
