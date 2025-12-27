@@ -1,6 +1,8 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useMemo } from 'react';
 
 interface PermissionProtectedRouteProps {
   children: React.ReactNode;
@@ -13,10 +15,22 @@ interface PermissionProtectedRouteProps {
 export function PermissionProtectedRoute({ children, requiredPermission }: PermissionProtectedRouteProps) {
   const location = useLocation();
   const { canAccess } = usePermissions();
-  const { currentUser, isLoading } = useApp();
+  const { currentUser, isLoading: isAppLoading } = useApp();
+  const { session, isInitialized: isAuthInitialized } = useAuth();
 
-  // Esperar a que termine de cargar antes de hacer redirecciones
-  if (isLoading) {
+  // Determinar si todavía estamos en proceso de carga
+  const isStillLoading = useMemo(() => {
+    // Si auth no está inicializado, seguimos cargando
+    if (!isAuthInitialized) return true;
+    // Si hay sesión pero AppContext aún está cargando, seguimos cargando
+    if (session && isAppLoading) return true;
+    // Si hay sesión pero currentUser aún no está disponible, esperamos un poco más
+    if (session && !currentUser && isAppLoading) return true;
+    return false;
+  }, [isAuthInitialized, session, isAppLoading, currentUser]);
+
+  // Mientras carga, mostrar spinner
+  if (isStillLoading) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50">
         <div className="h-8 w-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin opacity-60" />
@@ -24,26 +38,26 @@ export function PermissionProtectedRoute({ children, requiredPermission }: Permi
     );
   }
 
-  // Solo después de cargar, verificar si hay usuario
-  if (!currentUser) {
+  // Si no hay sesión (ya verificado por ProtectedRoute, pero por seguridad)
+  if (!session) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Si se especifica un permiso requerido, verificar
-  if (requiredPermission) {
-    const hasPermission = canAccess(requiredPermission);
-    if (!hasPermission) {
-      // Redirigir a la página principal si no tiene permiso
-      return <Navigate to="/" replace />;
-    }
-  } else {
-    // Si no se especifica permiso, verificar por la ruta actual
-    const hasAccess = canAccess(location.pathname);
-    if (!hasAccess) {
-      return <Navigate to="/" replace />;
-    }
+  // Si hay sesión pero no se encontró el empleado vinculado
+  if (!currentUser) {
+    console.warn('[PermissionProtectedRoute] Sesión activa pero sin empleado vinculado');
+    // Redirigir a una página de error o al dashboard básico
+    return <Navigate to="/" replace />;
+  }
+
+  // Verificar permisos
+  const permissionToCheck = requiredPermission || location.pathname;
+  const hasPermission = canAccess(permissionToCheck);
+
+  if (!hasPermission) {
+    // Redirigir a la página principal si no tiene permiso
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
 }
-

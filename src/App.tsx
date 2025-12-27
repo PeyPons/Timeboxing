@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { AppProvider } from "@/contexts/AppContext";
 import { AppLayout } from "@/components/layout/AppLayout";
 
@@ -33,44 +34,46 @@ const queryClient = new QueryClient();
 const App = () => (
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
-      <AppProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              {/* Ruta pública Login */}
-              <Route path="/login" element={<Login />} />
+      <AuthProvider>
+        <AppProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                {/* Ruta pública Login */}
+                <Route path="/login" element={<Login />} />
 
-              {/* Rutas Protegidas */}
-              <Route element={<ProtectedRoute />}>
-                <Route element={<AppLayout />}>
-                  {/* Dashboard Personal como página de inicio - Siempre accesible */}
-                  <Route path="/" element={<EmployeeDashboard />} />
-                  
-                  {/* Resto de rutas protegidas por permisos */}
-                  <Route path="/planner" element={<PermissionProtectedRoute requiredPermission="/planner"><Index /></PermissionProtectedRoute>} />
-                  <Route path="/deadlines" element={<PermissionProtectedRoute requiredPermission="/deadlines"><DeadlinesPage /></PermissionProtectedRoute>} />
-                  <Route path="/team" element={<PermissionProtectedRoute requiredPermission="/team"><TeamPage /></PermissionProtectedRoute>} />
-                  <Route path="/clients" element={<PermissionProtectedRoute requiredPermission="/clients"><ClientsPage /></PermissionProtectedRoute>} />
-                  <Route path="/projects" element={<PermissionProtectedRoute requiredPermission="/projects"><ProjectsPage /></PermissionProtectedRoute>} />
-                  <Route path="/reports" element={<PermissionProtectedRoute requiredPermission="/reports"><ReportsPage /></PermissionProtectedRoute>} />
-                  <Route path="/informes-clientes" element={<PermissionProtectedRoute requiredPermission="/informes-clientes"><ClientReportsPage /></PermissionProtectedRoute>} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/ads" element={<PermissionProtectedRoute requiredPermission="/ads"><AdsPage /></PermissionProtectedRoute>} />
-                  <Route path="/meta-ads" element={<PermissionProtectedRoute requiredPermission="/meta-ads"><MetaAdsPage /></PermissionProtectedRoute>} />
-                  <Route path="/ads-reports" element={<PermissionProtectedRoute requiredPermission="/ads-reports"><AdsReportGenerator /></PermissionProtectedRoute>} />
-                  <Route path="/dashboard-ai" element={<DashboardAI />} />
+                {/* Rutas Protegidas */}
+                <Route element={<ProtectedRoute />}>
+                  <Route element={<AppLayout />}>
+                    {/* Dashboard Personal como página de inicio - Siempre accesible */}
+                    <Route path="/" element={<EmployeeDashboard />} />
+                    
+                    {/* Resto de rutas protegidas por permisos */}
+                    <Route path="/planner" element={<PermissionProtectedRoute requiredPermission="/planner"><Index /></PermissionProtectedRoute>} />
+                    <Route path="/deadlines" element={<PermissionProtectedRoute requiredPermission="/deadlines"><DeadlinesPage /></PermissionProtectedRoute>} />
+                    <Route path="/team" element={<PermissionProtectedRoute requiredPermission="/team"><TeamPage /></PermissionProtectedRoute>} />
+                    <Route path="/clients" element={<PermissionProtectedRoute requiredPermission="/clients"><ClientsPage /></PermissionProtectedRoute>} />
+                    <Route path="/projects" element={<PermissionProtectedRoute requiredPermission="/projects"><ProjectsPage /></PermissionProtectedRoute>} />
+                    <Route path="/reports" element={<PermissionProtectedRoute requiredPermission="/reports"><ReportsPage /></PermissionProtectedRoute>} />
+                    <Route path="/informes-clientes" element={<PermissionProtectedRoute requiredPermission="/informes-clientes"><ClientReportsPage /></PermissionProtectedRoute>} />
+                    <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/ads" element={<PermissionProtectedRoute requiredPermission="/ads"><AdsPage /></PermissionProtectedRoute>} />
+                    <Route path="/meta-ads" element={<PermissionProtectedRoute requiredPermission="/meta-ads"><MetaAdsPage /></PermissionProtectedRoute>} />
+                    <Route path="/ads-reports" element={<PermissionProtectedRoute requiredPermission="/ads-reports"><AdsReportGenerator /></PermissionProtectedRoute>} />
+                    <Route path="/dashboard-ai" element={<DashboardAI />} />
+                  </Route>
                 </Route>
-              </Route>
 
-              {/* 404 */}
-              <Route path="*" element={<NotFound />} />
-              
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </AppProvider>
+                {/* 404 */}
+                <Route path="*" element={<NotFound />} />
+                
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AppProvider>
+      </AuthProvider>
     </QueryClientProvider>
   </HelmetProvider>
 );

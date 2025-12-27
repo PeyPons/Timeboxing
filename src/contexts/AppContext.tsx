@@ -5,6 +5,7 @@ import { getWorkingDaysInRange, getMonthlyCapacity, getWeeksForMonth, getStorage
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
 import { getTeamEventHoursInRange, getTeamEventDetailsInRange } from '@/utils/teamEventUtils';
 import { addDays } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AppContextType {
   currentUser: Employee | undefined;
@@ -53,6 +54,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const { user: authUser, isInitialized: isAuthInitialized } = useAuth();
   const [currentUser, setCurrentUser] = useState<Employee | undefined>(undefined);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -68,8 +70,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true);
     }
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-
       const [empRes, cliRes, projRes, allocRes, absRes, evRes, goalsRes] = await Promise.all([
         supabase.from('employees').select('*'),
         supabase.from('clients').select('*'),
@@ -80,10 +80,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         supabase.from('professional_goals').select('*'),
       ]);
 
-      let mappedEmployees: Employee[] = [];
-
       if (empRes.data) {
-        mappedEmployees = empRes.data.map((e: any) => ({
+        const mappedEmployees = empRes.data.map((e: any) => ({
           ...e,
           avatarUrl: e.avatar_url,
           defaultWeeklyCapacity: e.default_weekly_capacity,
@@ -99,57 +97,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           permissions: e.permissions || undefined
         }));
         setEmployees(mappedEmployees);
-
-        if (authUser) {
-          // Buscar primero por user_id (más rápido y preciso)
-          let foundUser = mappedEmployees.find(e => e.user_id === authUser.id);
-          
-          // Si no se encuentra por user_id, buscar por email
-          if (!foundUser && authUser.email) {
-            foundUser = mappedEmployees.find(e => 
-              e.email && e.email.toLowerCase() === authUser.email.toLowerCase()
-            );
-          }
-          
-          if (foundUser) {
-            // ✅ Vincular automáticamente si el empleado no tiene user_id pero el email coincide
-            if (!foundUser.user_id && authUser.id) {
-              console.log('[AppContext] Vinculando empleado existente con usuario Auth:', foundUser.email);
-              try {
-                // Actualizar en la base de datos
-                const { error: updateError } = await supabase
-                  .from('employees')
-                  .update({ user_id: authUser.id })
-                  .eq('id', foundUser.id);
-                
-                if (updateError) {
-                  console.error('[AppContext] Error actualizando user_id:', updateError);
-                  // Continuar de todas formas con el usuario encontrado
-                } else {
-                  console.log('[AppContext] user_id actualizado correctamente');
-                }
-                
-                // Actualizar en el estado local inmediatamente
-                const updatedUser = { ...foundUser, user_id: authUser.id };
-                setEmployees(prev => prev.map(e => e.id === foundUser.id ? updatedUser : e));
-                setCurrentUser(updatedUser);
-              } catch (error) {
-                console.error('[AppContext] Error en vinculación automática:', error);
-                // Si falla, usar el usuario sin user_id de todas formas
-                setCurrentUser(foundUser);
-              }
-            } else {
-              setCurrentUser(foundUser);
-            }
-          } else {
-            console.warn('[AppContext] No se encontró empleado para usuario Auth:', authUser.email);
-            // No establecer currentUser si no se encuentra el empleado
-            setCurrentUser(undefined);
-          }
-        } else {
-          // No hay usuario autenticado
-          setCurrentUser(undefined);
-        }
+        // La vinculación de currentUser se hace en el useEffect que escucha authUser
       }
 
       if (cliRes.data) setClients(cliRes.data);
@@ -215,62 +163,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Cargar datos iniciales
+  // Cargar datos cuando la autenticación esté lista
   useEffect(() => {
-    fetchData();
-  }, []); // Solo ejecutar una vez al montar
+    if (isAuthInitialized) {
+      fetchData();
+    }
+  }, [isAuthInitialized, fetchData]);
 
-  // Escuchar cambios de autenticación (separado para evitar bucles)
+  // Reaccionar a cambios de usuario (login/logout)
   useEffect(() => {
-    let isInitialMount = true;
-    let lastProcessedEvent: { event: string; userId: string | null; timestamp: number } | null = null;
-    let subscription: any = null;
-    
-    // Pequeño delay para asegurar que fetchData() se ejecute primero
-    const timeoutId = setTimeout(() => {
-      const { data: { subscription: sub } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        // Ignorar el primer evento (que es el estado inicial al montar)
-        // Ya se cargó todo en el useEffect anterior con fetchData()
-        if (isInitialMount) {
-          isInitialMount = false;
-          return;
+    if (!isAuthInitialized) return;
+
+    if (authUser) {
+      // Usuario logueado - buscar y vincular empleado
+      const foundEmployee = employees.find(e => 
+        e.user_id === authUser.id || 
+        (e.email && authUser.email && e.email.toLowerCase() === authUser.email.toLowerCase())
+      );
+
+      if (foundEmployee) {
+        // Si el empleado no tiene user_id pero el email coincide, vincular automáticamente
+        if (!foundEmployee.user_id && authUser.id) {
+          console.log('[AppContext] Vinculando empleado existente con usuario Auth:', foundEmployee.email);
+          supabase
+            .from('employees')
+            .update({ user_id: authUser.id })
+            .eq('id', foundEmployee.id)
+            .then(({ error }) => {
+              if (error) {
+                console.error('[AppContext] Error actualizando user_id:', error);
+              } else {
+                console.log('[AppContext] user_id actualizado correctamente');
+                const updatedEmployee = { ...foundEmployee, user_id: authUser.id };
+                setEmployees(prev => prev.map(e => e.id === foundEmployee.id ? updatedEmployee : e));
+                setCurrentUser(updatedEmployee);
+              }
+            });
+        } else {
+          setCurrentUser(foundEmployee);
         }
-        
-        const userId = session?.user?.id || null;
-        
-        // ✅ Prevenir procesar el mismo evento múltiples veces en un corto período
-        const now = Date.now();
-        if (lastProcessedEvent && 
-            lastProcessedEvent.event === event && 
-            lastProcessedEvent.userId === userId &&
-            now - lastProcessedEvent.timestamp < 3000) {
-          // Ignorar si es el mismo evento para el mismo usuario en menos de 3 segundos
-          console.log('[AppContext] Ignorando evento duplicado:', event, userId);
-          return;
-        }
-        lastProcessedEvent = { event, userId, timestamp: now };
-        
-        console.log('[AppContext] Auth state changed:', event, session?.user?.email);
-        
-        if (event === 'SIGNED_OUT') {
-          setCurrentUser(undefined);
-          setIsLoading(false);
-        }
-        // ✅ NO hacer nada en SIGNED_IN porque fetchData() ya se ejecutó al montar
-        // y maneja la vinculación automática. Procesar SIGNED_IN aquí causa bucles.
-        // ProtectedRoute maneja la navegación automáticamente.
-      });
-      
-      subscription = sub;
-    }, 200); // Aumentar delay para dar más tiempo a fetchData
-    
-    return () => {
-      clearTimeout(timeoutId);
-      if (subscription) {
-        subscription.unsubscribe();
+      } else {
+        console.warn('[AppContext] No se encontró empleado para usuario Auth:', authUser.email);
+        setCurrentUser(undefined);
       }
-    };
-  }, []); // Sin dependencias para evitar bucles
+    } else {
+      // Usuario deslogueado
+      setCurrentUser(undefined);
+    }
+  }, [authUser, isAuthInitialized, employees]);
 
   const addEmployee = useCallback(async (employee: Omit<Employee, 'id'>) => {
     const { data, error } = await supabase.from('employees').insert({
