@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { 
-  BarChart3, 
-  Users, 
-  Clock, 
-  TrendingUp, 
+import {
+  BarChart3,
+  Users,
+  Clock,
+  TrendingUp,
   FolderOpen,
   ChevronLeft,
   ChevronRight,
@@ -21,11 +21,20 @@ import {
   Zap,
   Target,
   AlertTriangle,
-  TrendingDown
+  TrendingDown,
+  Flame,
+  Snowflake,
+  AlertCircle,
+  Award,
+  Trophy,
+  Star,
+  Gauge,
+  Link2,
+  ArrowRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
-import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInWeeks, startOfWeek, addWeeks } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
@@ -228,6 +237,301 @@ export default function ReportsPage() {
       .sort((a, b) => b.hoursPlanned - a.hoursPlanned);
   }, [projects, clients, monthAllocations, selectedEmployeeId]);
 
+  // ============================================================================
+  // DASHBOARD EJECUTIVO: Alertas, Proyectos en Riesgo, Logros
+  // ============================================================================
+
+  // Alertas de carga del equipo
+  const teamAlerts = useMemo(() => {
+    const alerts: Array<{
+      type: 'overload' | 'underload' | 'consecutive_overload';
+      severity: 'high' | 'medium' | 'low';
+      employeeId: string;
+      employeeName: string;
+      message: string;
+      value: number;
+      detail: string;
+    }> = [];
+
+    // Analizar cada empleado activo
+    employees.filter(e => e.isActive).forEach(emp => {
+      const capacity = getMonthlyCapacity(year, month, emp.workSchedule);
+      const empAllocations = monthAllocations.filter(a => a.employeeId === emp.id);
+      const plannedHours = empAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+      const percentage = capacity > 0 ? (plannedHours / capacity) * 100 : 0;
+      const hoursAvailable = Math.max(0, capacity - plannedHours);
+
+      // Alerta de sobrecarga (>100%)
+      if (percentage > 100) {
+        alerts.push({
+          type: 'overload',
+          severity: percentage > 120 ? 'high' : 'medium',
+          employeeId: emp.id,
+          employeeName: emp.name,
+          message: `${emp.name} está al ${percentage.toFixed(0)}% de capacidad`,
+          value: percentage,
+          detail: `${plannedHours}h planificadas de ${capacity}h disponibles (+${(plannedHours - capacity).toFixed(1)}h exceso)`
+        });
+      }
+
+      // Alerta de disponibilidad significativa (>15h libres)
+      if (hoursAvailable > 15 && percentage < 70) {
+        alerts.push({
+          type: 'underload',
+          severity: 'low',
+          employeeId: emp.id,
+          employeeName: emp.name,
+          message: `${emp.name} tiene ${hoursAvailable.toFixed(0)}h disponibles`,
+          value: hoursAvailable,
+          detail: `Solo al ${percentage.toFixed(0)}% de ocupación este mes`
+        });
+      }
+    });
+
+    // Ordenar por severidad
+    return alerts.sort((a, b) => {
+      const severityOrder = { high: 0, medium: 1, low: 2 };
+      return severityOrder[a.severity] - severityOrder[b.severity];
+    });
+  }, [employees, monthAllocations, year, month]);
+
+  // Proyectos en riesgo (superando presupuesto o con problemas)
+  const projectsAtRisk = useMemo(() => {
+    return projectData
+      .filter(p => p.percentage > 80 || (p.hoursReal > p.hoursComputed && p.hoursReal > 5))
+      .map(p => ({
+        ...p,
+        riskLevel: p.percentage > 100 ? 'critical' : p.percentage > 90 ? 'high' : 'medium',
+        riskReason: p.percentage > 100
+          ? `Superó presupuesto (${p.percentage.toFixed(0)}%)`
+          : p.hoursReal > p.hoursComputed
+            ? `Baja rentabilidad (${((p.hoursComputed / p.hoursReal) * 100).toFixed(0)}%)`
+            : `Cerca del límite (${p.percentage.toFixed(0)}%)`
+      }))
+      .sort((a, b) => {
+        const riskOrder = { critical: 0, high: 1, medium: 2 };
+        return (riskOrder[a.riskLevel as keyof typeof riskOrder] || 2) - (riskOrder[b.riskLevel as keyof typeof riskOrder] || 2);
+      });
+  }, [projectData]);
+
+  // Logros y reconocimientos del equipo
+  const teamAchievements = useMemo(() => {
+    const achievements: Array<{
+      type: 'accuracy' | 'efficiency' | 'completion' | 'improvement';
+      icon: 'trophy' | 'star' | 'award';
+      title: string;
+      description: string;
+      employeeId?: string;
+      employeeName?: string;
+    }> = [];
+
+    // Empleado más preciso en estimaciones
+    const accurateEmployees = employeeData
+      .filter(e => e.reliability.tasksAnalyzed >= 5 && e.reliability.index >= 90 && e.reliability.index <= 110);
+
+    if (accurateEmployees.length > 0) {
+      const mostAccurate = accurateEmployees.sort((a, b) =>
+        Math.abs(100 - a.reliability.index) - Math.abs(100 - b.reliability.index)
+      )[0];
+      achievements.push({
+        type: 'accuracy',
+        icon: 'trophy',
+        title: 'Estimador Preciso',
+        description: `${mostAccurate.name} tiene el índice de fiabilidad más preciso (${mostAccurate.reliability.index.toFixed(0)}%)`,
+        employeeId: mostAccurate.id,
+        employeeName: mostAccurate.name
+      });
+    }
+
+    // Empleado más eficiente (mejor ratio computado/real)
+    const efficientEmployees = employeeData
+      .filter(e => e.realHours >= 10 && e.efficiency > 100);
+
+    if (efficientEmployees.length > 0) {
+      const mostEfficient = efficientEmployees.sort((a, b) => b.efficiency - a.efficiency)[0];
+      achievements.push({
+        type: 'efficiency',
+        icon: 'star',
+        title: 'Alta Eficiencia',
+        description: `${mostEfficient.name} logró ${mostEfficient.efficiency.toFixed(0)}% de rentabilidad`,
+        employeeId: mostEfficient.id,
+        employeeName: mostEfficient.name
+      });
+    }
+
+    // Tareas completadas este mes
+    const completedThisMonth = monthAllocations.filter(a => a.status === 'completed').length;
+    const totalTasks = monthAllocations.length;
+    const completionRate = totalTasks > 0 ? (completedThisMonth / totalTasks) * 100 : 0;
+
+    if (completionRate > 70 && completedThisMonth >= 10) {
+      achievements.push({
+        type: 'completion',
+        icon: 'award',
+        title: 'Gran Avance',
+        description: `${completedThisMonth} tareas completadas este mes (${completionRate.toFixed(0)}% del total)`
+      });
+    }
+
+    // Equipo bien balanceado (nadie >110% ni <50%)
+    const allBalanced = employeeData.every(e => e.percentage <= 110 && e.percentage >= 50);
+    if (allBalanced && employeeData.length >= 3) {
+      achievements.push({
+        type: 'improvement',
+        icon: 'award',
+        title: 'Equipo Equilibrado',
+        description: 'Toda la carga está bien distribuida entre el equipo'
+      });
+    }
+
+    return achievements;
+  }, [employeeData, monthAllocations]);
+
+  // Alertas de dependencias bloqueadas
+  const blockedDependencies = useMemo(() => {
+    const blocked: Array<{
+      blockedTask: typeof allocations[0];
+      blockedTaskName: string;
+      blockedEmployee: string;
+      blockerTask: typeof allocations[0];
+      blockerTaskName: string;
+      blockerEmployee: string;
+      weeksSinceBlocked: number;
+      projectName: string;
+    }> = [];
+
+    // Buscar tareas del mes actual que tienen dependencias no completadas
+    monthAllocations.forEach(task => {
+      if (task.dependencyId && task.status !== 'completed') {
+        const blockerTask = (allocations || []).find(a => a.id === task.dependencyId);
+        if (blockerTask && blockerTask.status !== 'completed') {
+          const blockedEmployee = employees.find(e => e.id === task.employeeId);
+          const blockerEmployee = employees.find(e => e.id === blockerTask.employeeId);
+          const project = (projects || []).find(p => p.id === task.projectId);
+
+          // Calcular semanas desde que se planificó la tarea bloqueante
+          const blockerWeekDate = parseISO(blockerTask.weekStartDate);
+          const now = new Date();
+          const weeksSince = Math.max(0, differenceInWeeks(now, blockerWeekDate));
+
+          blocked.push({
+            blockedTask: task,
+            blockedTaskName: task.taskName || 'Tarea sin nombre',
+            blockedEmployee: blockedEmployee?.name || 'Desconocido',
+            blockerTask: blockerTask,
+            blockerTaskName: blockerTask.taskName || 'Tarea sin nombre',
+            blockerEmployee: blockerEmployee?.name || 'Desconocido',
+            weeksSinceBlocked: weeksSince,
+            projectName: project?.name || 'Proyecto desconocido'
+          });
+        }
+      }
+    });
+
+    // Ordenar por semanas bloqueadas (más antiguas primero)
+    return blocked.sort((a, b) => b.weeksSinceBlocked - a.weeksSinceBlocked);
+  }, [monthAllocations, allocations, employees, projects]);
+
+  // Mapa de calor: carga semanal por empleado
+  const heatmapData = useMemo(() => {
+    // Obtener las semanas del mes actual
+    const weeksInMonth: Date[] = [];
+    let weekStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+    while (weekStart <= monthEnd) {
+      if (weekStart >= subMonths(monthStart, 1)) {
+        weeksInMonth.push(weekStart);
+      }
+      weekStart = addWeeks(weekStart, 1);
+    }
+
+    return employees.filter(e => e.isActive).map(emp => {
+      const weeklyLoad = weeksInMonth.map(week => {
+        const weekStr = format(week, 'yyyy-MM-dd');
+        const weekAllocations = (allocations || []).filter(a =>
+          a.employeeId === emp.id && a.weekStartDate === weekStr
+        );
+        const hoursPlanned = weekAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+        // Capacidad semanal aproximada (asumiendo jornada estándar)
+        const weeklyCapacity = emp.workSchedule?.defaultHoursPerDay
+          ? emp.workSchedule.defaultHoursPerDay * 5
+          : 40;
+        const percentage = weeklyCapacity > 0 ? (hoursPlanned / weeklyCapacity) * 100 : 0;
+
+        return {
+          week: weekStr,
+          weekLabel: format(week, 'dd MMM', { locale: es }),
+          hours: hoursPlanned,
+          capacity: weeklyCapacity,
+          percentage
+        };
+      });
+
+      return {
+        employeeId: emp.id,
+        employeeName: emp.name,
+        weeklyLoad
+      };
+    });
+  }, [employees, allocations, monthStart, monthEnd]);
+
+  // Predicción de disponibilidad futura (próximas 8 semanas)
+  const futureAvailability = useMemo(() => {
+    const weeks: Date[] = [];
+    let weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+    for (let i = 0; i < 8; i++) {
+      weeks.push(weekStart);
+      weekStart = addWeeks(weekStart, 1);
+    }
+
+    return employees.filter(e => e.isActive).map(emp => {
+      const weeklyCapacity = emp.workSchedule?.defaultHoursPerDay
+        ? emp.workSchedule.defaultHoursPerDay * 5
+        : 40;
+
+      const weeklyAvailability = weeks.map(week => {
+        const weekStr = format(week, 'yyyy-MM-dd');
+        const weekAllocations = (allocations || []).filter(a =>
+          a.employeeId === emp.id && a.weekStartDate === weekStr
+        );
+        const hoursPlanned = weekAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+        const hoursAvailable = Math.max(0, weeklyCapacity - hoursPlanned);
+        const percentage = weeklyCapacity > 0 ? (hoursPlanned / weeklyCapacity) * 100 : 0;
+
+        return {
+          week: weekStr,
+          weekLabel: format(week, 'dd MMM', { locale: es }),
+          hoursPlanned,
+          hoursAvailable,
+          capacity: weeklyCapacity,
+          percentage,
+          isAvailable: hoursAvailable >= 8 // Al menos 8h disponibles
+        };
+      });
+
+      // Encontrar la próxima semana con disponibilidad significativa
+      const nextAvailableWeek = weeklyAvailability.find(w => w.isAvailable);
+      const totalAvailableHours = weeklyAvailability.reduce((sum, w) => sum + w.hoursAvailable, 0);
+
+      // Calcular factor de ajuste basado en fiabilidad histórica
+      const reliability = reliabilityByEmployee[emp.id];
+      const adjustmentFactor = reliability && reliability.tasksAnalyzed >= 5
+        ? reliability.index / 100
+        : 1;
+
+      return {
+        employeeId: emp.id,
+        employeeName: emp.name,
+        employeeRole: emp.role,
+        weeklyAvailability,
+        nextAvailableWeek,
+        totalAvailableHours,
+        adjustmentFactor,
+        reliabilityIndex: reliability?.index || 0,
+        reliabilityTrend: reliability?.trend || 'insufficient'
+      };
+    }).sort((a, b) => b.totalAvailableHours - a.totalAvailableHours);
+  }, [employees, allocations, reliabilityByEmployee]);
+
   const stats = [
     {
       title: 'Capacidad',
@@ -336,12 +640,401 @@ export default function ReportsPage() {
       </div>
 
       {/* TABS CONTENT */}
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs defaultValue="dashboard" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="dashboard" className="flex items-center gap-1.5">
+            <Gauge className="h-4 w-4" />
+            Dashboard
+          </TabsTrigger>
           <TabsTrigger value="overview">Visión General</TabsTrigger>
           <TabsTrigger value="team">Desglose Equipo</TabsTrigger>
           <TabsTrigger value="projects">Proyectos</TabsTrigger>
         </TabsList>
+
+        {/* DASHBOARD EJECUTIVO */}
+        <TabsContent value="dashboard" className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-3">
+            {/* Columna 1: Alertas del Equipo */}
+            <Card className="lg:col-span-1">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <AlertCircle className="h-5 w-5 text-amber-500" />
+                  Alertas del Equipo
+                </CardTitle>
+                <CardDescription>Situaciones que requieren atención</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {teamAlerts.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle2 className="h-12 w-12 mx-auto mb-2 text-emerald-300" />
+                    <p className="text-sm">Todo en orden</p>
+                    <p className="text-xs">No hay alertas este mes</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[320px] overflow-y-auto">
+                    {teamAlerts.map((alert, idx) => (
+                      <div
+                        key={`${alert.employeeId}-${alert.type}-${idx}`}
+                        className={cn(
+                          "p-3 rounded-lg border-l-4 transition-colors",
+                          alert.severity === 'high' && "bg-red-50 border-l-red-500",
+                          alert.severity === 'medium' && "bg-amber-50 border-l-amber-500",
+                          alert.severity === 'low' && "bg-blue-50 border-l-blue-500"
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          {alert.type === 'overload' ? (
+                            <Flame className={cn("h-4 w-4 mt-0.5 shrink-0", alert.severity === 'high' ? "text-red-500" : "text-amber-500")} />
+                          ) : (
+                            <Snowflake className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">{alert.message}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{alert.detail}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Columna 2: Proyectos en Riesgo */}
+            <Card className="lg:col-span-1">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <AlertTriangle className="h-5 w-5 text-red-500" />
+                  Proyectos en Riesgo
+                </CardTitle>
+                <CardDescription>Proyectos que superan o se acercan al presupuesto</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {projectsAtRisk.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <FolderOpen className="h-12 w-12 mx-auto mb-2 text-emerald-300" />
+                    <p className="text-sm">Sin riesgos</p>
+                    <p className="text-xs">Todos los proyectos dentro de presupuesto</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[320px] overflow-y-auto">
+                    {projectsAtRisk.slice(0, 6).map(project => (
+                      <div
+                        key={project.id}
+                        className={cn(
+                          "p-3 rounded-lg border",
+                          project.riskLevel === 'critical' && "bg-red-50 border-red-200",
+                          project.riskLevel === 'high' && "bg-amber-50 border-amber-200",
+                          project.riskLevel === 'medium' && "bg-slate-50 border-slate-200"
+                        )}
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate" title={project.name}>{project.name}</p>
+                            <p className="text-xs text-muted-foreground">{project.clientName}</p>
+                          </div>
+                          <Badge
+                            variant={project.riskLevel === 'critical' ? 'destructive' : 'secondary'}
+                            className="shrink-0"
+                          >
+                            {project.percentage.toFixed(0)}%
+                          </Badge>
+                        </div>
+                        <p className="text-xs mt-2 text-muted-foreground">{project.riskReason}</p>
+                        <div className="flex gap-4 mt-2 text-xs">
+                          <span>Plan: {project.hoursPlanned}h</span>
+                          <span className="text-muted-foreground">Ppto: {project.budget}h</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Columna 3: Logros y Reconocimientos */}
+            <Card className="lg:col-span-1">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Trophy className="h-5 w-5 text-amber-500" />
+                  Logros del Equipo
+                </CardTitle>
+                <CardDescription>Reconocimientos y métricas positivas</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {teamAchievements.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Star className="h-12 w-12 mx-auto mb-2 text-slate-200" />
+                    <p className="text-sm">Próximamente</p>
+                    <p className="text-xs">Aún no hay suficientes datos para mostrar logros</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {teamAchievements.map((achievement, idx) => (
+                      <div
+                        key={`${achievement.type}-${idx}`}
+                        className="p-3 rounded-lg bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-100"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                            {achievement.icon === 'trophy' && <Trophy className="h-4 w-4 text-amber-600" />}
+                            {achievement.icon === 'star' && <Star className="h-4 w-4 text-amber-600" />}
+                            {achievement.icon === 'award' && <Award className="h-4 w-4 text-amber-600" />}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-amber-900">{achievement.title}</p>
+                            <p className="text-xs text-amber-700 mt-0.5">{achievement.description}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Dependencias Bloqueadas */}
+          {blockedDependencies.length > 0 && (
+            <Card className="border-l-4 border-l-orange-400">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Link2 className="h-5 w-5 text-orange-500" />
+                  Tareas Bloqueadas por Dependencias
+                  <Badge variant="secondary" className="ml-2">{blockedDependencies.length}</Badge>
+                </CardTitle>
+                <CardDescription>
+                  Tareas que no pueden avanzar hasta que se complete su dependencia
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {blockedDependencies.slice(0, 5).map((dep, idx) => (
+                    <div
+                      key={`${dep.blockedTask.id}-${idx}`}
+                      className={cn(
+                        "p-3 rounded-lg border",
+                        dep.weeksSinceBlocked >= 2 && "bg-red-50 border-red-200",
+                        dep.weeksSinceBlocked === 1 && "bg-amber-50 border-amber-200",
+                        dep.weeksSinceBlocked === 0 && "bg-slate-50 border-slate-200"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 text-sm">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-orange-700 truncate">{dep.blockerTaskName}</span>
+                            <span className="text-xs text-muted-foreground">({dep.blockerEmployee})</span>
+                          </div>
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate">{dep.blockedTaskName}</span>
+                            <span className="text-xs text-muted-foreground">({dep.blockedEmployee})</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center mt-2">
+                        <span className="text-xs text-muted-foreground">{dep.projectName}</span>
+                        {dep.weeksSinceBlocked > 0 && (
+                          <Badge
+                            variant={dep.weeksSinceBlocked >= 2 ? 'destructive' : 'secondary'}
+                            className="text-xs"
+                          >
+                            {dep.weeksSinceBlocked} {dep.weeksSinceBlocked === 1 ? 'semana' : 'semanas'} esperando
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {blockedDependencies.length > 5 && (
+                    <p className="text-xs text-muted-foreground text-center pt-2">
+                      +{blockedDependencies.length - 5} tareas bloqueadas más
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Mapa de Calor de Carga */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Mapa de Carga Semanal
+              </CardTitle>
+              <CardDescription>
+                Visualización de la ocupación por empleado y semana.
+                <span className="ml-2 inline-flex items-center gap-1">
+                  <span className="h-3 w-3 rounded bg-emerald-500" /> Óptimo
+                  <span className="h-3 w-3 rounded bg-amber-500 ml-2" /> Alto
+                  <span className="h-3 w-3 rounded bg-red-500 ml-2" /> Sobrecargado
+                  <span className="h-3 w-3 rounded bg-blue-200 ml-2" /> Bajo
+                </span>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {heatmapData.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No hay datos para mostrar</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 px-3 font-medium text-muted-foreground w-40">Empleado</th>
+                        {heatmapData[0]?.weeklyLoad.map(week => (
+                          <th key={week.week} className="text-center py-2 px-2 font-medium text-muted-foreground min-w-[70px]">
+                            {week.weekLabel}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {heatmapData.map(row => (
+                        <tr key={row.employeeId} className="border-b hover:bg-slate-50">
+                          <td className="py-2 px-3 font-medium">{row.employeeName}</td>
+                          {row.weeklyLoad.map(week => (
+                            <td key={week.week} className="py-2 px-2 text-center">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <div
+                                      className={cn(
+                                        "h-8 w-full rounded flex items-center justify-center text-xs font-medium transition-colors cursor-help",
+                                        week.percentage === 0 && "bg-slate-100 text-slate-400",
+                                        week.percentage > 0 && week.percentage < 50 && "bg-blue-100 text-blue-700",
+                                        week.percentage >= 50 && week.percentage < 80 && "bg-emerald-100 text-emerald-700",
+                                        week.percentage >= 80 && week.percentage <= 100 && "bg-emerald-500 text-white",
+                                        week.percentage > 100 && week.percentage <= 120 && "bg-amber-500 text-white",
+                                        week.percentage > 120 && "bg-red-500 text-white"
+                                      )}
+                                    >
+                                      {week.hours > 0 ? `${week.hours}h` : '-'}
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="font-medium">{row.employeeName}</p>
+                                    <p className="text-xs">{week.hours}h de {week.capacity}h ({week.percentage.toFixed(0)}%)</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Predicción de Disponibilidad Futura */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5" />
+                Disponibilidad Futura
+              </CardTitle>
+              <CardDescription>
+                Capacidad disponible en las próximas 8 semanas. Útil para planificar nuevos proyectos.
+                {futureAvailability.some(e => e.reliabilityTrend !== 'insufficient') && (
+                  <span className="ml-2 text-amber-600">
+                    * Ajustado según índice de fiabilidad histórico
+                  </span>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {futureAvailability.map(emp => (
+                  <div key={emp.employeeId} className="border rounded-lg p-4 hover:bg-slate-50 transition-colors">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h4 className="font-medium flex items-center gap-2">
+                          {emp.employeeName}
+                          {emp.reliabilityTrend === 'underestimates' && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                                    <TrendingDown className="h-3 w-3 mr-1" />
+                                    x{emp.adjustmentFactor.toFixed(2)}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Este empleado suele tardar más de lo estimado.</p>
+                                  <p className="text-xs">Considera añadir {((1/emp.adjustmentFactor - 1) * 100).toFixed(0)}% extra al estimar.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </h4>
+                        <p className="text-xs text-muted-foreground">{emp.employeeRole}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-emerald-600">{emp.totalAvailableHours}h</p>
+                        <p className="text-xs text-muted-foreground">disponibles en 8 semanas</p>
+                      </div>
+                    </div>
+
+                    {/* Timeline de disponibilidad */}
+                    <div className="flex gap-1">
+                      {emp.weeklyAvailability.map(week => (
+                        <TooltipProvider key={week.week}>
+                          <Tooltip>
+                            <TooltipTrigger className="flex-1">
+                              <div className="text-center">
+                                <div
+                                  className={cn(
+                                    "h-6 rounded text-xs flex items-center justify-center font-medium",
+                                    week.hoursAvailable >= 20 && "bg-emerald-500 text-white",
+                                    week.hoursAvailable >= 8 && week.hoursAvailable < 20 && "bg-emerald-200 text-emerald-800",
+                                    week.hoursAvailable > 0 && week.hoursAvailable < 8 && "bg-amber-100 text-amber-800",
+                                    week.hoursAvailable === 0 && "bg-red-100 text-red-600"
+                                  )}
+                                >
+                                  {week.hoursAvailable > 0 ? `${week.hoursAvailable}h` : 'Full'}
+                                </div>
+                                <span className="text-[10px] text-muted-foreground">{week.weekLabel}</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="font-medium">Semana del {week.weekLabel}</p>
+                              <p className="text-xs">Planificado: {week.hoursPlanned}h de {week.capacity}h</p>
+                              <p className="text-xs text-emerald-600">Disponible: {week.hoursAvailable}h</p>
+                              {week.isAvailable && (
+                                <p className="text-xs text-emerald-700 font-medium mt-1">
+                                  ✓ Puede asumir nuevas tareas
+                                </p>
+                              )}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ))}
+                    </div>
+
+                    {/* Sugerencia de disponibilidad */}
+                    {emp.nextAvailableWeek ? (
+                      <p className="text-xs text-emerald-700 mt-2 flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Próxima disponibilidad: semana del {emp.nextAvailableWeek.weekLabel} ({emp.nextAvailableWeek.hoursAvailable}h libres)
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Sin disponibilidad significativa en las próximas 8 semanas
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">

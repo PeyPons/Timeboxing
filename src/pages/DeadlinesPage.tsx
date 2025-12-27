@@ -65,6 +65,7 @@ export default function DeadlinesPage() {
   const [editingLocks, setEditingLocks] = useState<Record<string, { employeeId: string; employeeName: string; lockedAt: string }>>({});
   const lockRefreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lockCleanupIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const broadcastChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   
   const [formData, setFormData] = useState({
     projectId: '',
@@ -343,7 +344,8 @@ export default function DeadlinesPage() {
 
   // Suscripción en tiempo real para locks de edición
   useEffect(() => {
-    const channelName = `editing-locks-${selectedMonth}-${Date.now()}`;
+    // Canal compartido para todos los usuarios del mismo mes
+    const channelName = `editing-locks-${selectedMonth}`;
     const channel = supabase
       .channel(channelName)
       .on(
@@ -356,7 +358,7 @@ export default function DeadlinesPage() {
         },
         (payload) => {
           console.log('🔔 Realtime editing lock change:', payload.eventType, payload);
-          
+
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const lock = payload.new as any;
             // Solo mostrar si no es nuestro propio lock
@@ -371,11 +373,26 @@ export default function DeadlinesPage() {
                 }
               }));
             }
-          } else if (payload.eventType === 'DELETE') {
-            const deletedLock = payload.old as any;
+          }
+          // DELETE events no incluyen project_id, usamos broadcast en su lugar
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'lock-released' },
+        (payload) => {
+          console.log('🔓 Broadcast: lock released', payload);
+          const { projectIds, employeeId } = payload.payload as { projectIds: string[]; employeeId: string };
+          // Solo procesar si no es nuestro propio broadcast
+          if (employeeId !== currentUser?.id && projectIds?.length > 0) {
             setEditingLocks(prev => {
               const newLocks = { ...prev };
-              delete newLocks[deletedLock.project_id];
+              projectIds.forEach(projectId => {
+                // Solo eliminar si el lock pertenece al empleado que lo liberó
+                if (newLocks[projectId]?.employeeId === employeeId) {
+                  delete newLocks[projectId];
+                }
+              });
               return newLocks;
             });
           }
@@ -385,7 +402,11 @@ export default function DeadlinesPage() {
         console.log('📡 Realtime editing locks subscription status:', status);
       });
 
+    // Guardar referencia al canal para usarla en las funciones de release
+    broadcastChannelRef.current = channel;
+
     return () => {
+      broadcastChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [selectedMonth, currentUser, employees]);
@@ -934,7 +955,7 @@ export default function DeadlinesPage() {
 
   const releaseEditLock = async (projectId: string) => {
     if (!currentUser) return;
-    
+
     try {
       const { error } = await supabase
         .from('project_editing_locks')
@@ -942,11 +963,20 @@ export default function DeadlinesPage() {
         .eq('project_id', projectId)
         .eq('employee_id', currentUser.id)
         .eq('month', selectedMonth);
-      
+
       if (error) {
         console.error('Error liberando lock:', error);
       }
-      
+
+      // Enviar broadcast para notificar a otros usuarios
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.send({
+          type: 'broadcast',
+          event: 'lock-released',
+          payload: { projectIds: [projectId], employeeId: currentUser.id }
+        });
+      }
+
       // También actualizar el estado local de locks
       setEditingLocks(prev => {
         const newLocks = { ...prev };
@@ -981,15 +1011,21 @@ export default function DeadlinesPage() {
         console.error('Error liberando todos los locks:', error);
       }
 
-      // IMPORTANTE: Actualizar estado local inmediatamente
-      // Esto asegura que otros usuarios vean el cambio sin esperar Realtime
-      if (myLocks && myLocks.length > 0) {
+      // Enviar broadcast para notificar a otros usuarios
+      if (myLocks && myLocks.length > 0 && broadcastChannelRef.current) {
+        const projectIds = myLocks.map(lock => lock.project_id);
+        broadcastChannelRef.current.send({
+          type: 'broadcast',
+          event: 'lock-released',
+          payload: { projectIds, employeeId: currentUser.id }
+        });
+
+        // También actualizar estado local
         setEditingLocks(prev => {
           const newLocks = { ...prev };
-          myLocks.forEach(lock => {
-            // Solo eliminar si el lock es nuestro
-            if (newLocks[lock.project_id]?.employeeId === currentUser.id) {
-              delete newLocks[lock.project_id];
+          projectIds.forEach(projectId => {
+            if (newLocks[projectId]?.employeeId === currentUser.id) {
+              delete newLocks[projectId];
             }
           });
           return newLocks;
