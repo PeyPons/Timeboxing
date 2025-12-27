@@ -5,8 +5,8 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
-  Target, TrendingUp, TrendingDown, 
-  Lightbulb, Award, HelpCircle, CheckCircle2, History
+  Compass, TrendingUp, TrendingDown, 
+  Lightbulb, Award, HelpCircle, CheckCircle2, History, Sparkles
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -50,8 +50,8 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
     if (reliability.tasksAnalyzed < 5) {
       return {
         icon: HelpCircle,
-        title: 'Datos insuficientes',
-        description: 'Completa al menos 5 tareas con horas reales para calcular tu índice.',
+        title: 'Calibrando tu brújula...',
+        description: 'Completa 5 tareas con horas reales para conocer tu estilo de planificación.',
         bgColor: 'bg-slate-50',
         borderColor: 'border-slate-200',
         textColor: 'text-slate-600',
@@ -63,8 +63,8 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
       case 'accurate':
         return {
           icon: Award,
-          title: '¡Estimaciones precisas!',
-          description: 'Tus estimaciones son muy cercanas a la realidad. Esto es una habilidad valiosa.',
+          title: '¡Eres un crack planificando!',
+          description: 'Tus tiempos estimados son muy cercanos a la realidad. ¡Sigue así!',
           bgColor: 'bg-emerald-50',
           borderColor: 'border-emerald-200',
           textColor: 'text-emerald-700',
@@ -73,8 +73,8 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
       case 'underestimates':
         return {
           icon: TrendingDown,
-          title: 'Tiendes a subestimar',
-          description: `En promedio, tardas ${Math.abs(reliability.averageDeviation).toFixed(1)}h más por tarea de lo que estimas.`,
+          title: '¡Sigue ajustando tus tiempos!',
+          description: `Tus tareas suelen requerir un poco más de mimo (~${Math.abs(reliability.averageDeviation).toFixed(1)}h extra por tarea).`,
           bgColor: 'bg-amber-50',
           borderColor: 'border-amber-200',
           textColor: 'text-amber-700',
@@ -83,8 +83,8 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
       case 'overestimates':
         return {
           icon: TrendingUp,
-          title: 'Tiendes a sobreestimar',
-          description: `En promedio, terminas ${Math.abs(reliability.averageDeviation).toFixed(1)}h antes por tarea.`,
+          title: '¡Vas más rápido de lo esperado!',
+          description: `Sueles terminar antes de tiempo (~${Math.abs(reliability.averageDeviation).toFixed(1)}h menos por tarea).`,
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200',
           textColor: 'text-blue-700',
@@ -117,8 +117,8 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center justify-between text-base">
             <div className="flex items-center gap-2">
-              <Target className="h-5 w-5 text-indigo-600" />
-              <span>Índice de fiabilidad</span>
+              <Compass className="h-5 w-5 text-indigo-600" />
+              <span>Precisión de Planificación</span>
             </div>
             <Tooltip>
               <TooltipTrigger>
@@ -129,8 +129,8 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
               </TooltipTrigger>
               <TooltipContent className="max-w-[250px]">
                 <p className="text-xs">
-                  Este índice se calcula con <strong>todo tu histórico</strong> de tareas completadas, 
-                  no solo el mes actual. Cuantas más tareas completes, más preciso será.
+                  Este índice se calcula con <strong>todo tu histórico</strong> de tareas completadas. 
+                  Cuantas más tareas registres, más preciso será tu perfil de planificación.
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -167,9 +167,9 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
           {reliability.tasksAnalyzed >= 5 && (
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>Subestima</span>
-                <span className="font-medium">Preciso</span>
-                <span>Sobreestima</span>
+                <span>Necesita más tiempo</span>
+                <span className="font-medium">Perfecto ✨</span>
+                <span>Sobra tiempo</span>
               </div>
               <div className="relative">
                 <Progress value={getProgressValue()} className={cn("h-2", config.progressColor)} />
@@ -183,61 +183,61 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
             <div className="grid grid-cols-2 gap-3 pt-2 border-t">
               <div className="text-center">
                 <p className="text-lg font-bold text-slate-700">{reliability.totalEstimated}h</p>
-                <p className="text-[10px] text-muted-foreground">Total estimado</p>
+                <p className="text-[10px] text-muted-foreground">Tiempo estimado</p>
               </div>
               <div className="text-center">
                 <p className="text-lg font-bold text-blue-600">{reliability.totalReal}h</p>
-                <p className="text-[10px] text-muted-foreground">Total real</p>
+                <p className="text-[10px] text-muted-foreground">Tiempo dedicado</p>
               </div>
             </div>
           )}
 
-          {/* Sección educativa */}
+          {/* Sección educativa - Más amigable */}
           <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
             <div className="flex items-start gap-2">
               <Lightbulb className="h-4 w-4 text-indigo-600 mt-0.5 shrink-0" />
               <div className="text-xs text-indigo-800">
-                <p className="font-semibold mb-1">¿Por qué importa estimar bien?</p>
+                <p className="font-semibold mb-1">¿Para qué sirve esto?</p>
                 <ul className="space-y-1 text-indigo-700">
                   <li className="flex items-start gap-1">
                     <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" />
-                    <span>Mejor planificación de proyectos para el equipo</span>
+                    <span>Conocerte mejor y planificar con más calma</span>
                   </li>
                   <li className="flex items-start gap-1">
                     <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" />
-                    <span>Presupuestos más precisos para los clientes</span>
+                    <span>Dar fechas más realistas a clientes y equipo</span>
                   </li>
                   <li className="flex items-start gap-1">
                     <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" />
-                    <span>Menos estrés al conocer bien tus tiempos</span>
-                  </li>
-                  <li className="flex items-start gap-1">
-                    <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" />
-                    <span>Crecimiento profesional y autoconocimiento</span>
+                    <span>Menos sorpresas de última hora</span>
                   </li>
                 </ul>
               </div>
             </div>
           </div>
 
-          {/* Consejo contextual */}
+          {/* Consejo contextual - Tono GPS */}
           {reliability.tasksAnalyzed >= 5 && reliability.trend !== 'accurate' && (
             <div className={cn(
               "rounded-lg p-3 border",
               reliability.trend === 'underestimates' ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200"
             )}>
-              <p className={cn(
-                "text-xs font-medium",
-                reliability.trend === 'underestimates' ? "text-amber-800" : "text-blue-800"
-              )}>
-                💡 Consejo:{' '}
-                <span className="font-normal">
+              <div className="flex items-start gap-2">
+                <Sparkles className={cn(
+                  "h-4 w-4 mt-0.5 shrink-0",
+                  reliability.trend === 'underestimates' ? "text-amber-600" : "text-blue-600"
+                )} />
+                <p className={cn(
+                  "text-xs",
+                  reliability.trend === 'underestimates' ? "text-amber-800" : "text-blue-800"
+                )}>
+                  <span className="font-semibold">Tip: </span>
                   {reliability.trend === 'underestimates' 
-                    ? `Prueba a añadir un ${Math.round(100 - reliability.index)}% extra a tus estimaciones iniciales para ser más realista.`
-                    : `Tus estimaciones son conservadoras. Podrías ajustarlas un ${Math.round(reliability.index - 100)}% a la baja.`
+                    ? `Suma un pequeño "colchón" (~${Math.round(100 - reliability.index)}%) a tus tiempos para ir más tranquilo.`
+                    : `¡Genial! Podrías ajustar tus estimaciones un ${Math.round(reliability.index - 100)}% a la baja si quieres ser más preciso.`
                   }
-                </span>
-              </p>
+                </p>
+              </div>
             </div>
           )}
         </CardContent>
