@@ -111,7 +111,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           budgetHours: round2(p.budget_hours),
           minimumHours: round2(p.minimum_hours || 0),
           monthlyFee: p.monthly_fee,
-          healthStatus: p.health_status,
           externalId: p.external_id,
           projectType: p.project_type
         })));
@@ -412,21 +411,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }]); 
   }, []);
 
-  const updateProject = useCallback(async (project: Project) => { 
-    setProjects(prev => prev.map(p => p.id === project.id ? project : p)); 
-    await supabase.from('projects').update({ 
-      client_id: project.clientId, 
-      name: project.name, 
-      status: project.status, 
-      budget_hours: project.budgetHours, 
+  const updateProject = useCallback(async (project: Project) => {
+    setProjects(prev => prev.map(p => p.id === project.id ? project : p));
+    await supabase.from('projects').update({
+      client_id: project.clientId,
+      name: project.name,
+      status: project.status,
+      budget_hours: project.budgetHours,
       minimum_hours: project.minimumHours,
       monthly_fee: project.monthlyFee,
-      health_status: project.healthStatus,
       okrs: project.okrs,
       deliverables_log: project.deliverablesLog,
       external_id: project.externalId,
       project_type: project.projectType
-    }).eq('id', project.id); 
+    }).eq('id', project.id);
   }, []);
 
   const deleteProject = useCallback(async (id: string) => { 

@@ -102,13 +102,20 @@ export default function ClientsPage() {
 
   // Calcular estadísticas para cada cliente
   const clientsWithStats = useMemo(() => {
-    return clients.map(client => {
+    // Primero identificamos proyectos Kit Digital
+    const kitDigitalProjects = projects.filter(p => {
+      const nameLower = p.name.toLowerCase();
+      return p.status === 'active' && (nameLower.includes('kit digital') || nameLower.includes('kitdigital'));
+    });
+    const kitDigitalProjectIds = new Set(kitDigitalProjects.map(p => p.id));
+
+    const regularClients = clients.map(client => {
       const { used, budget, percentage } = getClientTotalHoursForMonth(client.id, currentMonth);
       const prevStats = getClientTotalHoursForMonth(client.id, prevMonth);
-      
-      // Proyectos del cliente
+
+      // Proyectos del cliente (excluyendo Kit Digital)
       const clientProjects = projects
-        .filter(p => p.clientId === client.id && p.status === 'active')
+        .filter(p => p.clientId === client.id && p.status === 'active' && !kitDigitalProjectIds.has(p.id))
         .map(p => {
           const hours = getProjectHoursForMonth(p.id, currentMonth);
           return {
@@ -119,9 +126,9 @@ export default function ClientsPage() {
             percentage: hours.percentage
           };
         });
-      
+
       // Empleados asignados este mes
-      const monthAllocations = allocations.filter(a => 
+      const monthAllocations = allocations.filter(a =>
         isSameMonth(parseISO(a.weekStartDate), currentMonth) &&
         clientProjects.some(p => p.id === a.projectId)
       );
@@ -137,6 +144,42 @@ export default function ClientsPage() {
         employees: assignedEmployees
       };
     });
+
+    // Agregar cliente virtual "Kit Digital" si hay proyectos
+    if (kitDigitalProjects.length > 0) {
+      const kitDigitalProjectsWithStats = kitDigitalProjects.map(p => {
+        const hours = getProjectHoursForMonth(p.id, currentMonth);
+        return {
+          id: p.id,
+          name: p.name,
+          used: hours.used,
+          budget: hours.budget,
+          percentage: hours.percentage
+        };
+      });
+
+      const totalUsed = kitDigitalProjectsWithStats.reduce((sum, p) => sum + p.used, 0);
+      const totalBudget = kitDigitalProjectsWithStats.reduce((sum, p) => sum + p.budget, 0);
+      const percentage = totalBudget > 0 ? (totalUsed / totalBudget) * 100 : 0;
+
+      const monthAllocations = allocations.filter(a =>
+        isSameMonth(parseISO(a.weekStartDate), currentMonth) &&
+        kitDigitalProjectIds.has(a.projectId)
+      );
+      const assignedEmployeeIds = [...new Set(monthAllocations.map(a => a.employeeId))];
+      const assignedEmployees = assignedEmployeeIds
+        .map(id => employees.find(e => e.id === id)?.name || '')
+        .filter(Boolean);
+
+      regularClients.push({
+        client: { id: 'kit-digital', name: 'Kit Digital', color: '#10b981' } as Client,
+        stats: { used: totalUsed, budget: totalBudget, percentage, projects: kitDigitalProjectsWithStats },
+        prevStats: { used: 0, budget: 0 },
+        employees: assignedEmployees
+      });
+    }
+
+    return regularClients;
   }, [clients, projects, allocations, employees, currentMonth, prevMonth, getClientTotalHoursForMonth, getProjectHoursForMonth]);
 
   // Filtrar

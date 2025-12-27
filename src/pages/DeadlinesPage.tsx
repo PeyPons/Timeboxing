@@ -618,18 +618,22 @@ export default function DeadlinesPage() {
     return filtered;
   }, [projects, clients, searchTerm, onlySEO, showHidden, showUnassignedOnly, hiddenProjects, filterByEmployee, deadlines, selectedMonth, sortBy]);
 
-  // Agrupar proyectos por cliente
+  // Agrupar proyectos por cliente (unificando Kit Digital)
   const projectsByClient = useMemo(() => {
     const grouped: Record<string, typeof filteredProjects> = {};
-    
+
     filteredProjects.forEach(project => {
-      const clientId = project.clientId || 'sin-cliente';
+      // Unificar todos los proyectos "Kit Digital" bajo un solo cliente virtual
+      const projectNameLower = project.name.toLowerCase();
+      const isKitDigital = projectNameLower.includes('kit digital') || projectNameLower.includes('kitdigital');
+
+      const clientId = isKitDigital ? 'kit-digital' : (project.clientId || 'sin-cliente');
       if (!grouped[clientId]) {
         grouped[clientId] = [];
       }
       grouped[clientId].push(project);
     });
-    
+
     return grouped;
   }, [filteredProjects]);
 
@@ -1571,9 +1575,12 @@ export default function DeadlinesPage() {
           </div>
         ) : (
           Object.entries(projectsByClient).map(([clientId, clientProjects]) => {
-            const client = clients.find(c => c.id === clientId);
+            const isKitDigitalGroup = clientId === 'kit-digital';
+            const client = isKitDigitalGroup ? null : clients.find(c => c.id === clientId);
+            const clientName = isKitDigitalGroup ? 'Kit Digital' : (client?.name || 'Sin cliente');
+            const clientColor = isKitDigitalGroup ? '#10b981' : (client?.color || '#6b7280');
             const isExpanded = expandedClients.has(clientId);
-            
+
             return (
               <div key={clientId} className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 {/* Cabecera del cliente */}
@@ -1586,11 +1593,11 @@ export default function DeadlinesPage() {
                   ) : (
                     <ChevronRight className="h-4 w-4 text-slate-400" />
                   )}
-                  <div 
-                    className="w-3 h-3 rounded-full flex-shrink-0" 
-                    style={{ backgroundColor: client?.color || '#6b7280' }}
+                  <div
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: clientColor }}
                   />
-                  <span className="font-bold text-slate-800">{client?.name || 'Sin cliente'}</span>
+                  <span className="font-bold text-slate-800">{clientName}</span>
                   <span className="text-sm text-slate-400">({clientProjects.length} proyectos)</span>
                 </button>
                 

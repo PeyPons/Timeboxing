@@ -25,14 +25,13 @@ import {
 } from 'lucide-react';
 import { Project, OKR } from '@/types';
 import { cn, formatProjectName } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-type FilterType = 'all' | 'needs-planning' | 'behind-schedule' | 'over-budget' | 'no-activity' | 'at-risk';
+type FilterType = 'all' | 'needs-planning' | 'behind-schedule' | 'over-budget' | 'no-activity';
 
 export default function ProjectsPage() {
-  const { projects, clients, allocations, employees, deleteProject } = useApp();
+  const { projects, clients, allocations, employees, deleteProject, updateProject, addProject } = useApp();
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,7 +47,6 @@ export default function ProjectsPage() {
   const [formData, setFormData] = useState({
       name: '', clientId: '', budgetHours: '', minimumHours: '', monthlyFee: '',
       status: 'active' as 'active' | 'archived' | 'completed',
-      healthStatus: 'healthy' as 'healthy' | 'needs_attention' | 'at_risk',
       okrs: [] as OKR[]
   });
   const [newOkrTitle, setNewOkrTitle] = useState('');
@@ -99,8 +97,6 @@ export default function ProjectsPage() {
         const behindSchedule = monthProgress > 30 && executionPct < (monthProgress - 20); // 20% por debajo del ritmo
         const overBudget = budget > 0 && totalAssigned > budget;
         const noActivity = budget > 0 && totalAssigned === 0;
-        const isAtRisk = project.healthStatus === 'at_risk';
-        const needsAttention = project.healthStatus === 'needs_attention';
 
         // Empleados involucrados
         const involvedEmployees = [...new Set(monthTasks.map(t => t.employeeId))];
@@ -125,9 +121,7 @@ export default function ProjectsPage() {
           behindSchedule,
           overBudget,
           noActivity,
-          isAtRisk,
-          needsAttention,
-          hasIssue: needsPlanning || behindSchedule || overBudget || noActivity || isAtRisk
+          hasIssue: needsPlanning || behindSchedule || overBudget || noActivity
         };
       });
   }, [projects, clients, allocations, currentMonth, monthProgress]);
@@ -139,7 +133,6 @@ export default function ProjectsPage() {
     'behind-schedule': projectsAnalysis.filter(p => p.behindSchedule).length,
     'over-budget': projectsAnalysis.filter(p => p.overBudget).length,
     'no-activity': projectsAnalysis.filter(p => p.noActivity).length,
-    'at-risk': projectsAnalysis.filter(p => p.isAtRisk || p.needsAttention).length,
   }), [projectsAnalysis]);
 
   // Resumen del mes
@@ -176,8 +169,6 @@ export default function ProjectsPage() {
           return p.overBudget;
         case 'no-activity':
           return p.noActivity;
-        case 'at-risk':
-          return p.isAtRisk || p.needsAttention;
         default:
           return true;
       }
@@ -205,7 +196,7 @@ export default function ProjectsPage() {
   const openNewProject = () => {
       setIsCreating(true);
       setEditingId(null);
-      setFormData({ name: '', clientId: '', budgetHours: '0', minimumHours: '0', monthlyFee: '0', status: 'active', healthStatus: 'healthy', okrs: [] });
+      setFormData({ name: '', clientId: '', budgetHours: '0', minimumHours: '0', monthlyFee: '0', status: 'active', okrs: [] });
       setIsDialogOpen(true);
   };
 
@@ -216,24 +207,43 @@ export default function ProjectsPage() {
           name: project.name, clientId: project.clientId,
           budgetHours: project.budgetHours?.toString() || '0', minimumHours: project.minimumHours?.toString() || '0',
           monthlyFee: project.monthlyFee?.toString() || '0', status: project.status,
-          healthStatus: project.healthStatus || 'healthy', okrs: project.okrs || []
+          okrs: project.okrs || []
       });
       setIsDialogOpen(true);
   };
 
   const handleSave = async () => {
-      const payload = {
-          name: formData.name, client_id: formData.clientId,
-          budget_hours: parseFloat(formData.budgetHours)||0, minimum_hours: parseFloat(formData.minimumHours)||0,
-          monthly_fee: parseFloat(formData.monthlyFee)||0, status: formData.status,
-          health_status: formData.healthStatus, okrs: formData.okrs
-      };
       try {
-          if (isCreating) { await supabase.from('projects').insert([payload]); } 
-          else if (editingId) { await supabase.from('projects').update(payload).eq('id', editingId); }
-          window.location.reload();
-      } catch (error) { console.error(error); alert("Error al guardar."); }
-      setIsDialogOpen(false);
+          if (isCreating) {
+              await addProject({
+                  name: formData.name,
+                  clientId: formData.clientId,
+                  budgetHours: parseFloat(formData.budgetHours) || 0,
+                  minimumHours: parseFloat(formData.minimumHours) || 0,
+                  monthlyFee: parseFloat(formData.monthlyFee) || 0,
+                  status: formData.status,
+                  okrs: formData.okrs
+              });
+          } else if (editingId) {
+              const existingProject = projects.find(p => p.id === editingId);
+              if (existingProject) {
+                  await updateProject({
+                      ...existingProject,
+                      name: formData.name,
+                      clientId: formData.clientId,
+                      budgetHours: parseFloat(formData.budgetHours) || 0,
+                      minimumHours: parseFloat(formData.minimumHours) || 0,
+                      monthlyFee: parseFloat(formData.monthlyFee) || 0,
+                      status: formData.status,
+                      okrs: formData.okrs
+                  });
+              }
+          }
+          setIsDialogOpen(false);
+      } catch (error) {
+          console.error(error);
+          alert("Error al guardar.");
+      }
   };
 
   const handleDelete = async () => {
@@ -534,37 +544,6 @@ export default function ProjectsPage() {
             </Tooltip>
           </TooltipProvider>
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={activeFilter === 'at-risk' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setActiveFilter('at-risk')}
-                  className={cn(
-                    "h-8 text-xs gap-1.5",
-                    activeFilter === 'at-risk' 
-                      ? "bg-rose-600 hover:bg-rose-700" 
-                      : "bg-white border-rose-200 text-rose-700 hover:bg-rose-50"
-                  )}
-                >
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  En riesgo
-                  {filterCounts['at-risk'] > 0 && (
-                    <Badge className={cn(
-                      "ml-1 h-5 px-1.5 text-[10px]",
-                      activeFilter === 'at-risk' ? "bg-rose-700" : "bg-rose-100 text-rose-700"
-                    )}>
-                      {filterCounts['at-risk']}
-                    </Badge>
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[200px] text-center">
-                <p className="text-xs">Proyectos marcados manualmente como "Necesita atención" o "En peligro"</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         </div>
 
         {/* Filtro de empleado */}
@@ -635,10 +614,8 @@ export default function ProjectsPage() {
                 onOpenChange={() => toggleProject(data.project.id)}
               >
                 <Card className={cn(
-                  "overflow-hidden transition-all",
-                  data.isAtRisk && "border-l-4 border-l-red-500",
-                  data.needsAttention && !data.isAtRisk && "border-l-4 border-l-amber-500",
-                  !data.isAtRisk && !data.needsAttention && "border-l-4 border-l-emerald-500"
+                  "overflow-hidden transition-all border-l-4",
+                  data.hasIssue ? "border-l-amber-500" : "border-l-emerald-500"
                 )}>
                   {/* HEADER COLAPSABLE */}
                   <CollapsibleTrigger asChild>
@@ -1045,17 +1022,6 @@ export default function ProjectsPage() {
                     <SelectItem value="active">Activo</SelectItem>
                     <SelectItem value="archived">Archivado</SelectItem>
                     <SelectItem value="completed">Completado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Salud del Proyecto</Label>
-                <Select value={formData.healthStatus} onValueChange={(val: any) => setFormData({...formData, healthStatus: val})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="healthy">🟢 Sano</SelectItem>
-                    <SelectItem value="needs_attention">🟠 Atención</SelectItem>
-                    <SelectItem value="at_risk">🔴 En peligro</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

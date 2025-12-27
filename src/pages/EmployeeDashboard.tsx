@@ -284,32 +284,33 @@ export default function EmployeeDashboard() {
   const handleExportCRM = () => {
     if (!myEmployeeProfile?.crmUserId) { toast.error("Configura tu ID de CRM en el perfil"); return; }
 
-    const monthAllocations = allocations.filter(a => 
-      a.employeeId === myEmployeeProfile.id && 
+    const monthAllocations = allocations.filter(a =>
+      a.employeeId === myEmployeeProfile.id &&
       isSameMonth(parseISO(a.weekStartDate), currentMonth) &&
       a.status !== 'completed'
     );
 
     if (monthAllocations.length === 0) { toast.warning("No hay tareas pendientes para exportar"); return; }
 
-    const csvRows = [['user_id', 'project_id', 'task_name', 'hours', 'date'].join(',')];
+    // Formato: Nombre Tarea | Número de usuario | "project" | Número de proyecto | Tiempo estimado
+    const csvRows: string[] = [];
 
     monthAllocations.forEach(alloc => {
       const project = projects.find(p => p.id === alloc.projectId);
       csvRows.push([
-        myEmployeeProfile.crmUserId,
-        project?.externalId || '',
-        `"${(alloc.taskName || 'Tarea').replace(/"/g, '""')}"`,
-        alloc.hoursAssigned,
-        alloc.weekStartDate
-      ].join(','));
+        (alloc.taskName || 'Tarea').replace(/\t/g, ' '),  // Nombre tarea (sin tabs)
+        myEmployeeProfile.crmUserId,                       // user_id
+        'project',                                         // Literal "project"
+        project?.externalId || '',                         // project_id
+        alloc.hoursAssigned                                // horas con punto decimal
+      ].join('\t'));
     });
 
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/tab-separated-values;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `tareas_crm_${format(currentMonth, 'yyyy-MM')}.csv`;
+    link.download = `tareas_crm_${format(currentMonth, 'yyyy-MM')}.tsv`;
     link.click();
     URL.revokeObjectURL(url);
 
