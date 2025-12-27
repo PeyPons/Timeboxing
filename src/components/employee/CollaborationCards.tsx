@@ -3,7 +3,7 @@ import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { format, isSameMonth, parseISO } from 'date-fns';
+import { isSameMonth, parseISO } from 'date-fns';
 import { Users, HandHelping, Heart, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -27,10 +27,10 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
   const projectGroups = useMemo(() => {
     const groups: Record<string, {
       projectId: string;
-      teammates: { id: string; name: string; avatarUrl?: string; hoursComputed: number }[];
+      teammates: { id: string; name: string; avatarUrl?: string; totalHours: number }[];
     }> = {};
 
-    // Procesar mis allocations
+    // Procesar mis allocations para saber en qué proyectos trabajo
     monthlyAllocations.forEach(alloc => {
       if (!groups[alloc.projectId]) {
         groups[alloc.projectId] = {
@@ -41,12 +41,18 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
     });
 
     // Procesar allocations de otros empleados en los mismos proyectos
+    // Ahora incluimos TODAS las tareas (pending, in-progress, completed) del mes
     allocations.forEach(alloc => {
+      // Solo si es otro empleado y está en un proyecto que yo también tengo
       if (alloc.employeeId !== employeeId && groups[alloc.projectId]) {
-        const existing = groups[alloc.projectId].teammates.find(t => t.id === alloc.employeeId);
-        if (alloc.status === 'completed' && alloc.hoursComputed) {
+        // Verificar que la allocation sea del mes actual
+        if (!isSameMonth(parseISO(alloc.weekStartDate), viewDate)) return;
+        
+        // Incluir cualquier tarea con horas asignadas (ya no solo completed)
+        if (alloc.hoursAssigned > 0) {
+          const existing = groups[alloc.projectId].teammates.find(t => t.id === alloc.employeeId);
           if (existing) {
-            existing.hoursComputed += alloc.hoursComputed;
+            existing.totalHours += alloc.hoursAssigned;
           } else {
             const emp = employees.find(e => e.id === alloc.employeeId);
             if (emp) {
@@ -54,7 +60,7 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
                 id: emp.id,
                 name: emp.name,
                 avatarUrl: emp.avatarUrl,
-                hoursComputed: alloc.hoursComputed
+                totalHours: alloc.hoursAssigned
               });
             }
           }
@@ -63,7 +69,7 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
     });
 
     return Object.values(groups);
-  }, [monthlyAllocations, allocations, employees, employeeId]);
+  }, [monthlyAllocations, allocations, employees, employeeId, viewDate]);
 
   // Colaboradores frecuentes
   const frequentCollaborators = useMemo(() => {
@@ -94,13 +100,13 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
         }
         if (collabMap[teammate.id]) {
           collabMap[teammate.id].sharedProjects++;
-          collabMap[teammate.id].totalHoursTogether += teammate.hoursComputed;
+          collabMap[teammate.id].totalHoursTogether += teammate.totalHours;
         }
       });
     });
 
     return Object.values(collabMap)
-      .sort((a, b) => b.sharedProjects - a.sharedProjects)
+      .sort((a, b) => b.sharedProjects - a.sharedProjects || b.totalHoursTogether - a.totalHoursTogether)
       .slice(0, 5);
   }, [projectGroups, employees, getEmployeeMonthlyLoad, viewDate]);
 
@@ -112,7 +118,7 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
       .slice(0, 3);
   }, [frequentCollaborators]);
 
-  // Balance total del mes
+  // Balance total del mes (solo tareas completadas para el balance real)
   const monthlyStats = useMemo(() => {
     const completed = monthlyAllocations.filter(a => a.status === 'completed');
     const totalReal = completed.reduce((sum, a) => sum + (a.hoursActual || 0), 0);
@@ -208,7 +214,7 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
         </div>
       )}
 
-      {/* Resumen motivacional */}
+      {/* Resumen motivacional - Solo se muestra si hay tareas completadas con horas facturadas */}
       {monthlyStats.totalComputed > 0 && (
         <Card className={cn(
           "border-l-4",
@@ -256,4 +262,3 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
     </div>
   );
 }
-
