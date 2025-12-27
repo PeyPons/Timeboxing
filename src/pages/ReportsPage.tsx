@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
-import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInWeeks, startOfWeek, addWeeks } from 'date-fns';
+import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInWeeks, startOfWeek, addWeeks, getWeek, getDate } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
@@ -296,28 +296,58 @@ export default function ReportsPage() {
   }, [employees, monthAllocations, year, month]);
 
   // Proyectos en riesgo (superando presupuesto o con problemas)
+  // Determinar en qué semana del mes estamos (1-4)
+  const currentWeekOfMonth = Math.ceil(getDate(new Date()) / 7);
+  const isEndOfMonth = currentWeekOfMonth >= 3;
+
   const projectsAtRisk = useMemo(() => {
-    return projectData
-      .filter(p => p.percentage > 80 || (p.hoursReal > p.hoursComputed && p.hoursReal > 5))
-      .map(p => ({
-        ...p,
-        riskLevel: p.percentage > 100 ? 'critical' : p.percentage > 90 ? 'high' : 'medium',
-        riskReason: p.percentage > 100
-          ? `Superó presupuesto (${p.percentage.toFixed(0)}%)`
-          : p.hoursReal > p.hoursComputed
-            ? `Baja rentabilidad (${((p.hoursComputed / p.hoursReal) * 100).toFixed(0)}%)`
-            : `Cerca del límite (${p.percentage.toFixed(0)}%)`
-      }))
-      .sort((a, b) => {
-        const riskOrder = { critical: 0, high: 1, medium: 2 };
-        return (riskOrder[a.riskLevel as keyof typeof riskOrder] || 2) - (riskOrder[b.riskLevel as keyof typeof riskOrder] || 2);
-      });
-  }, [projectData]);
+    const risks: Array<typeof projectData[0] & { riskLevel: string; riskReason: string }> = [];
+
+    projectData.forEach(p => {
+      const hoursOverBudget = p.hoursPlanned - p.budget;
+      const completionRate = p.budget > 0 ? (p.hoursComputed / p.budget) * 100 : 0;
+      const projectNameLower = p.name.toLowerCase();
+      const isOffPageOrLinkbuilding = projectNameLower.includes('off-page') ||
+                                       projectNameLower.includes('offpage') ||
+                                       projectNameLower.includes('linkbuilding') ||
+                                       projectNameLower.includes('link building');
+
+      // Alerta 1: Superó presupuesto por más de 2h (100% es OK)
+      if (hoursOverBudget > 2) {
+        risks.push({
+          ...p,
+          riskLevel: hoursOverBudget > 5 ? 'critical' : 'high',
+          riskReason: `Supera presupuesto en ${hoursOverBudget.toFixed(1)}h (${p.percentage.toFixed(0)}%)`
+        });
+      }
+      // Alerta 2: Final de mes (semana 3-4) y menos del 35% computado
+      else if (isEndOfMonth && completionRate < 35 && p.budget > 0 && !isOffPageOrLinkbuilding) {
+        risks.push({
+          ...p,
+          riskLevel: completionRate < 20 ? 'critical' : 'high',
+          riskReason: `Solo ${completionRate.toFixed(0)}% computado (semana ${currentWeekOfMonth})`
+        });
+      }
+      // Alerta 3: Baja rentabilidad (trabajamos más de lo que computamos)
+      else if (p.hoursReal > p.hoursComputed && p.hoursReal > 5 && (p.hoursReal - p.hoursComputed) > 2) {
+        risks.push({
+          ...p,
+          riskLevel: 'medium',
+          riskReason: `Baja rentabilidad (${((p.hoursComputed / p.hoursReal) * 100).toFixed(0)}%)`
+        });
+      }
+    });
+
+    return risks.sort((a, b) => {
+      const riskOrder: Record<string, number> = { critical: 0, high: 1, medium: 2 };
+      return (riskOrder[a.riskLevel] || 2) - (riskOrder[b.riskLevel] || 2);
+    });
+  }, [projectData, isEndOfMonth, currentWeekOfMonth]);
 
   // Logros y reconocimientos del equipo
   const teamAchievements = useMemo(() => {
     const achievements: Array<{
-      type: 'accuracy' | 'efficiency' | 'completion' | 'improvement';
+      type: 'accuracy' | 'efficiency' | 'completion' | 'improvement' | 'project' | 'team';
       icon: 'trophy' | 'star' | 'award';
       title: string;
       description: string;
@@ -325,7 +355,7 @@ export default function ReportsPage() {
       employeeName?: string;
     }> = [];
 
-    // Empleado más preciso en estimaciones
+    // 1. Empleado más preciso en estimaciones
     const accurateEmployees = employeeData
       .filter(e => e.reliability.tasksAnalyzed >= 5 && e.reliability.index >= 90 && e.reliability.index <= 110);
 
@@ -343,7 +373,7 @@ export default function ReportsPage() {
       });
     }
 
-    // Empleado más eficiente (mejor ratio computado/real)
+    // 2. Empleado más eficiente (mejor ratio computado/real)
     const efficientEmployees = employeeData
       .filter(e => e.realHours >= 10 && e.efficiency > 100);
 
@@ -359,21 +389,63 @@ export default function ReportsPage() {
       });
     }
 
-    // Tareas completadas este mes
-    const completedThisMonth = monthAllocations.filter(a => a.status === 'completed').length;
-    const totalTasks = monthAllocations.length;
-    const completionRate = totalTasks > 0 ? (completedThisMonth / totalTasks) * 100 : 0;
-
-    if (completionRate > 70 && completedThisMonth >= 10) {
+    // 3. Proyectos completados al 100% (entre 98% y 102%)
+    const projectsOnTarget = projectData.filter(p =>
+      p.budget > 0 && p.percentage >= 98 && p.percentage <= 102 && p.hoursComputed >= p.budget * 0.9
+    );
+    if (projectsOnTarget.length > 0) {
       achievements.push({
-        type: 'completion',
-        icon: 'award',
-        title: 'Gran Avance',
-        description: `${completedThisMonth} tareas completadas este mes (${completionRate.toFixed(0)}% del total)`
+        type: 'project',
+        icon: 'trophy',
+        title: `${projectsOnTarget.length} Proyecto${projectsOnTarget.length > 1 ? 's' : ''} al 100%`,
+        description: projectsOnTarget.length <= 2
+          ? projectsOnTarget.map(p => p.name).join(', ')
+          : `${projectsOnTarget[0].name} y ${projectsOnTarget.length - 1} más`
       });
     }
 
-    // Equipo bien balanceado (nadie >110% ni <50%)
+    // 4. Empleado con más tareas completadas
+    const employeeCompletions = employeeData.map(e => ({
+      ...e,
+      completedTasks: monthAllocations.filter(a => a.employeeId === e.id && a.status === 'completed').length
+    })).filter(e => e.completedTasks >= 5);
+
+    if (employeeCompletions.length > 0) {
+      const topCompleter = employeeCompletions.sort((a, b) => b.completedTasks - a.completedTasks)[0];
+      achievements.push({
+        type: 'completion',
+        icon: 'star',
+        title: 'Máquina de Entregas',
+        description: `${topCompleter.name} completó ${topCompleter.completedTasks} tareas este mes`,
+        employeeId: topCompleter.id,
+        employeeName: topCompleter.name
+      });
+    }
+
+    // 5. Rentabilidad del equipo (si promedio > 95%)
+    const teamAvgEfficiency = employeeData.length > 0
+      ? employeeData.reduce((sum, e) => sum + e.efficiency, 0) / employeeData.length
+      : 0;
+    if (teamAvgEfficiency >= 95 && employeeData.some(e => e.realHours >= 5)) {
+      achievements.push({
+        type: 'team',
+        icon: 'award',
+        title: 'Equipo Rentable',
+        description: `Rentabilidad promedio del equipo: ${teamAvgEfficiency.toFixed(0)}%`
+      });
+    }
+
+    // 6. Sin proyectos en riesgo
+    if (projectsAtRisk.length === 0 && projectData.length >= 3) {
+      achievements.push({
+        type: 'team',
+        icon: 'award',
+        title: 'Todo Bajo Control',
+        description: 'Ningún proyecto con alertas de riesgo este mes'
+      });
+    }
+
+    // 7. Equipo bien balanceado (nadie >110% ni <50%)
     const allBalanced = employeeData.every(e => e.percentage <= 110 && e.percentage >= 50);
     if (allBalanced && employeeData.length >= 3) {
       achievements.push({
@@ -434,24 +506,28 @@ export default function ReportsPage() {
 
   // Mapa de calor: carga semanal por empleado
   const heatmapData = useMemo(() => {
-    // Obtener las semanas del mes actual
-    const weeksInMonth: Date[] = [];
-    let weekStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-    while (weekStart <= monthEnd) {
-      if (weekStart >= subMonths(monthStart, 1)) {
-        weeksInMonth.push(weekStart);
-      }
-      weekStart = addWeeks(weekStart, 1);
-    }
+    // Obtener las semanas del mes actual basándonos en las allocations existentes
+    const weekDatesInMonth = new Set<string>();
+    (allocations || []).forEach(a => {
+      try {
+        const weekDate = parseISO(a.weekStartDate);
+        if (isSameMonth(weekDate, currentMonth) ||
+            (weekDate >= monthStart && weekDate <= monthEnd)) {
+          weekDatesInMonth.add(a.weekStartDate);
+        }
+      } catch { /* ignorar fechas inválidas */ }
+    });
+
+    // Ordenar las semanas cronológicamente
+    const sortedWeeks = Array.from(weekDatesInMonth).sort();
 
     return employees.filter(e => e.isActive).map(emp => {
-      const weeklyLoad = weeksInMonth.map(week => {
-        const weekStr = format(week, 'yyyy-MM-dd');
+      const weeklyLoad = sortedWeeks.map((weekStr, index) => {
         const weekAllocations = (allocations || []).filter(a =>
           a.employeeId === emp.id && a.weekStartDate === weekStr
         );
-        const hoursPlanned = weekAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-        // Capacidad semanal aproximada (asumiendo jornada estándar)
+        const hoursPlanned = round2(weekAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0));
+        // Capacidad semanal aproximada (asumiendo jornada estándar de 5 días)
         const weeklyCapacity = emp.workSchedule?.defaultHoursPerDay
           ? emp.workSchedule.defaultHoursPerDay * 5
           : 40;
@@ -459,7 +535,7 @@ export default function ReportsPage() {
 
         return {
           week: weekStr,
-          weekLabel: format(week, 'dd MMM', { locale: es }),
+          weekLabel: `Sem ${index + 1}`,
           hours: hoursPlanned,
           capacity: weeklyCapacity,
           percentage
@@ -472,47 +548,85 @@ export default function ReportsPage() {
         weeklyLoad
       };
     });
-  }, [employees, allocations, monthStart, monthEnd]);
+  }, [employees, allocations, currentMonth, monthStart, monthEnd]);
 
-  // Predicción de disponibilidad futura (próximas 8 semanas)
+  // Predicción de disponibilidad futura con estimaciones históricas
   const futureAvailability = useMemo(() => {
-    const weeks: Date[] = [];
-    let weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-    for (let i = 0; i < 8; i++) {
-      weeks.push(weekStart);
-      weekStart = addWeeks(weekStart, 1);
-    }
+    const thisMonth = startOfMonth(new Date());
+    const nextMonth = addMonths(thisMonth, 1);
 
     return employees.filter(e => e.isActive).map(emp => {
-      const weeklyCapacity = emp.workSchedule?.defaultHoursPerDay
-        ? emp.workSchedule.defaultHoursPerDay * 5
-        : 40;
+      // Calcular capacidad mensual del empleado
+      const monthlyCapacity = getMonthlyCapacity(
+        nextMonth.getFullYear(),
+        nextMonth.getMonth(),
+        emp.workSchedule
+      );
+      const currentMonthCapacity = getMonthlyCapacity(year, month, emp.workSchedule);
 
-      const weeklyAvailability = weeks.map(week => {
-        const weekStr = format(week, 'yyyy-MM-dd');
-        const weekAllocations = (allocations || []).filter(a =>
-          a.employeeId === emp.id && a.weekStartDate === weekStr
-        );
-        const hoursPlanned = weekAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-        const hoursAvailable = Math.max(0, weeklyCapacity - hoursPlanned);
-        const percentage = weeklyCapacity > 0 ? (hoursPlanned / weeklyCapacity) * 100 : 0;
+      // Horas asignadas este mes
+      const hoursThisMonth = monthAllocations
+        .filter(a => a.employeeId === emp.id)
+        .reduce((sum, a) => sum + a.hoursAssigned, 0);
 
-        return {
-          week: weekStr,
-          weekLabel: format(week, 'dd MMM', { locale: es }),
-          hoursPlanned,
-          hoursAvailable,
-          capacity: weeklyCapacity,
-          percentage,
-          isAvailable: hoursAvailable >= 8 // Al menos 8h disponibles
-        };
+      // Horas asignadas mes siguiente (si hay deadlines)
+      const nextMonthAllocations = (allocations || []).filter(a => {
+        try {
+          const weekDate = parseISO(a.weekStartDate);
+          return a.employeeId === emp.id && isSameMonth(weekDate, nextMonth);
+        } catch { return false; }
       });
+      const hoursNextMonth = nextMonthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
 
-      // Encontrar la próxima semana con disponibilidad significativa
-      const nextAvailableWeek = weeklyAvailability.find(w => w.isAvailable);
-      const totalAvailableHours = weeklyAvailability.reduce((sum, w) => sum + w.hoursAvailable, 0);
+      // Calcular histórico (últimos 6 meses)
+      const historicalMonths: Array<{ month: Date; hours: number; capacity: number }> = [];
+      for (let i = 1; i <= 6; i++) {
+        const pastMonth = subMonths(thisMonth, i);
+        const pastMonthStart = startOfMonth(pastMonth);
+        const pastMonthEnd = endOfMonth(pastMonth);
 
-      // Calcular factor de ajuste basado en fiabilidad histórica
+        const hoursInMonth = (allocations || [])
+          .filter(a => {
+            try {
+              const weekDate = parseISO(a.weekStartDate);
+              return a.employeeId === emp.id &&
+                     weekDate >= pastMonthStart &&
+                     weekDate <= pastMonthEnd;
+            } catch { return false; }
+          })
+          .reduce((sum, a) => sum + a.hoursAssigned, 0);
+
+        if (hoursInMonth > 0) {
+          historicalMonths.push({
+            month: pastMonth,
+            hours: hoursInMonth,
+            capacity: getMonthlyCapacity(pastMonth.getFullYear(), pastMonth.getMonth(), emp.workSchedule)
+          });
+        }
+      }
+
+      // Calcular promedio histórico de carga (porcentaje de capacidad usado)
+      const avgLoadPercentage = historicalMonths.length > 0
+        ? historicalMonths.reduce((sum, m) => sum + (m.hours / m.capacity * 100), 0) / historicalMonths.length
+        : 0;
+
+      // Estimar horas para el próximo mes basado en histórico
+      const estimatedHoursNextMonth = hoursNextMonth > 0
+        ? hoursNextMonth // Si ya hay deadlines, usar esos datos
+        : round2((avgLoadPercentage / 100) * monthlyCapacity); // Si no, estimar con histórico
+
+      // Calcular disponibilidad estimada
+      const estimatedAvailable = round2(Math.max(0, monthlyCapacity - estimatedHoursNextMonth));
+      const hasDeadlinesNextMonth = hoursNextMonth > 0;
+
+      // Nivel de confianza en la estimación
+      const confidenceLevel = historicalMonths.length >= 4
+        ? 'high'
+        : historicalMonths.length >= 2
+          ? 'medium'
+          : 'low';
+
+      // Factor de ajuste basado en fiabilidad histórica
       const reliability = reliabilityByEmployee[emp.id];
       const adjustmentFactor = reliability && reliability.tasksAnalyzed >= 5
         ? reliability.index / 100
@@ -522,15 +636,33 @@ export default function ReportsPage() {
         employeeId: emp.id,
         employeeName: emp.name,
         employeeRole: emp.role,
-        weeklyAvailability,
-        nextAvailableWeek,
-        totalAvailableHours,
+        // Mes actual
+        currentMonth: {
+          capacity: currentMonthCapacity,
+          assigned: round2(hoursThisMonth),
+          available: round2(Math.max(0, currentMonthCapacity - hoursThisMonth)),
+          percentage: currentMonthCapacity > 0 ? round2((hoursThisMonth / currentMonthCapacity) * 100) : 0
+        },
+        // Mes siguiente
+        nextMonth: {
+          capacity: monthlyCapacity,
+          assigned: round2(hoursNextMonth),
+          estimated: round2(estimatedHoursNextMonth),
+          estimatedAvailable,
+          hasDeadlines: hasDeadlinesNextMonth,
+          percentage: monthlyCapacity > 0 ? round2((estimatedHoursNextMonth / monthlyCapacity) * 100) : 0
+        },
+        // Histórico
+        historical: {
+          monthsAnalyzed: historicalMonths.length,
+          avgLoadPercentage: round2(avgLoadPercentage),
+          confidenceLevel
+        },
         adjustmentFactor,
-        reliabilityIndex: reliability?.index || 0,
-        reliabilityTrend: reliability?.trend || 'insufficient'
+        reliabilityIndex: reliability?.index || 0
       };
-    }).sort((a, b) => b.totalAvailableHours - a.totalAvailableHours);
-  }, [employees, allocations, reliabilityByEmployee]);
+    }).sort((a, b) => b.nextMonth.estimatedAvailable - a.nextMonth.estimatedAvailable);
+  }, [employees, allocations, monthAllocations, reliabilityByEmployee, year, month]);
 
   const stats = [
     {
@@ -937,98 +1069,131 @@ export default function ReportsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CalendarDays className="h-5 w-5" />
-                Disponibilidad Futura
+                Predicción de Carga - Mes Siguiente
               </CardTitle>
               <CardDescription>
-                Capacidad disponible en las próximas 8 semanas. Útil para planificar nuevos proyectos.
-                {futureAvailability.some(e => e.reliabilityTrend !== 'insufficient') && (
-                  <span className="ml-2 text-amber-600">
-                    * Ajustado según índice de fiabilidad histórico
-                  </span>
-                )}
+                Estimación de disponibilidad basada en histórico de deadlines anteriores.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {futureAvailability.map(emp => (
                   <div key={emp.employeeId} className="border rounded-lg p-4 hover:bg-slate-50 transition-colors">
-                    <div className="flex justify-between items-start mb-3">
+                    <div className="flex justify-between items-start mb-4">
                       <div>
                         <h4 className="font-medium flex items-center gap-2">
                           {emp.employeeName}
-                          {emp.reliabilityTrend === 'underestimates' && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-                                    <TrendingDown className="h-3 w-3 mr-1" />
-                                    x{emp.adjustmentFactor.toFixed(2)}
-                                  </Badge>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Este empleado suele tardar más de lo estimado.</p>
-                                  <p className="text-xs">Considera añadir {((1/emp.adjustmentFactor - 1) * 100).toFixed(0)}% extra al estimar.</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
+                          {/* Badge de confianza */}
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[10px] px-1.5",
+                                    emp.historical.confidenceLevel === 'high' && "bg-emerald-50 text-emerald-700 border-emerald-200",
+                                    emp.historical.confidenceLevel === 'medium' && "bg-amber-50 text-amber-700 border-amber-200",
+                                    emp.historical.confidenceLevel === 'low' && "bg-slate-50 text-slate-500 border-slate-200"
+                                  )}
+                                >
+                                  {emp.historical.confidenceLevel === 'high' ? 'Fiable' :
+                                   emp.historical.confidenceLevel === 'medium' ? 'Moderada' : 'Poca data'}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="font-medium">Confianza de la estimación</p>
+                                <p className="text-xs">{emp.historical.monthsAnalyzed} meses de histórico analizados</p>
+                                {emp.historical.monthsAnalyzed < 4 && (
+                                  <p className="text-xs text-amber-600 mt-1">
+                                    Se necesitan más meses para mayor precisión
+                                  </p>
+                                )}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </h4>
                         <p className="text-xs text-muted-foreground">{emp.employeeRole}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-bold text-emerald-600">{emp.totalAvailableHours}h</p>
-                        <p className="text-xs text-muted-foreground">disponibles en 8 semanas</p>
+                        <p className={cn(
+                          "text-lg font-bold",
+                          emp.nextMonth.estimatedAvailable >= 20 ? "text-emerald-600" :
+                          emp.nextMonth.estimatedAvailable >= 8 ? "text-amber-600" : "text-red-600"
+                        )}>
+                          {emp.nextMonth.estimatedAvailable}h
+                        </p>
+                        <p className="text-xs text-muted-foreground">disponibles (estimado)</p>
                       </div>
                     </div>
 
-                    {/* Timeline de disponibilidad */}
-                    <div className="flex gap-1">
-                      {emp.weeklyAvailability.map(week => (
-                        <TooltipProvider key={week.week}>
-                          <Tooltip>
-                            <TooltipTrigger className="flex-1">
-                              <div className="text-center">
-                                <div
-                                  className={cn(
-                                    "h-6 rounded text-xs flex items-center justify-center font-medium",
-                                    week.hoursAvailable >= 20 && "bg-emerald-500 text-white",
-                                    week.hoursAvailable >= 8 && week.hoursAvailable < 20 && "bg-emerald-200 text-emerald-800",
-                                    week.hoursAvailable > 0 && week.hoursAvailable < 8 && "bg-amber-100 text-amber-800",
-                                    week.hoursAvailable === 0 && "bg-red-100 text-red-600"
-                                  )}
-                                >
-                                  {week.hoursAvailable > 0 ? `${week.hoursAvailable}h` : 'Full'}
-                                </div>
-                                <span className="text-[10px] text-muted-foreground">{week.weekLabel}</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="font-medium">Semana del {week.weekLabel}</p>
-                              <p className="text-xs">Planificado: {week.hoursPlanned}h de {week.capacity}h</p>
-                              <p className="text-xs text-emerald-600">Disponible: {week.hoursAvailable}h</p>
-                              {week.isAvailable && (
-                                <p className="text-xs text-emerald-700 font-medium mt-1">
-                                  ✓ Puede asumir nuevas tareas
-                                </p>
-                              )}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ))}
+                    {/* Comparativa mes actual vs siguiente */}
+                    <div className="grid grid-cols-2 gap-4 mb-3">
+                      {/* Mes actual */}
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-xs text-muted-foreground mb-1">Mes actual</p>
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-sm font-medium">{emp.currentMonth.assigned}h</span>
+                          <span className="text-xs text-muted-foreground">de {emp.currentMonth.capacity}h</span>
+                        </div>
+                        <Progress
+                          value={Math.min(emp.currentMonth.percentage, 100)}
+                          className={cn("h-1.5 mt-1",
+                            emp.currentMonth.percentage > 100 ? "[&>div]:bg-red-500" :
+                            emp.currentMonth.percentage > 85 ? "[&>div]:bg-amber-500" : ""
+                          )}
+                        />
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {emp.currentMonth.available}h libres ({(100 - emp.currentMonth.percentage).toFixed(0)}%)
+                        </p>
+                      </div>
+
+                      {/* Mes siguiente */}
+                      <div className={cn(
+                        "rounded-lg p-3",
+                        emp.nextMonth.hasDeadlines ? "bg-indigo-50" : "bg-amber-50 border border-dashed border-amber-200"
+                      )}>
+                        <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                          Mes siguiente
+                          {!emp.nextMonth.hasDeadlines && (
+                            <span className="text-amber-600">(estimado)</span>
+                          )}
+                        </p>
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-sm font-medium">
+                            {emp.nextMonth.hasDeadlines ? emp.nextMonth.assigned : `~${emp.nextMonth.estimated}`}h
+                          </span>
+                          <span className="text-xs text-muted-foreground">de {emp.nextMonth.capacity}h</span>
+                        </div>
+                        <Progress
+                          value={Math.min(emp.nextMonth.percentage, 100)}
+                          className={cn("h-1.5 mt-1",
+                            emp.nextMonth.percentage > 100 ? "[&>div]:bg-red-500" :
+                            emp.nextMonth.percentage > 85 ? "[&>div]:bg-amber-500" :
+                            !emp.nextMonth.hasDeadlines ? "[&>div]:bg-amber-400" : ""
+                          )}
+                        />
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          ~{emp.nextMonth.estimatedAvailable}h libres ({(100 - emp.nextMonth.percentage).toFixed(0)}%)
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Sugerencia de disponibilidad */}
-                    {emp.nextAvailableWeek ? (
-                      <p className="text-xs text-emerald-700 mt-2 flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Próxima disponibilidad: semana del {emp.nextAvailableWeek.weekLabel} ({emp.nextAvailableWeek.hoursAvailable}h libres)
-                      </p>
-                    ) : (
-                      <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3" />
-                        Sin disponibilidad significativa en las próximas 8 semanas
-                      </p>
-                    )}
+                    {/* Info adicional */}
+                    <div className="text-xs text-muted-foreground border-t pt-2 flex justify-between">
+                      <span>
+                        Promedio histórico: {emp.historical.avgLoadPercentage.toFixed(0)}% de ocupación
+                      </span>
+                      {!emp.nextMonth.hasDeadlines && emp.historical.monthsAnalyzed > 0 && (
+                        <span className="text-amber-600">
+                          Sin deadline aún - estimación basada en {emp.historical.monthsAnalyzed} meses
+                        </span>
+                      )}
+                      {emp.nextMonth.hasDeadlines && (
+                        <span className="text-emerald-600">
+                          Deadline ya asignado
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

@@ -28,7 +28,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { ChevronLeft, ChevronRight, CalendarDays, TrendingUp, Calendar, Clock, Plus, X, Check, ListPlus, AlertTriangle, CheckCircle2, HelpCircle, RotateCcw, FileDown } from 'lucide-react';
-import { startOfMonth, endOfMonth, max, min, format, startOfWeek, isSameMonth, parseISO } from 'date-fns';
+import { startOfMonth, endOfMonth, max, min, format, startOfWeek, isSameMonth, parseISO, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Employee } from '@/types';
 import { toast } from 'sonner';
@@ -505,7 +505,7 @@ export default function EmployeeDashboard() {
               {weeks.map((week, index) => (
                 <div key={week.weekStart.toISOString()} className="text-center px-1 py-2 border-r flex flex-col justify-center">
                   <span className="text-xs font-bold uppercase text-slate-500">S{index + 1}</span>
-                  <span className="text-[10px] text-slate-400 font-medium">{format(max([week.weekStart, monthStart]), 'd', { locale: es })}-{format(min([week.weekEnd, monthEnd]), 'd MMM', { locale: es })}</span>
+                  <span className="text-[10px] text-slate-400 font-medium">{format(max([week.weekStart, monthStart]), 'd', { locale: es })}-{format(min([addDays(week.weekStart, 4), monthEnd]), 'd MMM', { locale: es })}</span>
                 </div>
               ))}
               <div className="px-2 py-3 font-bold text-xs text-center flex items-center justify-center">TOTAL MES</div>
