@@ -961,16 +961,39 @@ export default function DeadlinesPage() {
   // Liberar TODOS los locks de este usuario (para limpieza)
   const releaseAllMyLocks = async () => {
     if (!currentUser) return;
-    
+
     try {
+      // Primero obtener los IDs de proyectos que tenemos bloqueados
+      const { data: myLocks } = await supabase
+        .from('project_editing_locks')
+        .select('project_id')
+        .eq('employee_id', currentUser.id)
+        .eq('month', selectedMonth);
+
+      // Eliminar de la BD
       const { error } = await supabase
         .from('project_editing_locks')
         .delete()
         .eq('employee_id', currentUser.id)
         .eq('month', selectedMonth);
-      
+
       if (error) {
         console.error('Error liberando todos los locks:', error);
+      }
+
+      // IMPORTANTE: Actualizar estado local inmediatamente
+      // Esto asegura que otros usuarios vean el cambio sin esperar Realtime
+      if (myLocks && myLocks.length > 0) {
+        setEditingLocks(prev => {
+          const newLocks = { ...prev };
+          myLocks.forEach(lock => {
+            // Solo eliminar si el lock es nuestro
+            if (newLocks[lock.project_id]?.employeeId === currentUser.id) {
+              delete newLocks[lock.project_id];
+            }
+          });
+          return newLocks;
+        });
       }
     } catch (error) {
       console.error('Error liberando todos los locks:', error);
