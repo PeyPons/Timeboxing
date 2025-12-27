@@ -496,19 +496,17 @@ export default function EmployeeDashboard() {
         </div>
       </Card>
 
-      {/* 3.5. TARJETAS DE COLABORACIÓN Y MOTIVACIÓN */}
+      {/* 4. COLABORADORES Y AYUDA */}
       <CollaborationCards employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
 
-      {/* 4. ALERTAS (izq) + DEPENDENCIAS (der) - Misma altura */}
+      {/* 5. ALERTAS (izq) + DEPENDENCIAS (der) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Columna izquierda: Alertas urgentes (bloqueos) */}
         <div data-tour="priority-widget" className="flex">
           <div className="w-full">
             <PriorityInsights employeeId={myEmployeeProfile.id} />
           </div>
         </div>
         
-        {/* Columna derecha: Dependencias */}
         <div data-tour="dependencies-widget" className="flex">
           <div className="w-full">
             <ProjectTeamPulse employeeId={myEmployeeProfile.id} />
@@ -516,12 +514,12 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      {/* 5. ÍNDICE DE FIABILIDAD - Ancho completo */}
+      {/* 6. ÍNDICE DE FIABILIDAD (Estimaciones) */}
       <div data-tour="reliability-index">
         <ReliabilityIndexCard employeeId={myEmployeeProfile.id} />
       </div>
 
-      {/* 6. PROYECTOS DEL MES - Con colaboradores y ayuda integrados */}
+      {/* 7. PROYECTOS DEL MES */}
       <div data-tour="projects-summary">
         <MyWeekView employeeId={myEmployeeProfile.id} viewDate={currentMonth} />
       </div>
