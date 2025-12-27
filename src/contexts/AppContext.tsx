@@ -63,8 +63,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [professionalGoals, setProfessionalGoals] = useState<ProfessionalGoal[]>([]);
 
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
+  const fetchData = useCallback(async (skipLoading = false) => {
+    if (!skipLoading) {
+      setIsLoading(true);
+    }
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
 
@@ -164,7 +166,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Error cargando datos:", error);
     } finally {
-      setIsLoading(false);
+      if (!skipLoading) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -177,11 +181,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       
       if (event === 'SIGNED_OUT') {
         setCurrentUser(undefined);
-      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        // Refrescar datos cuando el usuario hace login o se actualiza
-        console.log('[AppContext] Refrescando datos después de', event);
-        await fetchData();
+        setIsLoading(false);
+      } else if (event === 'SIGNED_IN') {
+        // Solo refrescar cuando el usuario hace login explícitamente
+        // skipLoading=true para no poner isLoading en true y evitar redirecciones
+        console.log('[AppContext] Usuario hizo login, refrescando datos...');
+        await fetchData(true);
       }
+      // No refrescar en TOKEN_REFRESHED ni USER_UPDATED para evitar refrescos innecesarios
+      // que causan redirecciones
     });
     
     return () => subscription.unsubscribe();
