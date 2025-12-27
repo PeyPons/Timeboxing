@@ -152,6 +152,10 @@ export function DeadlinesTour({ onComplete, forceShow = false }: DeadlinesTourPr
     }
 
     if (forceShow) {
+      // ✅ Borrar localStorage y resetear estados cuando se fuerza a mostrar
+      localStorage.removeItem('timeboxing_deadlines_tour_completed');
+      setHasBeenCompleted(false);
+      lastCheckedUserIdRef.current = null;
       setIsVisible(true);
       setCurrentStep(0);
       return;
@@ -605,6 +609,9 @@ export function useDeadlinesTour() {
   const endTour = () => setShowTour(false);
   
   const resetTour = async () => {
+    // ✅ SIEMPRE borrar localStorage primero (inmediato)
+    localStorage.removeItem('timeboxing_deadlines_tour_completed');
+    
     if (currentUser) {
       try {
         const updatedEmployee = {
@@ -615,9 +622,10 @@ export function useDeadlinesTour() {
         setShowTour(true);
       } catch (error) {
         console.error('Error reseteando tour:', error);
+        // Aún así mostrar el tour aunque falle la BD
+        setShowTour(true);
       }
     } else {
-      localStorage.removeItem('timeboxing_deadlines_tour_completed');
       setShowTour(true);
     }
   };
