@@ -15,7 +15,7 @@ import {
   FolderOpen, Clock, CalendarDays, Building2, ArrowUpRight, ArrowDownRight,
   Minus, Eye, X, ChevronDown
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, isKitDigitalProject } from '@/lib/utils';
 import { toast } from 'sonner';
 import { format, subMonths, addMonths, isSameMonth, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -102,11 +102,11 @@ export default function ClientsPage() {
 
   // Calcular estadísticas para cada cliente
   const clientsWithStats = useMemo(() => {
-    // Primero identificamos proyectos Kit Digital
-    const kitDigitalProjects = projects.filter(p => {
-      const nameLower = p.name.toLowerCase();
-      return p.status === 'active' && (nameLower.includes('kit digital') || nameLower.includes('kitdigital'));
-    });
+    // Primero identificamos proyectos Kit Digital usando la función helper
+    // Detecta todas las variantes: (KD), KD , KD:, kit digital, etc.
+    const kitDigitalProjects = projects.filter(p => 
+      p.status === 'active' && isKitDigitalProject(p.name)
+    );
     const kitDigitalProjectIds = new Set(kitDigitalProjects.map(p => p.id));
 
     const regularClients = clients.map(client => {

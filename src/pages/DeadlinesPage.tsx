@@ -21,7 +21,7 @@ import { DeadlinesTour, useDeadlinesTour } from '@/components/deadlines/Deadline
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { Deadline, GlobalAssignment } from '@/types';
-import { cn } from '@/lib/utils';
+import { cn, isKitDigitalProject } from '@/lib/utils';
 import { format, addMonths, subMonths, getDaysInMonth, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
@@ -627,8 +627,8 @@ export default function DeadlinesPage() {
 
     filteredProjects.forEach(project => {
       // Unificar todos los proyectos "Kit Digital" bajo un solo cliente virtual
-      const projectNameLower = project.name.toLowerCase();
-      const isKitDigital = projectNameLower.includes('kit digital') || projectNameLower.includes('kitdigital');
+      // Usa la función helper que detecta todas las variantes: (KD), KD , KD:, kit digital, etc.
+      const isKitDigital = isKitDigitalProject(project.name);
 
       const clientId = isKitDigital ? 'kit-digital' : (project.clientId || 'sin-cliente');
       if (!grouped[clientId]) {
