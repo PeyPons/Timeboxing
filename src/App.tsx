@@ -22,8 +22,7 @@ const DashboardAI = lazy(() => import("./pages/DashboardAI"));
 const ClientReportsPage = lazy(() => import("@/pages/ClientReportsPage"));
 const Index = lazy(() => import("./pages/Index"));
 const TeamPage = lazy(() => import("./pages/TeamPage"));
-const ClientsPage = lazy(() => import("./pages/ClientsPage"));
-const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
+const ClientsAndProjectsPage = lazy(() => import("./pages/ClientsAndProjectsPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const MetaAdsPage = lazy(() => import("./pages/MetaAdsPage"));
@@ -64,8 +63,8 @@ const App = () => (
                     <Route path="/planner" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/planner"><Index /></PermissionProtectedRoute></Suspense>} />
                     <Route path="/deadlines" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/deadlines"><DeadlinesPage /></PermissionProtectedRoute></Suspense>} />
                     <Route path="/team" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/team"><TeamPage /></PermissionProtectedRoute></Suspense>} />
-                    <Route path="/clients" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/clients"><ClientsPage /></PermissionProtectedRoute></Suspense>} />
-                    <Route path="/projects" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/projects"><ProjectsPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/clients" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/clients"><ClientsAndProjectsPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/projects" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/projects"><ClientsAndProjectsPage /></PermissionProtectedRoute></Suspense>} />
                     <Route path="/reports" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/reports"><ReportsPage /></PermissionProtectedRoute></Suspense>} />
                     <Route path="/informes-clientes" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/informes-clientes"><ClientReportsPage /></PermissionProtectedRoute></Suspense>} />
                     <Route path="/settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
