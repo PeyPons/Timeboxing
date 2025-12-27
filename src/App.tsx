@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,21 +14,30 @@ import Login from "./pages/Login";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { PermissionProtectedRoute } from "./components/auth/PermissionProtectedRoute";
 
-// Páginas (Mantenemos tus imports originales y añadimos el Dashboard nuevo)
-import DashboardAI from "./pages/DashboardAI";
-import ClientReportsPage from '@/pages/ClientReportsPage';
-import Index from "./pages/Index";
-import TeamPage from "./pages/TeamPage";
-import ClientsPage from "./pages/ClientsPage";
-import EmployeeDashboard from "./pages/EmployeeDashboard"; // <--- Importante
-import ProjectsPage from "./pages/ProjectsPage";
-import ReportsPage from "./pages/ReportsPage";
-import SettingsPage from "./pages/SettingsPage";
-import MetaAdsPage from './pages/MetaAdsPage';
-import AdsPage from '@/pages/AdsPage';
-import AdsReportGenerator from './pages/AdsReportGenerator';
-import DeadlinesPage from './pages/DeadlinesPage';
-import NotFound from "./pages/NotFound";
+// Página principal (carga inmediata para mejor UX)
+import EmployeeDashboard from "./pages/EmployeeDashboard";
+
+// Páginas con lazy loading (carga diferida para mejor rendimiento)
+const DashboardAI = lazy(() => import("./pages/DashboardAI"));
+const ClientReportsPage = lazy(() => import("@/pages/ClientReportsPage"));
+const Index = lazy(() => import("./pages/Index"));
+const TeamPage = lazy(() => import("./pages/TeamPage"));
+const ClientsPage = lazy(() => import("./pages/ClientsPage"));
+const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const MetaAdsPage = lazy(() => import("./pages/MetaAdsPage"));
+const AdsPage = lazy(() => import("@/pages/AdsPage"));
+const AdsReportGenerator = lazy(() => import("./pages/AdsReportGenerator"));
+const DeadlinesPage = lazy(() => import("./pages/DeadlinesPage"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+// Loading fallback para páginas lazy
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-50">
+    <div className="h-8 w-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+  </div>
+);
 
 const queryClient = new QueryClient();
 
@@ -49,25 +59,25 @@ const App = () => (
                   <Route element={<AppLayout />}>
                     {/* Dashboard Personal como página de inicio - Siempre accesible */}
                     <Route path="/" element={<EmployeeDashboard />} />
-                    
-                    {/* Resto de rutas protegidas por permisos */}
-                    <Route path="/planner" element={<PermissionProtectedRoute requiredPermission="/planner"><Index /></PermissionProtectedRoute>} />
-                    <Route path="/deadlines" element={<PermissionProtectedRoute requiredPermission="/deadlines"><DeadlinesPage /></PermissionProtectedRoute>} />
-                    <Route path="/team" element={<PermissionProtectedRoute requiredPermission="/team"><TeamPage /></PermissionProtectedRoute>} />
-                    <Route path="/clients" element={<PermissionProtectedRoute requiredPermission="/clients"><ClientsPage /></PermissionProtectedRoute>} />
-                    <Route path="/projects" element={<PermissionProtectedRoute requiredPermission="/projects"><ProjectsPage /></PermissionProtectedRoute>} />
-                    <Route path="/reports" element={<PermissionProtectedRoute requiredPermission="/reports"><ReportsPage /></PermissionProtectedRoute>} />
-                    <Route path="/informes-clientes" element={<PermissionProtectedRoute requiredPermission="/informes-clientes"><ClientReportsPage /></PermissionProtectedRoute>} />
-                    <Route path="/settings" element={<SettingsPage />} />
-                    <Route path="/ads" element={<PermissionProtectedRoute requiredPermission="/ads"><AdsPage /></PermissionProtectedRoute>} />
-                    <Route path="/meta-ads" element={<PermissionProtectedRoute requiredPermission="/meta-ads"><MetaAdsPage /></PermissionProtectedRoute>} />
-                    <Route path="/ads-reports" element={<PermissionProtectedRoute requiredPermission="/ads-reports"><AdsReportGenerator /></PermissionProtectedRoute>} />
-                    <Route path="/dashboard-ai" element={<DashboardAI />} />
+
+                    {/* Resto de rutas protegidas por permisos - con Suspense para lazy loading */}
+                    <Route path="/planner" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/planner"><Index /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/deadlines" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/deadlines"><DeadlinesPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/team" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/team"><TeamPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/clients" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/clients"><ClientsPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/projects" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/projects"><ProjectsPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/reports" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/reports"><ReportsPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/informes-clientes" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/informes-clientes"><ClientReportsPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
+                    <Route path="/ads" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/ads"><AdsPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/meta-ads" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/meta-ads"><MetaAdsPage /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/ads-reports" element={<Suspense fallback={<PageLoader />}><PermissionProtectedRoute requiredPermission="/ads-reports"><AdsReportGenerator /></PermissionProtectedRoute></Suspense>} />
+                    <Route path="/dashboard-ai" element={<Suspense fallback={<PageLoader />}><DashboardAI /></Suspense>} />
                   </Route>
                 </Route>
 
                 {/* 404 */}
-                <Route path="*" element={<NotFound />} />
+                <Route path="*" element={<Suspense fallback={<PageLoader />}><NotFound /></Suspense>} />
                 
               </Routes>
             </BrowserRouter>

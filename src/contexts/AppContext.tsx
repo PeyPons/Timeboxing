@@ -316,12 +316,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleEmployeeActive = useCallback(async (id: string) => {
-    const emp = employees.find(e => e.id === id);
-    if (!emp) return;
-    const newState = !emp.isActive;
-    setEmployees(prev => prev.map(e => e.id === id ? { ...e, isActive: newState } : e));
-    await supabase.from('employees').update({ is_active: newState }).eq('id', id);
-  }, [employees]);
+    // Usamos un ref para obtener el estado actual sin depender de employees
+    let newState: boolean | null = null;
+
+    setEmployees(prev => {
+      const emp = prev.find(e => e.id === id);
+      if (!emp) return prev;
+      newState = !emp.isActive;
+      return prev.map(e => e.id === id ? { ...e, isActive: newState! } : e);
+    });
+
+    // Solo hacer la llamada a supabase si encontramos el empleado
+    if (newState !== null) {
+      await supabase.from('employees').update({ is_active: newState }).eq('id', id);
+    }
+  }, []);
 
   // --- ALLOCATIONS ---
   const addAllocation = useCallback(async (allocation: Omit<Allocation, 'id'>) => { 

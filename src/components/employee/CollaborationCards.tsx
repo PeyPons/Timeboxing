@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,81 +15,97 @@ interface CollaborationCardsProps {
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsProps) {
+export const CollaborationCards = memo(function CollaborationCards({ employeeId, viewDate }: CollaborationCardsProps) {
   const { allocations, employees, getEmployeeMonthlyLoad } = useApp();
 
-  // Allocations del mes para este empleado
-  const monthlyAllocations = allocations.filter(a => 
-    a.employeeId === employeeId && 
-    isSameMonth(parseISO(a.weekStartDate), viewDate)
-  );
+  // Memoizado: mapa de empleados para acceso O(1)
+  const employeesMap = useMemo(() => {
+    const map = new Map<string, typeof employees[0]>();
+    employees.forEach(e => map.set(e.id, e));
+    return map;
+  }, [employees]);
 
-  // Agrupar por proyecto con compañeros
-  const projectGroups = useMemo(() => {
-    const groups: Record<string, {
-      projectId: string;
-      teammates: { id: string; name: string; avatarUrl?: string; totalHours: number }[];
-    }> = {};
-
-    // Procesar mis allocations para saber en qué proyectos trabajo
-    monthlyAllocations.forEach(alloc => {
-      if (!groups[alloc.projectId]) {
-        groups[alloc.projectId] = {
-          projectId: alloc.projectId,
-          teammates: []
-        };
+  // Memoizado: allocations del mes filtradas una sola vez
+  const monthlyAllocationsAll = useMemo(() => {
+    return allocations.filter(a => {
+      try {
+        return isSameMonth(parseISO(a.weekStartDate), viewDate);
+      } catch {
+        return false;
       }
     });
+  }, [allocations, viewDate]);
 
-    // Procesar allocations de otros empleados en los mismos proyectos
-    // Incluimos TODAS las tareas (pending, in-progress, completed) del mes
-    allocations.forEach(alloc => {
+  // Allocations del mes para este empleado
+  const monthlyAllocations = useMemo(() =>
+    monthlyAllocationsAll.filter(a => a.employeeId === employeeId),
+    [monthlyAllocationsAll, employeeId]
+  );
+
+  // Agrupar por proyecto con compañeros - optimizado con mejor estructura de datos
+  const projectGroups = useMemo(() => {
+    // Set de proyectos del empleado actual
+    const myProjects = new Set<string>();
+    monthlyAllocations.forEach(alloc => myProjects.add(alloc.projectId));
+
+    // Estructura para acumular horas por proyecto y compañero
+    const groups = new Map<string, Map<string, { id: string; name: string; avatarUrl?: string; totalHours: number }>>();
+
+    // Inicializar grupos para cada proyecto del empleado
+    myProjects.forEach(projectId => {
+      groups.set(projectId, new Map());
+    });
+
+    // Procesar allocations de otros empleados en los mismos proyectos (una sola pasada)
+    monthlyAllocationsAll.forEach(alloc => {
       // Solo si es otro empleado y está en un proyecto que yo también tengo
-      if (alloc.employeeId !== employeeId && groups[alloc.projectId]) {
-        // Verificar que la allocation sea del mes actual
-        if (!isSameMonth(parseISO(alloc.weekStartDate), viewDate)) return;
-        
-        // Incluir cualquier tarea con horas asignadas
-        if (alloc.hoursAssigned > 0) {
-          const existing = groups[alloc.projectId].teammates.find(t => t.id === alloc.employeeId);
-          if (existing) {
-            existing.totalHours += alloc.hoursAssigned;
-          } else {
-            const emp = employees.find(e => e.id === alloc.employeeId);
-            if (emp) {
-              groups[alloc.projectId].teammates.push({
-                id: emp.id,
-                name: emp.name,
-                avatarUrl: emp.avatarUrl,
-                totalHours: alloc.hoursAssigned
-              });
-            }
+      if (alloc.employeeId !== employeeId && myProjects.has(alloc.projectId) && alloc.hoursAssigned > 0) {
+        const projectTeammates = groups.get(alloc.projectId)!;
+        const existing = projectTeammates.get(alloc.employeeId);
+
+        if (existing) {
+          existing.totalHours += alloc.hoursAssigned;
+        } else {
+          const emp = employeesMap.get(alloc.employeeId);
+          if (emp) {
+            projectTeammates.set(alloc.employeeId, {
+              id: emp.id,
+              name: emp.name,
+              avatarUrl: emp.avatarUrl,
+              totalHours: alloc.hoursAssigned
+            });
           }
         }
       }
     });
 
-    return Object.values(groups);
-  }, [monthlyAllocations, allocations, employees, employeeId, viewDate]);
+    // Convertir a formato de salida
+    return Array.from(groups.entries()).map(([projectId, teammates]) => ({
+      projectId,
+      teammates: Array.from(teammates.values())
+    }));
+  }, [monthlyAllocations, monthlyAllocationsAll, employeesMap, employeeId]);
 
-  // Colaboradores frecuentes
+  // Colaboradores frecuentes - optimizado con employeesMap
   const frequentCollaborators = useMemo(() => {
-    const collabMap: Record<string, {
+    const collabMap = new Map<string, {
       id: string;
       name: string;
       avatarUrl?: string;
       sharedProjects: number;
       totalHoursTogether: number;
       occupancy: number;
-    }> = {};
+    }>();
 
     projectGroups.forEach(group => {
       group.teammates.forEach(teammate => {
-        if (!collabMap[teammate.id]) {
-          const emp = employees.find(e => e.id === teammate.id);
+        let collab = collabMap.get(teammate.id);
+
+        if (!collab) {
+          const emp = employeesMap.get(teammate.id);
           if (emp) {
             const load = getEmployeeMonthlyLoad(teammate.id, viewDate.getFullYear(), viewDate.getMonth());
-            collabMap[teammate.id] = {
+            collab = {
               id: teammate.id,
               name: emp.name,
               avatarUrl: emp.avatarUrl,
@@ -97,19 +113,21 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
               totalHoursTogether: 0,
               occupancy: load.percentage
             };
+            collabMap.set(teammate.id, collab);
           }
         }
-        if (collabMap[teammate.id]) {
-          collabMap[teammate.id].sharedProjects++;
-          collabMap[teammate.id].totalHoursTogether += teammate.totalHours;
+
+        if (collab) {
+          collab.sharedProjects++;
+          collab.totalHoursTogether += teammate.totalHours;
         }
       });
     });
 
-    return Object.values(collabMap)
+    return Array.from(collabMap.values())
       .sort((a, b) => b.sharedProjects - a.sharedProjects || b.totalHoursTogether - a.totalHoursTogether)
       .slice(0, 5);
-  }, [projectGroups, employees, getEmployeeMonthlyLoad, viewDate]);
+  }, [projectGroups, employeesMap, getEmployeeMonthlyLoad, viewDate]);
 
   // Compañeros que pueden ayudar - Ahora incluye 80-90% como "esfuerzo extra"
   const { availableHelpers, busyButWillingHelpers } = useMemo(() => {
@@ -269,4 +287,4 @@ export function CollaborationCards({ employeeId, viewDate }: CollaborationCardsP
       </div>
     </TooltipProvider>
   );
-}
+});

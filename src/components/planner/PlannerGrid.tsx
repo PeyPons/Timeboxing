@@ -60,10 +60,26 @@ export function PlannerGrid() {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
+  // Memoizado: Índice de empleados por proyecto para el mes actual (optimización O(1) lookup)
+  const employeesByProject = useMemo(() => {
+    const index = new Map<string, Set<string>>();
+    (allocations || []).forEach(a => {
+      try {
+        if (isSameMonth(parseISO(a.weekStartDate), currentMonth)) {
+          if (!index.has(a.projectId)) {
+            index.set(a.projectId, new Set());
+          }
+          index.get(a.projectId)!.add(a.employeeId);
+        }
+      } catch { /* ignore invalid dates */ }
+    });
+    return index;
+  }, [allocations, currentMonth]);
+
   const filteredEmployees = useMemo(() => {
     return (employees || []).filter(e => {
         if (!e.isActive) return false;
-        
+
         // CORRECCIÓN: Usar el ID del usuario logueado en lugar de buscar "alex"
         if (showOnlyMe) {
             if (!currentUser) return false; // Si no hay sesión, no mostrar nada
@@ -71,21 +87,15 @@ export function PlannerGrid() {
         }
 
         if (selectedEmployeeId !== 'all' && e.id !== selectedEmployeeId) return false;
-        
+
+        // Optimizado: usar el índice pre-computado en lugar de iterar todas las allocations
         if (selectedProjectId !== 'all') {
-            const hasAllocationInProject = (allocations || []).some(a => {
-                try {
-                    const allocDate = parseISO(a.weekStartDate);
-                    return a.projectId === selectedProjectId && a.employeeId === e.id && isSameMonth(allocDate, currentMonth);
-                } catch {
-                    return false;
-                }
-            });
-            if (!hasAllocationInProject) return false;
+            const employeesInProject = employeesByProject.get(selectedProjectId);
+            if (!employeesInProject || !employeesInProject.has(e.id)) return false;
         }
         return true;
     });
-  }, [employees, showOnlyMe, selectedEmployeeId, selectedProjectId, allocations, currentMonth, currentUser]);
+  }, [employees, showOnlyMe, selectedEmployeeId, selectedProjectId, employeesByProject, currentUser]);
 
   const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));

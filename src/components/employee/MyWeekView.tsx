@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, memo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +21,7 @@ interface MyWeekViewProps {
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
+export const MyWeekView = memo(function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
   const { allocations, projects, clients, employees, getEmployeeMonthlyLoad } = useApp();
   
   const [filterProject, setFilterProject] = useState<string>('all');
@@ -414,4 +414,4 @@ export function MyWeekView({ employeeId, viewDate }: MyWeekViewProps) {
       </div>
     </TooltipProvider>
   );
-}
+});
