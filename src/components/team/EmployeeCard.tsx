@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Employee } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -20,7 +21,7 @@ interface EmployeeCardProps {
   employee: Employee;
 }
 
-export function EmployeeCard({ employee }: EmployeeCardProps) {
+export const EmployeeCard = memo(function EmployeeCard({ employee }: EmployeeCardProps) {
   const { deleteEmployee, toggleEmployeeActive } = useApp();
 
   const handleDelete = (e: React.MouseEvent) => {
@@ -111,4 +112,4 @@ export function EmployeeCard({ employee }: EmployeeCardProps) {
       </CardContent>
     </Card>
   );
-}
+});

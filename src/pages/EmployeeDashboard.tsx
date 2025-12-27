@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
 import { MyWeekView } from '@/components/employee/MyWeekView';
@@ -122,21 +122,48 @@ export default function EmployeeDashboard() {
       });
   }, [projects, clients]);
 
-  const getProjectDisplayName = (projectId: string) => {
-    const project = projects.find(p => p.id === projectId);
-    if (!project) return 'Seleccionar...';
-    const client = clients.find(c => c.id === project.clientId);
-    return `${client?.name || 'Sin cliente'} - ${project.name}`;
-  };
+  // Memoizado: mapa de proyectos para acceso O(1)
+  const projectsMap = useMemo(() => {
+    const map = new Map<string, typeof projects[0]>();
+    projects.forEach(p => map.set(p.id, p));
+    return map;
+  }, [projects]);
 
-  const getProjectBudgetStatus = (projectId: string): ProjectBudgetStatus => {
-    const project = projects.find(p => p.id === projectId);
+  // Memoizado: mapa de clientes para acceso O(1)
+  const clientsMap = useMemo(() => {
+    const map = new Map<string, typeof clients[0]>();
+    clients.forEach(c => map.set(c.id, c));
+    return map;
+  }, [clients]);
+
+  const getProjectDisplayName = useCallback((projectId: string) => {
+    const project = projectsMap.get(projectId);
+    if (!project) return 'Seleccionar...';
+    const client = clientsMap.get(project.clientId);
+    return `${client?.name || 'Sin cliente'} - ${project.name}`;
+  }, [projectsMap, clientsMap]);
+
+  // Memoizado: allocations del mes actual indexadas por projectId
+  const monthlyAllocationsByProject = useMemo(() => {
+    const map = new Map<string, typeof allocations>();
+    allocations.forEach(a => {
+      try {
+        if (isSameMonth(parseISO(a.weekStartDate), currentMonth)) {
+          if (!map.has(a.projectId)) {
+            map.set(a.projectId, []);
+          }
+          map.get(a.projectId)!.push(a);
+        }
+      } catch { /* ignore invalid dates */ }
+    });
+    return map;
+  }, [allocations, currentMonth]);
+
+  const getProjectBudgetStatus = useCallback((projectId: string): ProjectBudgetStatus => {
+    const project = projectsMap.get(projectId);
     if (!project) return { totalComputed: 0, totalPlanned: 0, budgetMax: 0, percentage: 0 };
 
-    const monthAllocations = allocations.filter(a => {
-      try { return a.projectId === projectId && isSameMonth(parseISO(a.weekStartDate), currentMonth); } 
-      catch { return false; }
-    });
+    const monthAllocations = monthlyAllocationsByProject.get(projectId) || [];
 
     const totalComputed = round2(monthAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
     const totalPlanned = round2(monthAllocations.filter(a => a.status !== 'completed').reduce((sum, a) => sum + a.hoursAssigned, 0));
@@ -144,7 +171,7 @@ export default function EmployeeDashboard() {
     const percentage = budgetMax > 0 ? (totalComputed / budgetMax) * 100 : 0;
 
     return { totalComputed, totalPlanned, budgetMax, percentage };
-  };
+  }, [projectsMap, monthlyAllocationsByProject]);
 
   const getOrCreateInternalProject = async (): Promise<string | null> => {
     if (internalProject) return internalProject.id;

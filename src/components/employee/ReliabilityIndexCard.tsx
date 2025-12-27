@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -16,7 +16,7 @@ interface ReliabilityIndexCardProps {
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) {
+export const ReliabilityIndexCard = memo(function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) {
   const { allocations, employees } = useApp();
   const employee = employees.find(e => e.id === employeeId);
 
@@ -244,4 +244,4 @@ export function ReliabilityIndexCard({ employeeId }: ReliabilityIndexCardProps) 
       </Card>
     </TooltipProvider>
   );
-}
+});

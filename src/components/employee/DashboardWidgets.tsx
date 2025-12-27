@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +11,7 @@ interface WidgetProps {
 }
 
 // WIDGET 1: RECOMENDACIONES - TONO GPS AMIGABLE
-export function PriorityInsights({ employeeId }: WidgetProps) {
+export const PriorityInsights = memo(function PriorityInsights({ employeeId }: WidgetProps) {
   const { allocations, projects, employees } = useApp();
   const today = new Date();
   
@@ -140,10 +141,10 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
       </CardContent>
     </Card>
   );
-}
+});
 
 // WIDGET 2: DEPENDENCIAS - TONO GPS AMIGABLE
-export function ProjectTeamPulse({ employeeId }: WidgetProps) {
+export const ProjectTeamPulse = memo(function ProjectTeamPulse({ employeeId }: WidgetProps) {
   const { allocations, projects, employees } = useApp();
   const today = new Date();
   
@@ -284,4 +285,4 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
       </CardContent>
     </Card>
   );
-}
+});
