@@ -680,6 +680,10 @@ export default function ReportsPage() {
 
       // LÓGICA MEJORADA: Priorizar compromisos reales cuando existen
       let estimatedHoursNextMonth: number;
+      // Variables de peso para el desglose (definidas fuera de los bloques condicionales)
+      let inertiaWeight = 0;
+      let historicalWeight = 0;
+      let committedWeight = 0;
 
       // Si hay compromisos reales, usarlos como base principal
       if (committedHours > 0) {
@@ -687,8 +691,9 @@ export default function ReportsPage() {
         if (historicalMonths.length >= 3) {
           // Hay suficiente histórico (3+ meses): compromisos reales (85%) + ajuste histórico (15%)
           // El ajuste histórico solo se aplica si hay una tendencia clara de carga adicional
-          const committedWeight = 0.85;
-          const historicalWeight = 0.15;
+          committedWeight = 0.85;
+          historicalWeight = 0.15;
+          inertiaWeight = 0;
           
           // Solo ajustar si históricamente hay más carga que los compromisos base
           const historicalAdjustment = historicalAvgHours > committedHours 
@@ -701,8 +706,9 @@ export default function ReportsPage() {
           estimatedHoursNextMonth = Math.max(estimatedHoursNextMonth, committedHours);
         } else if (historicalMonths.length >= 1) {
           // Hay algo de histórico (1-2 meses): compromisos reales (90%) + pequeño ajuste (10%)
-          const committedWeight = 0.9;
-          const historicalWeight = 0.1;
+          committedWeight = 0.9;
+          historicalWeight = 0.1;
+          inertiaWeight = 0;
           
           estimatedHoursNextMonth = round2(
             (committedHours * committedWeight) +
@@ -714,19 +720,26 @@ export default function ReportsPage() {
         } else {
           // Sin histórico suficiente: usar compromisos reales directamente
           // Aplicar un pequeño buffer (5%) solo para tareas no planificadas
+          committedWeight = 1.0;
+          historicalWeight = 0;
+          inertiaWeight = 0;
           estimatedHoursNextMonth = round2(committedHours * 1.05);
         }
       } else {
         // Sin compromisos reales: usar inercia e histórico
         if (historicalMonths.length >= 1) {
-          const inertiaWeight = 0.4;
-          const historicalWeight = 0.6;
+          inertiaWeight = 0.4;
+          historicalWeight = 0.6;
+          committedWeight = 0;
           estimatedHoursNextMonth = round2(
             (previousMonthTotalHours * inertiaWeight) +
             (historicalAvgHours * historicalWeight)
           );
         } else {
           // Sin datos: estimación conservadora basada en capacidad
+          inertiaWeight = 0;
+          historicalWeight = 0;
+          committedWeight = 0;
           estimatedHoursNextMonth = round2(adjustedCapacity * 0.3); // 30% de capacidad como estimación conservadora
         }
       }
