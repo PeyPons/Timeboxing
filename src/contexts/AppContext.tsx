@@ -196,21 +196,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [fetchData]);
 
   const addEmployee = useCallback(async (employee: Omit<Employee, 'id'>) => {
-    const { data } = await supabase.from('employees').insert({
+    const { data, error } = await supabase.from('employees').insert({
       name: employee.name,
       first_name: employee.first_name,
       last_name: employee.last_name,
       email: employee.email,
+      user_id: employee.user_id, // ✅ CRÍTICO: Guardar el user_id de Auth
       role: employee.role,
       department: employee.department,
       avatar_url: employee.avatarUrl,
       default_weekly_capacity: employee.defaultWeeklyCapacity,
       work_schedule: employee.workSchedule,
-      is_active: employee.isActive
+      is_active: employee.isActive,
+      hourly_rate: employee.hourlyRate || 0,
+      crm_user_id: employee.crmUserId,
+      permissions: employee.permissions || null
     }).select().single();
 
+    if (error) {
+      console.error('Error creando empleado:', error);
+      throw error;
+    }
+
     if (data) {
-      setEmployees(prev => [...prev, {
+      const mappedEmployee: Employee = {
         ...data,
         avatarUrl: data.avatar_url,
         defaultWeeklyCapacity: data.default_weekly_capacity,
@@ -219,30 +228,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         first_name: data.first_name,
         last_name: data.last_name,
         email: data.email,
-        user_id: data.user_id
-      }]);
+        user_id: data.user_id,
+        hourlyRate: data.hourly_rate || 0,
+        crmUserId: data.crm_user_id,
+        welcomeTourCompleted: data.welcome_tour_completed === true,
+        deadlinesTourCompleted: data.deadlines_tour_completed === true,
+        permissions: data.permissions || undefined
+      };
+      setEmployees(prev => [...prev, mappedEmployee]);
     }
   }, []);
 
   const updateEmployee = useCallback(async (employee: Employee) => {
     setEmployees(prev => prev.map(e => e.id === employee.id ? employee : e));
-    await supabase.from('employees').update({
+    const { error } = await supabase.from('employees').update({
       name: employee.name,
       first_name: employee.first_name,
       last_name: employee.last_name,
       email: employee.email,
+      user_id: employee.user_id, // ✅ CRÍTICO: Actualizar también el user_id
       role: employee.role,
       department: employee.department,
       avatar_url: employee.avatarUrl,
       default_weekly_capacity: employee.defaultWeeklyCapacity,
       work_schedule: employee.workSchedule,
       is_active: employee.isActive,
-      hourly_rate: employee.hourlyRate,
+      hourly_rate: employee.hourlyRate || 0,
       crm_user_id: employee.crmUserId,
       welcome_tour_completed: employee.welcomeTourCompleted || false,
       deadlines_tour_completed: employee.deadlinesTourCompleted || false,
       permissions: employee.permissions || null
     }).eq('id', employee.id);
+    
+    if (error) {
+      console.error('Error actualizando empleado:', error);
+      throw error;
+    }
   }, []);
 
   const deleteEmployee = useCallback(async (id: string) => {
