@@ -489,8 +489,8 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                 const weekComp = round2(completedTasks.reduce((sum, a) => sum + (a.hoursComputed || 0), 0));
                 const weekBalance = round2(weekComp - weekReal);
 
-                // Fechas de la semana
-                const weekEndDate = addDays(week.weekStart, 6);
+                // Fechas de la semana (solo días laborables: Lun-Vie)
+                const weekEndDate = addDays(week.weekStart, 4); // Viernes en lugar de domingo
                 const weekDateLabel = `${format(week.weekStart, 'd', { locale: es })}-${format(weekEndDate, 'd MMM', { locale: es })}`;
 
                 // Agrupar y ordenar
