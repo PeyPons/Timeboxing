@@ -1,7 +1,7 @@
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Users, ArrowRight, AlertOctagon, Link as LinkIcon, CheckCircle2, Clock, Flag, Zap, PlayCircle, AlertTriangle } from 'lucide-react';
+import { Users, ArrowRight, Sparkles, Link as LinkIcon, CheckCircle2, Clock, Flag, Zap, Rocket, HeartHandshake } from 'lucide-react';
 import { isSameMonth, parseISO } from 'date-fns';
 import { formatProjectName } from '@/lib/utils';
 
@@ -9,7 +9,7 @@ interface WidgetProps {
   employeeId: string;
 }
 
-// WIDGET 1: RECOMENDACIONES MEJORADO
+// WIDGET 1: RECOMENDACIONES - TONO GPS AMIGABLE
 export function PriorityInsights({ employeeId }: WidgetProps) {
   const { allocations, projects, employees } = useApp();
   const today = new Date();
@@ -27,12 +27,12 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-            Sin pendientes
+            ¡Todo al día!
           </CardTitle>
         </CardHeader>
         <CardContent className="flex-1">
           <p className="text-sm text-slate-500">
-            ✨ <strong>¡Todo al día!</strong> No tienes tareas pendientes este mes. Usa el botón <em>"Añadir tareas"</em> para planificar tu trabajo.
+            ✨ No tienes tareas pendientes este mes. Usa el botón <em>"Añadir tareas"</em> para planificar tu próximo trabajo.
           </p>
         </CardContent>
       </Card>
@@ -66,44 +66,49 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
       });
       const proj = projects.find(p => p.id === blockingTask.projectId);
       
+      // Obtener el primer nombre del usuario bloqueado para el mensaje personalizado
+      const firstBlockedUser = blockedUsers[0]?.user?.name?.split(' ')[0] || 'tu compañero';
+      
       recommendation = {
-          icon: <AlertOctagon className="w-5 h-5 text-red-600" />,
-          title: "🔥 URGENTE: Estás frenando al equipo",
+          icon: <HeartHandshake className="w-5 h-5 text-amber-600" />,
+          title: "💡 ¡Tu equipo te necesita!",
           content: (
               <div className="space-y-3">
-                  <div className="bg-white/60 rounded-lg p-3 border border-red-100">
-                      <p className="text-[10px] uppercase text-red-400 font-semibold mb-1">Tu tarea pendiente</p>
-                      <p className="font-bold text-red-900">{blockingTask.taskName || 'Sin nombre'}</p>
+                  <p className="text-sm text-amber-800">
+                    Ayuda a <strong>{firstBlockedUser}</strong> a seguir avanzando completando esta tarea:
+                  </p>
+                  <div className="bg-white/60 rounded-lg p-3 border border-amber-100">
+                      <p className="font-bold text-amber-900">{blockingTask.taskName || 'Sin nombre'}</p>
                       <Badge variant="outline" className="mt-1 text-[9px] bg-white">
                           {formatProjectName(proj?.name || '')}
                       </Badge>
                   </div>
                   
                   <div className="space-y-1.5">
-                      <p className="text-[10px] uppercase text-red-400 font-semibold flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" /> Bloquea a:
+                      <p className="text-[10px] uppercase text-amber-600 font-semibold flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" /> Colabora con:
                       </p>
                       {blockedUsers.map(({ task, user }) => (
-                          <div key={task.id} className="flex items-center justify-between bg-white/80 px-2 py-1.5 rounded border border-red-100">
-                              <span className="text-xs text-red-800 truncate max-w-[120px]">{task.taskName}</span>
-                              <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded shrink-0">
-                                  {user?.name}
+                          <div key={task.id} className="flex items-center justify-between bg-white/80 px-2 py-1.5 rounded border border-amber-100">
+                              <span className="text-xs text-amber-800 truncate max-w-[120px]">{task.taskName}</span>
+                              <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded shrink-0">
+                                  {user?.name?.split(' ')[0]}
                               </span>
                           </div>
                       ))}
                   </div>
               </div>
           ),
-          style: 'bg-gradient-to-br from-red-50 to-red-100 border-red-300 text-red-900'
+          style: 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-300 text-amber-900'
       };
   } else if (quickWinTask) {
       const proj = projects.find(p => p.id === quickWinTask.projectId);
       recommendation = {
           icon: <Flag className="w-5 h-5 text-emerald-600" />,
-          title: "Cierre rápido",
+          title: "🏁 ¡Victoria rápida!",
           content: (
               <p className="text-sm">
-                  🏁 <strong>A punto:</strong> Te queda muy poco en <em>{formatProjectName(proj?.name || '')}</em>. ¡Liquídala hoy mismo!
+                  Estás a punto de terminar en <em>{formatProjectName(proj?.name || '')}</em>. ¡Un pequeño empujón y lo tienes!
               </p>
           ),
           style: 'bg-emerald-50 border-emerald-200 text-emerald-900'
@@ -111,14 +116,14 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
   } else {
       const proj = projects.find(p => p.id === heavyTask?.projectId);
       recommendation = {
-          icon: <Zap className="w-5 h-5 text-amber-600" />,
-          title: "Recomendación",
+          icon: <Rocket className="w-5 h-5 text-indigo-600" />,
+          title: "🚀 Tu próximo paso",
           content: (
               <p className="text-sm">
-                  🚀 <strong>Foco:</strong> Empieza por <strong>{formatProjectName(proj?.name || '')}</strong>, es tu bloque más grande ({heavyTask?.hoursAssigned}h).
+                  Empieza por <strong>{formatProjectName(proj?.name || '')}</strong> ({heavyTask?.hoursAssigned}h). Es tu bloque más grande y ganarás mucho momentum.
               </p>
           ),
-          style: 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 text-amber-900'
+          style: 'bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200 text-indigo-900'
       };
   }
 
@@ -137,7 +142,7 @@ export function PriorityInsights({ employeeId }: WidgetProps) {
   );
 }
 
-// WIDGET 2: PULSO DEL EQUIPO Y DEPENDENCIAS MEJORADO
+// WIDGET 2: DEPENDENCIAS - TONO GPS AMIGABLE
 export function ProjectTeamPulse({ employeeId }: WidgetProps) {
   const { allocations, projects, employees } = useApp();
   const today = new Date();
@@ -176,24 +181,24 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
       <CardHeader className="pb-3 border-b bg-slate-50/50">
         <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
           <Users className="w-4 h-4 text-indigo-500" />
-          Dependencias
+          Conexiones del equipo
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto max-h-[300px] p-4 space-y-4">
         
         {incomingDependencies.length === 0 && outgoingBlocks.length === 0 && (
-             <p className="text-xs text-slate-400 text-center py-4">No hay bloqueos activos. ¡Todo fluido!</p>
+             <p className="text-xs text-slate-400 text-center py-4">✨ Sin dependencias activas. ¡Tienes vía libre!</p>
         )}
 
         {/* DEPENDENCIAS DE ENTRADA (Espero por otros) */}
         {incomingDependencies.length > 0 && (
             <div>
                 <h4 className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center gap-1">
-                    <LinkIcon className="w-3 h-3"/> DEPENDENCIAS
+                    <LinkIcon className="w-3 h-3"/> Esperando el pase de...
                 </h4>
                 <div className="space-y-2">
                     {incomingDependencies.map((item, i) => (
-                        <div key={i} className={`text-xs rounded-lg border overflow-hidden ${item.isReady ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                        <div key={i} className={`text-xs rounded-lg border overflow-hidden ${item.isReady ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
                             {/* Header con proyecto */}
                             <div className="px-3 py-1.5 bg-white/50 border-b border-slate-100 flex items-center justify-between">
                                 <Badge variant="outline" className="text-[9px] h-5 bg-white border-slate-200 text-slate-600">
@@ -201,11 +206,11 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
                                 </Badge>
                                 {item.isReady ? (
                                     <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
-                                        <CheckCircle2 className="w-3 h-3"/> ¡Lista!
+                                        <CheckCircle2 className="w-3 h-3"/> ¡Listo para ti!
                                     </span>
                                 ) : (
-                                    <span className="flex items-center gap-1 text-[10px] text-amber-700">
-                                        <Clock className="w-3 h-3"/> Espera
+                                    <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                                        <Clock className="w-3 h-3"/> En camino
                                     </span>
                                 )}
                             </div>
@@ -213,13 +218,13 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
                             {/* Contenido */}
                             <div className="px-3 py-2">
                                 <p className="font-semibold text-slate-800 mb-2">{item.myTask.taskName}</p>
-                                <div className={`flex items-center gap-2 text-[11px] px-2 py-1.5 rounded ${item.isReady ? 'bg-emerald-100/50' : 'bg-amber-100/50'}`}>
+                                <div className={`flex items-center gap-2 text-[11px] px-2 py-1.5 rounded ${item.isReady ? 'bg-emerald-100/50' : 'bg-slate-100/50'}`}>
                                     <ArrowRight className="w-3 h-3 text-slate-400" />
                                     <span className="text-slate-600">
-                                        {item.isReady ? 'Desbloqueado por' : 'Esperando por'}:
+                                        {item.isReady ? 'Gracias a' : 'Esperando a'}:
                                     </span>
-                                    <span className={`font-bold ${item.isReady ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                        {item.depOwner?.name}
+                                    <span className={`font-bold ${item.isReady ? 'text-emerald-700' : 'text-slate-700'}`}>
+                                        {item.depOwner?.name?.split(' ')[0]}
                                     </span>
                                     <span className="text-slate-400 text-[10px]">
                                         ({item.depTask?.taskName})
@@ -232,39 +237,39 @@ export function ProjectTeamPulse({ employeeId }: WidgetProps) {
             </div>
         )}
 
-        {/* DEPENDENCIAS DE SALIDA (Yo bloqueo a otros) */}
+        {/* DEPENDENCIAS DE SALIDA (Yo colaboro con otros) */}
         {outgoingBlocks.length > 0 && (
             <div>
                 {incomingDependencies.length > 0 && <div className="border-t border-slate-200 my-4"></div>}
-                <h4 className="text-xs font-bold text-red-600 mb-3 uppercase flex items-center gap-1">
-                    <AlertOctagon className="w-3 h-3"/> Estás frenando a...
+                <h4 className="text-xs font-bold text-amber-600 mb-3 uppercase flex items-center gap-1">
+                    <Sparkles className="w-3 h-3"/> Tu aporte es clave para...
                 </h4>
                 <div className="space-y-3">
                     {outgoingBlocks.map((item, i) => (
-                        <div key={i} className="text-xs bg-red-50 rounded-lg border border-red-200 overflow-hidden">
+                        <div key={i} className="text-xs bg-amber-50 rounded-lg border border-amber-200 overflow-hidden">
                             {/* Header con proyecto */}
-                            <div className="px-3 py-1.5 bg-white/50 border-b border-red-100 flex items-center justify-between">
-                                <Badge variant="outline" className="text-[9px] h-5 bg-white border-red-200 text-red-500">
+                            <div className="px-3 py-1.5 bg-white/50 border-b border-amber-100 flex items-center justify-between">
+                                <Badge variant="outline" className="text-[9px] h-5 bg-white border-amber-200 text-amber-600">
                                     {formatProjectName(item.myProject?.name || '')}
                                 </Badge>
-                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
                             </div>
                             
                             {/* Contenido */}
                             <div className="px-3 py-2">
-                                <p className="font-semibold text-red-900 mb-2">
-                                    Tu tarea: {item.myTask.taskName}
+                                <p className="font-semibold text-amber-900 mb-2">
+                                    {item.myTask.taskName}
                                 </p>
                                 
-                                {/* Lista de bloqueados con mejor formato */}
-                                <div className="space-y-1.5 pl-2 border-l-2 border-red-300">
+                                {/* Lista de compañeros que esperan */}
+                                <div className="space-y-1.5 pl-2 border-l-2 border-amber-300">
                                     {item.blockedTasks.map(bt => {
-                                        const blockedUser = employees.find(e => e.id === bt.employeeId);
+                                        const waitingUser = employees.find(e => e.id === bt.employeeId);
                                         return (
                                             <div key={bt.id} className="flex items-center justify-between">
-                                                <span className="text-red-800 truncate max-w-[120px]">{bt.taskName}</span>
-                                                <span className="font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded text-[10px] shrink-0">
-                                                    {blockedUser?.name}
+                                                <span className="text-amber-800 truncate max-w-[120px]">{bt.taskName}</span>
+                                                <span className="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-[10px] shrink-0">
+                                                    {waitingUser?.name?.split(' ')[0]} espera
                                                 </span>
                                             </div>
                                         );
