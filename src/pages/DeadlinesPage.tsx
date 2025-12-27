@@ -14,7 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
-  Plus, Pencil, Trash2, Save, Search, Eye, EyeOff, ChevronDown, ChevronRight,
+  Plus, Pencil, Trash2, Save, Search, Eye, EyeOff, ChevronDown, ChevronRight, ChevronLeft,
   Calendar, Users, AlertTriangle, CheckCircle2, XCircle, Copy, Filter, Sparkles, Edit
 } from 'lucide-react';
 import { DeadlinesTour, useDeadlinesTour } from '@/components/deadlines/DeadlinesTour';
@@ -1434,17 +1434,30 @@ export default function DeadlinesPage() {
     });
   };
 
-  const getMonthOptions = () => {
-    const options = [];
-    const current = new Date();
-    for (let i = -6; i <= 6; i++) {
-      const date = addMonths(current, i);
-      const value = format(date, 'yyyy-MM');
-      const label = format(date, 'MMMM yyyy', { locale: es });
-      options.push({ value, label });
-    }
-    return options;
+  // Funciones para navegar entre meses
+  const handlePrevMonth = () => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const date = new Date(year, month - 1, 1);
+    const prevDate = subMonths(date, 1);
+    setSelectedMonth(format(prevDate, 'yyyy-MM'));
   };
+
+  const handleNextMonth = () => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const date = new Date(year, month - 1, 1);
+    const nextDate = addMonths(date, 1);
+    setSelectedMonth(format(nextDate, 'yyyy-MM'));
+  };
+
+  const handleToday = () => {
+    setSelectedMonth(format(new Date(), 'yyyy-MM'));
+  };
+
+  // Formatear el mes actual para mostrar
+  const currentMonthDate = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    return new Date(year, month - 1, 1);
+  }, [selectedMonth]);
 
   if (isLoading) {
     return (
@@ -1513,19 +1526,28 @@ export default function DeadlinesPage() {
             <p className="text-sm text-slate-500">Asignación mensual de horas</p>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-[180px] h-9" data-tour="month-selector">
-                <Calendar className="h-4 w-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {getMonthOptions().map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Selector de mes con flechas */}
+            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1" data-tour="month-selector">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8"
+                onClick={handlePrevMonth}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm font-medium px-2 min-w-[140px] text-center capitalize">
+                {format(currentMonthDate, 'MMMM yyyy', { locale: es })}
+              </span>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8"
+                onClick={handleNextMonth}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
