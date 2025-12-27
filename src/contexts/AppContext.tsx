@@ -223,6 +223,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Escuchar cambios de autenticación (separado para evitar bucles)
   useEffect(() => {
     let isInitialMount = true;
+    let lastProcessedEvent: { event: string; userId: string | null; timestamp: number } | null = null;
     let subscription: any = null;
     
     // Pequeño delay para asegurar que fetchData() se ejecute primero
@@ -235,18 +236,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         
+        const userId = session?.user?.id || null;
+        
+        // ✅ Prevenir procesar el mismo evento múltiples veces en un corto período
+        const now = Date.now();
+        if (lastProcessedEvent && 
+            lastProcessedEvent.event === event && 
+            lastProcessedEvent.userId === userId &&
+            now - lastProcessedEvent.timestamp < 2000) {
+          // Ignorar si es el mismo evento para el mismo usuario en menos de 2 segundos
+          console.log('[AppContext] Ignorando evento duplicado:', event, userId);
+          return;
+        }
+        lastProcessedEvent = { event, userId, timestamp: now };
+        
         console.log('[AppContext] Auth state changed:', event, session?.user?.email);
         
         if (event === 'SIGNED_OUT') {
           setCurrentUser(undefined);
           setIsLoading(false);
-        } else if (event === 'SIGNED_IN' && session?.user) {
-          // Solo refrescar si realmente acabamos de hacer login (no al recargar)
-          // Verificar si ya tenemos currentUser para evitar refrescos innecesarios
-          console.log('[AppContext] Usuario hizo login, verificando vinculación...');
-          // No refrescar fetchData completo, solo verificar vinculación si es necesario
-          // fetchData() ya se ejecutó al montar y maneja la vinculación automática
         }
+        // ✅ NO hacer nada en SIGNED_IN porque fetchData() ya se ejecutó al montar
+        // y maneja la vinculación automática. Procesar SIGNED_IN aquí causa bucles.
       });
       
       subscription = sub;
