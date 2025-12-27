@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { format, addMonths, subMonths, getDaysInMonth, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
-import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
+import { getTeamEventHoursInRange, getTeamEventDetailsInRange } from '@/utils/teamEventUtils';
 
 export default function DeadlinesPage() {
   const { projects, clients, employees, absences, teamEvents, currentUser } = useApp();
@@ -492,17 +492,8 @@ export default function DeadlinesPage() {
     // Restar eventos del equipo (con detalles)
     const eventHours = getTeamEventHoursInRange(monthStart, monthEnd, employeeId, teamEvents, workSchedule, employeeAbsences);
     
-    // Calcular detalle de cada evento que afecta este mes
-    const eventDetails = teamEvents
-      .filter(e => {
-        const eventDate = new Date(e.date);
-        return eventDate >= monthStart && eventDate <= monthEnd;
-      })
-      .map(e => ({
-        name: e.name,
-        date: e.date,
-        hours: e.hoursOff
-      }));
+    // Calcular detalle de cada evento que afecta este mes usando la función correcta
+    const eventDetails = getTeamEventDetailsInRange(monthStart, monthEnd, employeeId, teamEvents, workSchedule, employeeAbsences);
     
     const available = Math.max(0, baseHours - absenceHours - eventHours);
     
@@ -1829,39 +1820,39 @@ export default function DeadlinesPage() {
                           </div>
                         </div>
                       </TooltipTrigger>
-                      <TooltipContent side="left" className="text-xs max-w-[250px]">
-                        <div className="space-y-1.5">
-                          <div className="font-medium text-slate-100">{emp.first_name || emp.name}</div>
-                          <div className="text-slate-400">Base mensual: {capacityData.total.toFixed(1)}h</div>
+                      <TooltipContent side="left" className="text-xs max-w-[280px] bg-white border border-slate-200 shadow-xl">
+                        <div className="space-y-2 text-slate-700">
+                          <div className="font-semibold text-slate-900 text-sm">{emp.first_name || emp.name}</div>
+                          <div className="text-slate-600">Base mensual: <span className="font-medium">{capacityData.total.toFixed(1)}h</span></div>
                           
                           {capacityData.absenceDetails.length > 0 && (
-                            <div className="space-y-0.5">
-                              <div className="text-red-400 font-medium">Ausencias:</div>
+                            <div className="space-y-1">
+                              <div className="text-red-600 font-semibold text-xs">Ausencias:</div>
                               {capacityData.absenceDetails.map((a, i) => (
-                                <div key={i} className="text-red-300 pl-2 text-[11px]">
+                                <div key={i} className="text-red-700 pl-3 text-xs">
                                   • {a.type === 'vacation' ? 'Vacaciones' : 
-                                     a.type === 'sick' ? 'Baja médica' : 
+                                     a.type === 'sick_leave' ? 'Baja médica' : 
                                      a.type === 'personal' ? 'Personal' : a.type}
-                                  : -{a.hours.toFixed(1)}h
+                                  : <span className="font-medium">-{a.hours.toFixed(1)}h</span>
                                 </div>
                               ))}
                             </div>
                           )}
                           
                           {capacityData.eventDetails.length > 0 && (
-                            <div className="space-y-0.5">
-                              <div className="text-orange-400 font-medium">Eventos:</div>
+                            <div className="space-y-1">
+                              <div className="text-orange-600 font-semibold text-xs">Eventos:</div>
                               {capacityData.eventDetails.map((e, i) => (
-                                <div key={i} className="text-orange-300 pl-2 text-[11px]">
-                                  • {e.name}: -{e.hours}h
+                                <div key={i} className="text-orange-700 pl-3 text-xs">
+                                  • {e.name}: <span className="font-medium">-{e.hours.toFixed(1)}h</span>
                                 </div>
                               ))}
                             </div>
                           )}
                           
-                          <div className="border-t border-slate-600 pt-1.5 mt-1.5">
-                            <span className="text-slate-400">Disponible: </span>
-                            <span className="font-mono font-bold text-white">{available.toFixed(1)}h</span>
+                          <div className="border-t border-slate-200 pt-2 mt-2">
+                            <span className="text-slate-600">Disponible: </span>
+                            <span className="font-mono font-bold text-slate-900 text-sm">{available.toFixed(1)}h</span>
                           </div>
                         </div>
                       </TooltipContent>
