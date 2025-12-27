@@ -558,6 +558,10 @@ export default function ReportsPage() {
   const [nextMonthDeadlines, setNextMonthDeadlines] = useState<Deadline[]>([]);
   const [nextMonthGlobalAssignments, setNextMonthGlobalAssignments] = useState<GlobalAssignment[]>([]);
   
+  // Estado para deadlines y global assignments del mes actual
+  const [currentMonthDeadlines, setCurrentMonthDeadlines] = useState<Deadline[]>([]);
+  const [currentMonthGlobalAssignments, setCurrentMonthGlobalAssignments] = useState<GlobalAssignment[]>([]);
+  
   // Estado para deadlines y global assignments históricos (últimos 4 meses)
   const [historicalDeadlines, setHistoricalDeadlines] = useState<Record<string, Deadline[]>>({});
   const [historicalGlobalAssignments, setHistoricalGlobalAssignments] = useState<Record<string, GlobalAssignment[]>>({});
@@ -613,42 +617,73 @@ export default function ReportsPage() {
 
       // Capacidad del mes actual (para comparación)
       const currentMonthCapacity = getMonthlyCapacity(year, month, emp.workSchedule);
-      const hoursThisMonth = monthAllocations
+      
+      // 2. LÓGICA DE ESTIMACIÓN "MIX DE CARGA"
+      // A. Inercia Recurrente (40%): Usar el mes ACTUAL como referencia principal
+      // El mes actual es más relevante porque ya tiene datos planificados y computados
+      const thisMonthStr = format(thisMonth, 'yyyy-MM');
+      const now = new Date();
+      const daysInCurrentMonth = endOfMonth(thisMonth).getDate();
+      const currentDay = now.getDate();
+      const monthProgress = currentDay / daysInCurrentMonth; // 0.0 a 1.0
+      
+      // Horas de allocations del mes actual
+      const currentMonthAllocationsHours = monthAllocations
         .filter(a => a.employeeId === emp.id)
         .reduce((sum, a) => sum + a.hoursAssigned, 0);
-
-      // 2. LÓGICA DE ESTIMACIÓN "MIX DE CARGA"
-      // A. Inercia Recurrente (40%): Horas del mes inmediatamente anterior
-      const previousMonth = subMonths(thisMonth, 1);
-      const previousMonthStart = startOfMonth(previousMonth);
-      const previousMonthEnd = endOfMonth(previousMonth);
-      const previousMonthStr = format(previousMonth, 'yyyy-MM');
       
-      // Horas de allocations del mes anterior
-      const previousMonthAllocations = (allocations || []).filter(a => {
-        try {
-          const weekDate = parseISO(a.weekStartDate);
-          return a.employeeId === emp.id &&
-                 weekDate >= previousMonthStart &&
-                 weekDate <= previousMonthEnd;
-        } catch { return false; }
-      });
-      const previousMonthAllocationsHours = previousMonthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
-      
-      // Horas de deadlines del mes anterior
-      const previousMonthDeadlines = historicalDeadlines[previousMonthStr] || [];
-      const previousMonthDeadlineHours = previousMonthDeadlines
+      // Horas de deadlines del mes actual
+      const currentMonthDeadlineHours = currentMonthDeadlines
         .filter(d => !d.isHidden)
         .reduce((sum, d) => sum + (d.employeeHours[emp.id] || 0), 0);
       
-      // Horas de global assignments del mes anterior
-      const previousMonthGlobals = historicalGlobalAssignments[previousMonthStr] || [];
-      const previousMonthGlobalHours = previousMonthGlobals
+      // Horas de global assignments del mes actual
+      const currentMonthGlobalHours = currentMonthGlobalAssignments
         .filter(g => g.affectsAll || (g.affectedEmployeeIds || []).includes(emp.id))
         .reduce((sum, g) => sum + g.hours, 0);
       
-      // Total del mes anterior: allocations + deadlines + global assignments
-      const previousMonthTotalHours = previousMonthAllocationsHours + previousMonthDeadlineHours + previousMonthGlobalHours;
+      // Total del mes actual: allocations + deadlines + global assignments
+      const currentMonthTotalHours = currentMonthAllocationsHours + currentMonthDeadlineHours + currentMonthGlobalHours;
+      
+      // Si estamos a mitad del mes o más, proyectar al mes completo
+      // Si estamos al inicio del mes (< 30% del mes), usar el mes anterior como respaldo
+      let inertiaHours: number;
+      if (monthProgress >= 0.3 && currentMonthTotalHours > 0) {
+        // Proyectar el mes actual al mes completo
+        inertiaHours = round2(currentMonthTotalHours / monthProgress);
+      } else if (currentMonthTotalHours > 0) {
+        // Usar el mes actual directamente si hay datos pero estamos al inicio
+        inertiaHours = currentMonthTotalHours;
+      } else {
+        // Si no hay datos del mes actual, usar el mes anterior como respaldo
+        const previousMonth = subMonths(thisMonth, 1);
+        const previousMonthStart = startOfMonth(previousMonth);
+        const previousMonthEnd = endOfMonth(previousMonth);
+        const previousMonthStr = format(previousMonth, 'yyyy-MM');
+        
+        const previousMonthAllocationsHours = (allocations || []).filter(a => {
+          try {
+            const weekDate = parseISO(a.weekStartDate);
+            return a.employeeId === emp.id &&
+                   weekDate >= previousMonthStart &&
+                   weekDate <= previousMonthEnd;
+          } catch { return false; }
+        }).reduce((sum, a) => sum + a.hoursAssigned, 0);
+        
+        const previousMonthDeadlines = historicalDeadlines[previousMonthStr] || [];
+        const previousMonthDeadlineHours = previousMonthDeadlines
+          .filter(d => !d.isHidden)
+          .reduce((sum, d) => sum + (d.employeeHours[emp.id] || 0), 0);
+        
+        const previousMonthGlobals = historicalGlobalAssignments[previousMonthStr] || [];
+        const previousMonthGlobalHours = previousMonthGlobals
+          .filter(g => g.affectsAll || (g.affectedEmployeeIds || []).includes(emp.id))
+          .reduce((sum, g) => sum + g.hours, 0);
+        
+        inertiaHours = previousMonthAllocationsHours + previousMonthDeadlineHours + previousMonthGlobalHours;
+      }
+      
+      const previousMonthTotalHours = inertiaHours; // Renombrado para mantener compatibilidad con el resto del código
 
       // B. Media Histórica (40%): Promedio de los últimos 3-4 meses
       // Incluye allocations + deadlines + global assignments
@@ -866,14 +901,50 @@ export default function ReportsPage() {
         }
       };
     }).sort((a, b) => b.nextMonth.estimatedAvailable - a.nextMonth.estimatedAvailable);
-  }, [employees, allocations, monthAllocations, reliabilityByEmployee, year, month, absences, teamEvents, nextMonthDeadlines, nextMonthGlobalAssignments, historicalDeadlines, historicalGlobalAssignments]);
+  }, [employees, allocations, monthAllocations, reliabilityByEmployee, year, month, absences, teamEvents, nextMonthDeadlines, nextMonthGlobalAssignments, currentMonthDeadlines, currentMonthGlobalAssignments, historicalDeadlines, historicalGlobalAssignments]);
   
-  // Cargar deadlines y global assignments del mes siguiente y meses históricos
+  // Cargar deadlines y global assignments del mes actual, siguiente y meses históricos
   useEffect(() => {
     const loadData = async () => {
       const thisMonth = startOfMonth(new Date());
+      const thisMonthStr = format(thisMonth, 'yyyy-MM');
       const nextMonth = addMonths(thisMonth, 1);
       const nextMonthStr = format(nextMonth, 'yyyy-MM');
+
+      // Cargar deadlines del mes actual
+      const { data: currentDeadlinesData, error: currentDeadlinesError } = await supabase
+        .from('deadlines')
+        .select('*')
+        .eq('month', thisMonthStr);
+
+      if (!currentDeadlinesError && currentDeadlinesData) {
+        setCurrentMonthDeadlines(currentDeadlinesData.map((d: any) => ({
+          id: d.id,
+          projectId: d.project_id,
+          month: d.month,
+          notes: d.notes,
+          employeeHours: d.employee_hours || {},
+          isHidden: d.is_hidden || false
+        })));
+      }
+
+      // Cargar global assignments del mes actual
+      const { data: currentGlobalData, error: currentGlobalError } = await supabase
+        .from('global_assignments')
+        .select('*')
+        .eq('month', thisMonthStr);
+
+      if (!currentGlobalError && currentGlobalData) {
+        setCurrentMonthGlobalAssignments(currentGlobalData.map((g: any) => ({
+          id: g.id,
+          month: g.month,
+          name: g.name,
+          hours: Number(g.hours),
+          affectsAll: g.affects_all,
+          affectedEmployeeIds: (g.affected_employee_ids || []) as string[],
+          employeeId: g.employee_id || g.created_by
+        })));
+      }
 
       // Cargar deadlines del mes siguiente
       const { data: deadlinesData, error: deadlinesError } = await supabase
@@ -1591,7 +1662,7 @@ export default function ReportsPage() {
                         <div className="space-y-1.5">
                           {emp.mixBreakdown.inertia > 0 && (
                             <div className="flex justify-between items-center text-xs">
-                              <span className="text-blue-600">Inercia del mes anterior (40%):</span>
+                              <span className="text-blue-600">Inercia del mes actual (40%):</span>
                               <span className="font-medium">{emp.mixBreakdown.inertia.toFixed(1)}h</span>
                             </div>
                           )}
