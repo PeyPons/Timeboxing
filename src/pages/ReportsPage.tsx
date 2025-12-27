@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -34,8 +34,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
+import { getAbsenceHoursInRange } from '@/utils/absenceUtils';
+import { getTeamEventHoursInRange } from '@/utils/teamEventUtils';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth, parseISO, isSameMonth, differenceInWeeks, startOfWeek, addWeeks, getWeek, getDate } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { supabase } from '@/lib/supabase';
+import { Deadline, GlobalAssignment } from '@/types';
 
 const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
@@ -80,7 +84,7 @@ const getReliabilityLabel = (data: ReliabilityData): string => {
 };
 
 export default function ReportsPage() {
-  const { employees, clients, projects, allocations } = useApp();
+  const { employees, clients, projects, allocations, absences, teamEvents } = useApp();
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
@@ -550,37 +554,132 @@ export default function ReportsPage() {
     });
   }, [employees, allocations, currentMonth, monthStart, monthEnd]);
 
-  // Predicción de disponibilidad futura con estimaciones históricas
+  // Estado para deadlines y global assignments del mes siguiente
+  const [nextMonthDeadlines, setNextMonthDeadlines] = useState<Deadline[]>([]);
+  const [nextMonthGlobalAssignments, setNextMonthGlobalAssignments] = useState<GlobalAssignment[]>([]);
+
+  // Cargar deadlines y global assignments del mes siguiente
+  useEffect(() => {
+    const nextMonth = addMonths(startOfMonth(new Date()), 1);
+    const nextMonthStr = format(nextMonth, 'yyyy-MM');
+
+    // Cargar deadlines
+    supabase
+      .from('deadlines')
+      .select('*')
+      .eq('month', nextMonthStr)
+      .then(({ data, error }) => {
+        if (!error && data) {
+          setNextMonthDeadlines(data.map((d: any) => ({
+            id: d.id,
+            projectId: d.project_id,
+            month: d.month,
+            notes: d.notes,
+            employeeHours: d.employee_hours || {},
+            isHidden: d.is_hidden || false
+          })));
+        }
+      });
+
+    // Cargar global assignments
+    supabase
+      .from('global_assignments')
+      .select('*')
+      .eq('month', nextMonthStr)
+      .then(({ data, error }) => {
+        if (!error && data) {
+          setNextMonthGlobalAssignments(data.map((g: any) => ({
+            id: g.id,
+            month: g.month,
+            name: g.name,
+            hours: Number(g.hours),
+            affectsAll: g.affects_all,
+            affectedEmployeeIds: (g.affected_employee_ids || []) as string[],
+            employeeId: g.employee_id || g.created_by
+          })));
+        }
+      });
+  }, []);
+
+  // Predicción de disponibilidad futura con Modelo de Mezcla Ponderada
   const futureAvailability = useMemo(() => {
     const thisMonth = startOfMonth(new Date());
     const nextMonth = addMonths(thisMonth, 1);
+    const nextMonthStart = startOfMonth(nextMonth);
+    const nextMonthEnd = endOfMonth(nextMonth);
 
     return employees.filter(e => e.isActive).map(emp => {
-      // Calcular capacidad mensual del empleado
-      const monthlyCapacity = getMonthlyCapacity(
+      // 1. CÁLCULO DE CAPACIDAD NETA REAJUSTADA
+      // Capacidad base del mes siguiente
+      const baseCapacity = getMonthlyCapacity(
         nextMonth.getFullYear(),
         nextMonth.getMonth(),
         emp.workSchedule
       );
-      const currentMonthCapacity = getMonthlyCapacity(year, month, emp.workSchedule);
 
-      // Horas asignadas este mes
+      // Restar ausencias
+      const employeeAbsences = (absences || []).filter(a => a.employeeId === emp.id);
+      const absenceHours = getAbsenceHoursInRange(
+        nextMonthStart,
+        nextMonthEnd,
+        employeeAbsences,
+        emp.workSchedule
+      );
+
+      // Restar eventos del equipo
+      const eventHours = getTeamEventHoursInRange(
+        nextMonthStart,
+        nextMonthEnd,
+        emp.id,
+        teamEvents || [],
+        emp.workSchedule,
+        employeeAbsences
+      );
+
+      // Capacidad disponible sin ajuste
+      const availableCapacity = Math.max(0, baseCapacity - absenceHours - eventHours);
+
+      // Factor de ajuste basado en reliabilityIndex
+      const reliability = reliabilityByEmployee[emp.id];
+      const adjustmentFactor = reliability && reliability.tasksAnalyzed >= 5
+        ? reliability.index / 100  // Si index = 120, factor = 1.2 (tarda 20% más)
+        : 1;
+
+      // Capacidad neta reajustada (reducida preventivamente si suele tardar más)
+      const adjustedCapacity = round2(availableCapacity / adjustmentFactor);
+
+      // Capacidad del mes actual (para comparación)
+      const currentMonthCapacity = getMonthlyCapacity(year, month, emp.workSchedule);
       const hoursThisMonth = monthAllocations
         .filter(a => a.employeeId === emp.id)
         .reduce((sum, a) => sum + a.hoursAssigned, 0);
 
-      // Horas asignadas mes siguiente (si hay deadlines)
-      const nextMonthAllocations = (allocations || []).filter(a => {
+      // 2. LÓGICA DE ESTIMACIÓN "MIX DE CARGA"
+      // A. Inercia Recurrente (40%): Horas del mes inmediatamente anterior
+      const previousMonth = subMonths(thisMonth, 1);
+      const previousMonthStart = startOfMonth(previousMonth);
+      const previousMonthEnd = endOfMonth(previousMonth);
+      
+      const previousMonthAllocations = (allocations || []).filter(a => {
         try {
           const weekDate = parseISO(a.weekStartDate);
-          return a.employeeId === emp.id && isSameMonth(weekDate, nextMonth);
+          return a.employeeId === emp.id &&
+                 weekDate >= previousMonthStart &&
+                 weekDate <= previousMonthEnd;
         } catch { return false; }
       });
-      const hoursNextMonth = nextMonthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+      
+      const previousMonthHours = previousMonthAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+      
+      // Obtener deadlines y global assignments del mes anterior
+      const previousMonthStr = format(previousMonth, 'yyyy-MM');
+      // Nota: En producción, esto debería cargarse de forma similar a nextMonthDeadlines
+      // Por ahora, usamos solo allocations
+      const previousMonthTotalHours = previousMonthHours;
 
-      // Calcular histórico (últimos 6 meses)
+      // B. Media Histórica (40%): Promedio de los últimos 3-4 meses
       const historicalMonths: Array<{ month: Date; hours: number; capacity: number }> = [];
-      for (let i = 1; i <= 6; i++) {
+      for (let i = 1; i <= 4; i++) {
         const pastMonth = subMonths(thisMonth, i);
         const pastMonthStart = startOfMonth(pastMonth);
         const pastMonthEnd = endOfMonth(pastMonth);
@@ -605,32 +704,73 @@ export default function ReportsPage() {
         }
       }
 
-      // Calcular promedio histórico de carga (porcentaje de capacidad usado)
-      const avgLoadPercentage = historicalMonths.length > 0
-        ? historicalMonths.reduce((sum, m) => sum + (m.hours / m.capacity * 100), 0) / historicalMonths.length
+      const historicalAvgHours = historicalMonths.length > 0
+        ? historicalMonths.reduce((sum, m) => sum + m.hours, 0) / historicalMonths.length
         : 0;
 
-      // Estimar horas para el próximo mes basado en histórico
-      const estimatedHoursNextMonth = hoursNextMonth > 0
-        ? hoursNextMonth // Si ya hay deadlines, usar esos datos
-        : round2((avgLoadPercentage / 100) * monthlyCapacity); // Si no, estimar con histórico
+      // C. Compromisos Reales (20%): Horas de deadlines/tareas ya creadas para el mes siguiente
+      const nextMonthDeadlineHours = nextMonthDeadlines
+        .filter(d => !d.isHidden)
+        .reduce((sum, d) => sum + (d.employeeHours[emp.id] || 0), 0);
 
-      // Calcular disponibilidad estimada
-      const estimatedAvailable = round2(Math.max(0, monthlyCapacity - estimatedHoursNextMonth));
-      const hasDeadlinesNextMonth = hoursNextMonth > 0;
+      const nextMonthGlobalHours = nextMonthGlobalAssignments
+        .filter(g => g.affectsAll || (g.affectedEmployeeIds || []).includes(emp.id))
+        .reduce((sum, g) => sum + g.hours, 0);
 
-      // Nivel de confianza en la estimación
-      const confidenceLevel = historicalMonths.length >= 4
-        ? 'high'
-        : historicalMonths.length >= 2
-          ? 'medium'
-          : 'low';
+      const committedHours = nextMonthDeadlineHours + nextMonthGlobalHours;
 
-      // Factor de ajuste basado en fiabilidad histórica
-      const reliability = reliabilityByEmployee[emp.id];
-      const adjustmentFactor = reliability && reliability.tasksAnalyzed >= 5
-        ? reliability.index / 100
-        : 1;
+      // Si hay muchos compromisos, aumentar su peso
+      const committedWeight = committedHours > adjustedCapacity * 0.3 ? 0.4 : 0.2;
+      const inertiaWeight = committedHours > adjustedCapacity * 0.3 ? 0.3 : 0.4;
+      const historicalWeight = committedHours > adjustedCapacity * 0.3 ? 0.3 : 0.4;
+
+      // Mezcla ponderada
+      let estimatedHoursNextMonth = round2(
+        (previousMonthTotalHours * inertiaWeight) +
+        (historicalAvgHours * historicalWeight) +
+        (committedHours * committedWeight)
+      );
+
+      // 3. INTEGRACIÓN DE RENTABILIDAD (GANANCIA)
+      // Calcular ratio entre Horas Reales y Horas Computadas del mes actual
+      const currentMonthCompleted = monthAllocations.filter(
+        a => a.employeeId === emp.id && a.status === 'completed'
+      );
+      const currentMonthReal = currentMonthCompleted.reduce(
+        (sum, a) => sum + (a.hoursActual || 0), 0
+      );
+      const currentMonthComputed = currentMonthCompleted.reduce(
+        (sum, a) => sum + (a.hoursComputed || 0), 0
+      );
+
+      // Si rentabilidad es baja (Real > Computado), incrementar estimación
+      if (currentMonthReal > 0 && currentMonthComputed > 0) {
+        const profitabilityRatio = currentMonthComputed / currentMonthReal;
+        // Si ratio < 1, significa que es menos eficiente, ajustar estimación
+        if (profitabilityRatio < 0.9) {
+          const inefficiencyFactor = 1 / profitabilityRatio;
+          estimatedHoursNextMonth = round2(estimatedHoursNextMonth * inefficiencyFactor);
+        }
+      }
+
+      // 4. SISTEMA DE ALERTA DE CALIDAD DE DATOS
+      const monthsWithData = historicalMonths.length;
+      let dataMaturity: 'insufficient' | 'learning' | 'stable' = 'insufficient';
+      let maturityLabel = 'Sin base histórica';
+      let maturityColor = 'bg-red-50 text-red-700 border-red-200';
+
+      if (monthsWithData >= 3) {
+        dataMaturity = 'stable';
+        maturityLabel = 'Predicción fiable';
+        maturityColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      } else if (monthsWithData >= 1) {
+        dataMaturity = 'learning';
+        maturityLabel = 'Predicción basada en corto plazo';
+        maturityColor = 'bg-amber-50 text-amber-700 border-amber-200';
+      }
+
+      // Disponibilidad estimada final
+      const estimatedAvailable = round2(Math.max(0, adjustedCapacity - estimatedHoursNextMonth));
 
       return {
         employeeId: emp.id,
@@ -645,24 +785,37 @@ export default function ReportsPage() {
         },
         // Mes siguiente
         nextMonth: {
-          capacity: monthlyCapacity,
-          assigned: round2(hoursNextMonth),
+          capacity: adjustedCapacity,
+          baseCapacity,
+          absenceHours,
+          eventHours,
+          assigned: round2(committedHours),
           estimated: round2(estimatedHoursNextMonth),
           estimatedAvailable,
-          hasDeadlines: hasDeadlinesNextMonth,
-          percentage: monthlyCapacity > 0 ? round2((estimatedHoursNextMonth / monthlyCapacity) * 100) : 0
+          hasDeadlines: committedHours > 0,
+          percentage: adjustedCapacity > 0 ? round2((estimatedHoursNextMonth / adjustedCapacity) * 100) : 0
         },
-        // Histórico
+        // Histórico y calidad de datos
         historical: {
-          monthsAnalyzed: historicalMonths.length,
-          avgLoadPercentage: round2(avgLoadPercentage),
-          confidenceLevel
+          monthsAnalyzed: monthsWithData,
+          avgLoadPercentage: historicalMonths.length > 0
+            ? round2(historicalMonths.reduce((sum, m) => sum + (m.hours / m.capacity * 100), 0) / historicalMonths.length)
+            : 0,
+          dataMaturity,
+          maturityLabel,
+          maturityColor
         },
         adjustmentFactor,
-        reliabilityIndex: reliability?.index || 0
+        reliabilityIndex: reliability?.index || 0,
+        // Desglose de la mezcla
+        mixBreakdown: {
+          inertia: round2(previousMonthTotalHours * inertiaWeight),
+          historical: round2(historicalAvgHours * historicalWeight),
+          committed: round2(committedHours * committedWeight)
+        }
       };
     }).sort((a, b) => b.nextMonth.estimatedAvailable - a.nextMonth.estimatedAvailable);
-  }, [employees, allocations, monthAllocations, reliabilityByEmployee, year, month]);
+  }, [employees, allocations, monthAllocations, reliabilityByEmployee, year, month, absences, teamEvents, nextMonthDeadlines, nextMonthGlobalAssignments]);
 
   const stats = [
     {
@@ -1071,8 +1224,21 @@ export default function ReportsPage() {
                 <CalendarDays className="h-5 w-5" />
                 Predicción de carga - Mes siguiente
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="flex items-center gap-2">
                 Estimación de disponibilidad basada en histórico de deadlines anteriores.
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertCircle className="h-4 w-4 text-slate-400 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="font-medium mb-1">Modelo de Mezcla Ponderada</p>
+                      <p className="text-xs">
+                        Esta estimación considera tus últimos 3 meses, tu rentabilidad actual y tus vacaciones programadas.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1083,29 +1249,33 @@ export default function ReportsPage() {
                       <div>
                         <h4 className="font-medium flex items-center gap-2">
                           {emp.employeeName}
-                          {/* Badge de confianza */}
+                          {/* Badge de madurez de datos */}
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger>
                                 <Badge
                                   variant="outline"
-                                  className={cn(
-                                    "text-[10px] px-1.5",
-                                    emp.historical.confidenceLevel === 'high' && "bg-emerald-50 text-emerald-700 border-emerald-200",
-                                    emp.historical.confidenceLevel === 'medium' && "bg-amber-50 text-amber-700 border-amber-200",
-                                    emp.historical.confidenceLevel === 'low' && "bg-slate-50 text-slate-500 border-slate-200"
-                                  )}
+                                  className={cn("text-[10px] px-1.5", emp.historical.maturityColor)}
                                 >
-                                  {emp.historical.confidenceLevel === 'high' ? 'Fiable' :
-                                   emp.historical.confidenceLevel === 'medium' ? 'Moderada' : 'Poca data'}
+                                  {emp.historical.maturityLabel}
                                 </Badge>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p className="font-medium">Confianza de la estimación</p>
+                                <p className="font-medium">Madurez de la predicción</p>
                                 <p className="text-xs">{emp.historical.monthsAnalyzed} meses de histórico analizados</p>
-                                {emp.historical.monthsAnalyzed < 4 && (
+                                {emp.historical.dataMaturity === 'insufficient' && (
+                                  <p className="text-xs text-red-600 mt-1">
+                                    Se necesitan al menos 1 mes de datos para una predicción básica
+                                  </p>
+                                )}
+                                {emp.historical.dataMaturity === 'learning' && (
                                   <p className="text-xs text-amber-600 mt-1">
-                                    Se necesitan más meses para mayor precisión
+                                    Se recomiendan más meses para mayor precisión
+                                  </p>
+                                )}
+                                {emp.historical.dataMaturity === 'stable' && (
+                                  <p className="text-xs text-emerald-600 mt-1">
+                                    Predicción basada en datos consistentes
                                   </p>
                                 )}
                               </TooltipContent>

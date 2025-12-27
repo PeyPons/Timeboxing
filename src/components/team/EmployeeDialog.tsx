@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
-import { Employee, WorkSchedule } from '@/types';
+import { Employee, WorkSchedule, EmployeeRole } from '@/types';
 import { UserPermissions, PERMISSION_LABELS, DEFAULT_PERMISSIONS } from '@/types/permissions';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
@@ -34,7 +34,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('');
+  const [role, setRole] = useState<Employee['role']>('SEO');
   const [department, setDepartment] = useState('SEO');
   const [capacity, setCapacity] = useState(40);
   const [hourlyRate, setHourlyRate] = useState(0);
@@ -54,7 +54,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setName(employeeToEdit.name);
         setEmail(employeeToEdit.email || '');
         setPassword(''); 
-        setRole(employeeToEdit.role);
+        setRole(employeeToEdit.role || 'SEO');
         setDepartment(employeeToEdit.department || 'SEO');
         setCapacity(employeeToEdit.defaultWeeklyCapacity);
         setHourlyRate(employeeToEdit.hourlyRate || 0);
@@ -65,7 +65,7 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
         setName('');
         setEmail('');
         setPassword('');
-        setRole('');
+        setRole('SEO');
         setDepartment('SEO');
         setCapacity(40);
         setHourlyRate(0);
@@ -348,7 +348,17 @@ export function EmployeeDialog({ open, onOpenChange, employeeToEdit }: EmployeeD
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                       <Label htmlFor="role">Rol</Label>
-                      <Input id="role" value={role} onChange={e => setRole(e.target.value)} placeholder="Ej: Consultor, Manager..." required />
+                      <Select value={role} onValueChange={setRole} required>
+                        <SelectTrigger id="role">
+                          <SelectValue placeholder="Selecciona un rol" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Responsable">Responsable</SelectItem>
+                          <SelectItem value="Coordinador">Coordinador</SelectItem>
+                          <SelectItem value="SEO">SEO</SelectItem>
+                          <SelectItem value="PPC">PPC</SelectItem>
+                        </SelectContent>
+                      </Select>
                   </div>
                   <div className="grid gap-2">
                       <Label htmlFor="dept">Departamento</Label>

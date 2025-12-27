@@ -10,11 +10,13 @@ export interface WorkSchedule {
 
 import { UserPermissions } from './permissions';
 
+export type EmployeeRole = 'Responsable' | 'Coordinador' | 'SEO' | 'PPC';
+
 export interface Employee {
   id: string;
   name: string;
   email?: string;
-  role: string;
+  role: EmployeeRole;
   avatarUrl?: string;
   defaultWeeklyCapacity: number;
   workSchedule: WorkSchedule;
