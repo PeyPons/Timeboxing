@@ -427,6 +427,64 @@ export default function ReportsPage() {
     });
   }, [employees, allocations, monthStart, monthEnd]);
 
+  // Predicción de disponibilidad futura (próximas 8 semanas)
+  const futureAvailability = useMemo(() => {
+    const weeks: Date[] = [];
+    let weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+    for (let i = 0; i < 8; i++) {
+      weeks.push(weekStart);
+      weekStart = addWeeks(weekStart, 1);
+    }
+
+    return employees.filter(e => e.isActive).map(emp => {
+      const weeklyCapacity = emp.workSchedule?.defaultHoursPerDay
+        ? emp.workSchedule.defaultHoursPerDay * 5
+        : 40;
+
+      const weeklyAvailability = weeks.map(week => {
+        const weekStr = format(week, 'yyyy-MM-dd');
+        const weekAllocations = (allocations || []).filter(a =>
+          a.employeeId === emp.id && a.weekStartDate === weekStr
+        );
+        const hoursPlanned = weekAllocations.reduce((sum, a) => sum + a.hoursAssigned, 0);
+        const hoursAvailable = Math.max(0, weeklyCapacity - hoursPlanned);
+        const percentage = weeklyCapacity > 0 ? (hoursPlanned / weeklyCapacity) * 100 : 0;
+
+        return {
+          week: weekStr,
+          weekLabel: format(week, 'dd MMM', { locale: es }),
+          hoursPlanned,
+          hoursAvailable,
+          capacity: weeklyCapacity,
+          percentage,
+          isAvailable: hoursAvailable >= 8 // Al menos 8h disponibles
+        };
+      });
+
+      // Encontrar la próxima semana con disponibilidad significativa
+      const nextAvailableWeek = weeklyAvailability.find(w => w.isAvailable);
+      const totalAvailableHours = weeklyAvailability.reduce((sum, w) => sum + w.hoursAvailable, 0);
+
+      // Calcular factor de ajuste basado en fiabilidad histórica
+      const reliability = reliabilityByEmployee[emp.id];
+      const adjustmentFactor = reliability && reliability.tasksAnalyzed >= 5
+        ? reliability.index / 100
+        : 1;
+
+      return {
+        employeeId: emp.id,
+        employeeName: emp.name,
+        employeeRole: emp.role,
+        weeklyAvailability,
+        nextAvailableWeek,
+        totalAvailableHours,
+        adjustmentFactor,
+        reliabilityIndex: reliability?.index || 0,
+        reliabilityTrend: reliability?.trend || 'insufficient'
+      };
+    }).sort((a, b) => b.totalAvailableHours - a.totalAvailableHours);
+  }, [employees, allocations, reliabilityByEmployee]);
+
   const stats = [
     {
       title: 'Capacidad',
@@ -761,6 +819,109 @@ export default function ReportsPage() {
                   </table>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Predicción de Disponibilidad Futura */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5" />
+                Disponibilidad Futura
+              </CardTitle>
+              <CardDescription>
+                Capacidad disponible en las próximas 8 semanas. Útil para planificar nuevos proyectos.
+                {futureAvailability.some(e => e.reliabilityTrend !== 'insufficient') && (
+                  <span className="ml-2 text-amber-600">
+                    * Ajustado según índice de fiabilidad histórico
+                  </span>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {futureAvailability.map(emp => (
+                  <div key={emp.employeeId} className="border rounded-lg p-4 hover:bg-slate-50 transition-colors">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h4 className="font-medium flex items-center gap-2">
+                          {emp.employeeName}
+                          {emp.reliabilityTrend === 'underestimates' && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                                    <TrendingDown className="h-3 w-3 mr-1" />
+                                    x{emp.adjustmentFactor.toFixed(2)}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Este empleado suele tardar más de lo estimado.</p>
+                                  <p className="text-xs">Considera añadir {((1/emp.adjustmentFactor - 1) * 100).toFixed(0)}% extra al estimar.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </h4>
+                        <p className="text-xs text-muted-foreground">{emp.employeeRole}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-emerald-600">{emp.totalAvailableHours}h</p>
+                        <p className="text-xs text-muted-foreground">disponibles en 8 semanas</p>
+                      </div>
+                    </div>
+
+                    {/* Timeline de disponibilidad */}
+                    <div className="flex gap-1">
+                      {emp.weeklyAvailability.map(week => (
+                        <TooltipProvider key={week.week}>
+                          <Tooltip>
+                            <TooltipTrigger className="flex-1">
+                              <div className="text-center">
+                                <div
+                                  className={cn(
+                                    "h-6 rounded text-xs flex items-center justify-center font-medium",
+                                    week.hoursAvailable >= 20 && "bg-emerald-500 text-white",
+                                    week.hoursAvailable >= 8 && week.hoursAvailable < 20 && "bg-emerald-200 text-emerald-800",
+                                    week.hoursAvailable > 0 && week.hoursAvailable < 8 && "bg-amber-100 text-amber-800",
+                                    week.hoursAvailable === 0 && "bg-red-100 text-red-600"
+                                  )}
+                                >
+                                  {week.hoursAvailable > 0 ? `${week.hoursAvailable}h` : 'Full'}
+                                </div>
+                                <span className="text-[10px] text-muted-foreground">{week.weekLabel}</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="font-medium">Semana del {week.weekLabel}</p>
+                              <p className="text-xs">Planificado: {week.hoursPlanned}h de {week.capacity}h</p>
+                              <p className="text-xs text-emerald-600">Disponible: {week.hoursAvailable}h</p>
+                              {week.isAvailable && (
+                                <p className="text-xs text-emerald-700 font-medium mt-1">
+                                  ✓ Puede asumir nuevas tareas
+                                </p>
+                              )}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ))}
+                    </div>
+
+                    {/* Sugerencia de disponibilidad */}
+                    {emp.nextAvailableWeek ? (
+                      <p className="text-xs text-emerald-700 mt-2 flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Próxima disponibilidad: semana del {emp.nextAvailableWeek.weekLabel} ({emp.nextAvailableWeek.hoursAvailable}h libres)
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Sin disponibilidad significativa en las próximas 8 semanas
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
