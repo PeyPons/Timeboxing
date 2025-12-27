@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -134,11 +134,13 @@ export function DeadlinesTour({ onComplete, forceShow = false }: DeadlinesTourPr
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [hasBeenCompleted, setHasBeenCompleted] = useState(false); // ✅ Estado local para evitar múltiples ejecuciones
+  const lastCheckedUserIdRef = React.useRef<string | null>(null); // ✅ Ref para rastrear qué usuario ya verificamos
 
-  // Verificar si debe mostrarse
+  // Verificar si debe mostrarse (solo una vez por usuario)
   useEffect(() => {
     // Si ya se completó localmente, no mostrar nunca más
     if (hasBeenCompleted) {
+      setIsVisible(false);
       return;
     }
 
@@ -155,25 +157,33 @@ export function DeadlinesTour({ onComplete, forceShow = false }: DeadlinesTourPr
     }
 
     // Si currentUser es null o no existe, NO mostrar el tour
-    // Esto evita loops infinitos cuando el empleado no tiene user_id asociado
     if (!currentUser) {
       console.log('[DeadlinesTour] No hay currentUser, no se muestra el tour');
+      lastCheckedUserIdRef.current = null;
       return;
     }
 
+    // Si ya verificamos para este usuario específico, no volver a verificar
+    if (lastCheckedUserIdRef.current === currentUser.id) {
+      return;
+    }
+
+    // Marcar que ya verificamos para este usuario
+    lastCheckedUserIdRef.current = currentUser.id;
+
     // Verificar si el tour ya fue completado (en BD o localmente)
     const isCompleted = currentUser.deadlinesTourCompleted === true || hasBeenCompleted;
-    if (!isCompleted && !isVisible) {
-      console.log('[DeadlinesTour] Tour no completado, mostrando...');
+    if (isCompleted) {
+      console.log('[DeadlinesTour] Tour ya completado para usuario:', currentUser.id);
+      setIsVisible(false);
+    } else {
+      console.log('[DeadlinesTour] Tour no completado, mostrando para usuario:', currentUser.id);
       const timer = setTimeout(() => {
         setIsVisible(true);
       }, 500);
       return () => clearTimeout(timer);
-    } else {
-      console.log('[DeadlinesTour] Tour ya completado');
-      setIsVisible(false);
     }
-  }, [forceShow, currentUser, hasBeenCompleted, isVisible]);
+  }, [forceShow, currentUser, hasBeenCompleted]); // ✅ Quitar isVisible de las dependencias
 
   // Calcular posiciones
   const calculatePositions = useCallback(() => {
