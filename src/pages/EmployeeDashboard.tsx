@@ -292,25 +292,40 @@ export default function EmployeeDashboard() {
 
     if (monthAllocations.length === 0) { toast.warning("No hay tareas pendientes para exportar"); return; }
 
-    // Formato: Nombre Tarea | Número de usuario | "project" | Número de proyecto | Tiempo estimado
+    // Formato CSV según especificación:
+    // 1. Nombre de tarea entre comillas dobles (escapar comillas internas)
+    // 2. ID de usuario CRM
+    // 3. Tipo: 'project', 'customer', o 'lead'
+    // 4. ID del elemento (project externalId)
+    // 5. Horas computables (con punto decimal, o vacío si no hay)
     const csvRows: string[] = [];
 
     monthAllocations.forEach(alloc => {
       const project = projects.find(p => p.id === alloc.projectId);
-      csvRows.push([
-        (alloc.taskName || 'Tarea').replace(/\t/g, ' '),  // Nombre tarea (sin tabs)
-        myEmployeeProfile.crmUserId,                       // user_id
-        'project',                                         // Literal "project"
-        project?.externalId || '',                         // project_id
-        alloc.hoursAssigned                                // horas con punto decimal
-      ].join('\t'));
+      
+      // Escapar comillas dobles en el nombre de la tarea (reemplazar " por "")
+      const taskName = (alloc.taskName || 'Tarea').replace(/"/g, '""');
+      
+      // Formatear horas: usar punto decimal y convertir a string
+      const hoursStr = alloc.hoursAssigned ? alloc.hoursAssigned.toString() : '';
+      
+      // Construir la línea CSV: nombre entre comillas, luego campos separados por comas
+      const csvLine = [
+        `"${taskName}"`,                    // Nombre tarea entre comillas dobles
+        myEmployeeProfile.crmUserId,        // user_id
+        'project',                          // Tipo: 'project' (por ahora solo proyectos)
+        project?.externalId || '',          // project_id
+        hoursStr                            // horas computables (con punto decimal o vacío)
+      ].join(',');
+      
+      csvRows.push(csvLine);
     });
 
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/tab-separated-values;charset=utf-8;' });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `tareas_crm_${format(currentMonth, 'yyyy-MM')}.tsv`;
+    link.download = `tareas_crm_${format(currentMonth, 'yyyy-MM')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
 

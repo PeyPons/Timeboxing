@@ -867,9 +867,9 @@ export default function ReportsPage() {
         // Mes actual
         currentMonth: {
           capacity: currentMonthCapacity,
-          assigned: round2(hoursThisMonth),
-          available: round2(Math.max(0, currentMonthCapacity - hoursThisMonth)),
-          percentage: currentMonthCapacity > 0 ? round2((hoursThisMonth / currentMonthCapacity) * 100) : 0
+          assigned: round2(currentMonthTotalHours),
+          available: round2(Math.max(0, currentMonthCapacity - currentMonthTotalHours)),
+          percentage: currentMonthCapacity > 0 ? round2((currentMonthTotalHours / currentMonthCapacity) * 100) : 0
         },
         // Mes siguiente
         nextMonth: {
