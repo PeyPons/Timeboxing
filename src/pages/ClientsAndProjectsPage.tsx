@@ -159,15 +159,24 @@ export default function ClientsAndProjectsPage() {
       const budget = project.budgetHours || 0;
       const minimum = project.minimumHours || 0;
       
+      // Lógica de horas objetivo según el usuario:
+      // - Si tiene budgetHours (horas contratadas): DEBE planificar TODAS
+      // - Si solo tiene minimumHours: DEBE planificar al menos esas
+      // - Si tiene ambas: DEBE planificar todas las budgetHours (las contratadas son obligatorias)
+      const targetHours = budget > 0 ? budget : minimum;
+      
       // Cálculos de estado
-      const planningPct = budget > 0 ? (totalAssigned / budget) * 100 : 0;
+      const planningPct = targetHours > 0 ? (totalAssigned / targetHours) * 100 : 0;
       const executionPct = totalAssigned > 0 ? (hoursComputed / totalAssigned) * 100 : 0;
       
       // Detección de problemas
-      const needsPlanning = budget > 0 && totalAssigned < budget * 0.5;
+      // Falta planificar: si tiene horas objetivo y no se han planificado todas
+      // - Si tiene budgetHours: debe planificar todas las budgetHours
+      // - Si solo tiene minimumHours: debe planificar al menos las minimumHours
+      const needsPlanning = targetHours > 0 && totalAssigned < targetHours;
       const behindSchedule = monthProgress > 30 && executionPct < (monthProgress - 20);
       const overBudget = budget > 0 && totalAssigned > budget;
-      const noActivity = budget > 0 && totalAssigned === 0;
+      const noActivity = targetHours > 0 && totalAssigned === 0;
       const hasIssue = needsPlanning || behindSchedule || overBudget || noActivity;
 
       // Empleados involucrados
@@ -899,7 +908,12 @@ export default function ClientsAndProjectsPage() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p className="text-xs">Proyectos con menos del 50% planificado</p>
+                <p className="text-xs">
+                  Proyectos que no han planificado todas sus horas contratadas o mínimas
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Si tiene horas contratadas, debe planificar todas. Si solo tiene mínimas, debe planificar al menos esas.
+                </p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -1187,7 +1201,12 @@ export default function ClientsAndProjectsPage() {
                                                 </Badge>
                                               </TooltipTrigger>
                                               <TooltipContent>
-                                                <p className="text-xs">Solo {round2(analysis.totalAssigned)}h de {analysis.budget}h están planificadas</p>
+                                                <p className="text-xs">
+                                                  {analysis.project.budgetHours > 0 
+                                                    ? `Faltan ${round2(analysis.project.budgetHours - analysis.totalAssigned)}h por planificar (${analysis.project.budgetHours}h contratadas)`
+                                                    : `Faltan ${round2((analysis.project.minimumHours || 0) - analysis.totalAssigned)}h por planificar (${analysis.project.minimumHours || 0}h mínimas)`
+                                                  }
+                                                </p>
                                               </TooltipContent>
                                             </Tooltip>
                                           )}
@@ -1297,15 +1316,37 @@ export default function ClientsAndProjectsPage() {
                                       <div className="flex justify-between text-xs mb-2">
                                         <span className="text-slate-600">
                                           <span className="font-semibold text-slate-800">{round2(analysis.totalAssigned)}h</span> planificadas
-                                          {analysis.totalAssigned < analysis.budget && (
-                                            <span className="text-amber-600 ml-2">(Faltan {round2(analysis.budget - analysis.totalAssigned)}h)</span>
-                                          )}
-                                          {analysis.overBudget && (
-                                            <span className="text-red-600 ml-2">(+{round2(analysis.totalAssigned - analysis.budget)}h de exceso)</span>
-                                          )}
+                                          {(() => {
+                                            const targetHours = analysis.project.budgetHours > 0 
+                                              ? analysis.project.budgetHours 
+                                              : (analysis.project.minimumHours || 0);
+                                            if (analysis.totalAssigned < targetHours) {
+                                              return (
+                                                <span className="text-amber-600 ml-2">
+                                                  (Faltan {round2(targetHours - analysis.totalAssigned)}h
+                                                  {analysis.project.budgetHours > 0 
+                                                    ? ` de ${analysis.project.budgetHours}h contratadas`
+                                                    : ` de ${analysis.project.minimumHours || 0}h mínimas`
+                                                  })
+                                                </span>
+                                              );
+                                            }
+                                            if (analysis.overBudget) {
+                                              return (
+                                                <span className="text-red-600 ml-2">
+                                                  (+{round2(analysis.totalAssigned - analysis.budget)}h de exceso)
+                                                </span>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
                                         </span>
                                         <span className="text-slate-500">
-                                          Asignadas: <span className="font-semibold text-slate-700">{analysis.budget}h</span>
+                                          {analysis.project.budgetHours > 0 ? (
+                                            <>Contratadas: <span className="font-semibold text-slate-700">{analysis.project.budgetHours}h</span></>
+                                          ) : (
+                                            <>Mínimas: <span className="font-semibold text-slate-700">{analysis.project.minimumHours || 0}h</span></>
+                                          )}
                                         </span>
                                       </div>
                                       
