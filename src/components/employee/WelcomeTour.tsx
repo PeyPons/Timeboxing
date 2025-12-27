@@ -156,7 +156,7 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
 
   // Verificar si debe mostrarse (solo una vez por usuario)
   useEffect(() => {
-    // Si ya se completó localmente, no mostrar nunca más
+    // ✅ PRIMERO: Si ya se completó localmente, no mostrar nunca más
     if (hasBeenCompleted) {
       setIsVisible(false);
       return;
@@ -181,6 +181,17 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
       return;
     }
 
+    // ✅ Verificar si el tour ya fue completado ANTES de verificar el ref
+    // Esto previene condiciones de carrera cuando se actualiza desde BD
+    const isCompleted = currentUser.welcomeTourCompleted === true || hasBeenCompleted;
+    if (isCompleted) {
+      console.log('[WelcomeTour] Tour ya completado para usuario:', currentUser.id);
+      setIsVisible(false);
+      // Actualizar el ref para evitar verificaciones futuras
+      lastCheckedUserIdRef.current = currentUser.id;
+      return;
+    }
+
     // Si ya verificamos para este usuario específico, no volver a verificar
     if (lastCheckedUserIdRef.current === currentUser.id) {
       return;
@@ -189,18 +200,12 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     // Marcar que ya verificamos para este usuario
     lastCheckedUserIdRef.current = currentUser.id;
 
-    // Verificar si el tour ya fue completado (en BD o localmente)
-    const isCompleted = currentUser.welcomeTourCompleted === true || hasBeenCompleted;
-    if (isCompleted) {
-      console.log('[WelcomeTour] Tour ya completado para usuario:', currentUser.id);
-      setIsVisible(false);
-    } else {
-      console.log('[WelcomeTour] Tour no completado, mostrando para usuario:', currentUser.id);
-      const timer = setTimeout(() => {
-        setIsVisible(true);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
+    // Si llegamos aquí, el tour no está completado y debemos mostrarlo
+    console.log('[WelcomeTour] Tour no completado, mostrando para usuario:', currentUser.id);
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 500);
+    return () => clearTimeout(timer);
   }, [forceShow, currentUser, hasBeenCompleted]); // ✅ Quitar isVisible de las dependencias
 
   // Calcular posiciones
@@ -334,6 +339,11 @@ export function WelcomeTour({ onComplete, forceShow = false }: WelcomeTourProps)
     // ✅ Marcar como completado inmediatamente para evitar que se muestre de nuevo
     setHasBeenCompleted(true);
     setIsVisible(false);
+    
+    // ✅ Actualizar el ref inmediatamente para evitar que se vuelva a verificar
+    if (currentUser?.id) {
+      lastCheckedUserIdRef.current = currentUser.id;
+    }
     
     // Guardar en la base de datos si hay usuario
     if (currentUser) {
