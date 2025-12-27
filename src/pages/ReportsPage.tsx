@@ -28,7 +28,9 @@ import {
   Award,
   Trophy,
   Star,
-  Gauge
+  Gauge,
+  Link2,
+  ArrowRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMonthlyCapacity } from '@/utils/dateUtils';
@@ -384,6 +386,51 @@ export default function ReportsPage() {
 
     return achievements;
   }, [employeeData, monthAllocations]);
+
+  // Alertas de dependencias bloqueadas
+  const blockedDependencies = useMemo(() => {
+    const blocked: Array<{
+      blockedTask: typeof allocations[0];
+      blockedTaskName: string;
+      blockedEmployee: string;
+      blockerTask: typeof allocations[0];
+      blockerTaskName: string;
+      blockerEmployee: string;
+      weeksSinceBlocked: number;
+      projectName: string;
+    }> = [];
+
+    // Buscar tareas del mes actual que tienen dependencias no completadas
+    monthAllocations.forEach(task => {
+      if (task.dependencyId && task.status !== 'completed') {
+        const blockerTask = (allocations || []).find(a => a.id === task.dependencyId);
+        if (blockerTask && blockerTask.status !== 'completed') {
+          const blockedEmployee = employees.find(e => e.id === task.employeeId);
+          const blockerEmployee = employees.find(e => e.id === blockerTask.employeeId);
+          const project = (projects || []).find(p => p.id === task.projectId);
+
+          // Calcular semanas desde que se planificó la tarea bloqueante
+          const blockerWeekDate = parseISO(blockerTask.weekStartDate);
+          const now = new Date();
+          const weeksSince = Math.max(0, differenceInWeeks(now, blockerWeekDate));
+
+          blocked.push({
+            blockedTask: task,
+            blockedTaskName: task.taskName || 'Tarea sin nombre',
+            blockedEmployee: blockedEmployee?.name || 'Desconocido',
+            blockerTask: blockerTask,
+            blockerTaskName: blockerTask.taskName || 'Tarea sin nombre',
+            blockerEmployee: blockerEmployee?.name || 'Desconocido',
+            weeksSinceBlocked: weeksSince,
+            projectName: project?.name || 'Proyecto desconocido'
+          });
+        }
+      }
+    });
+
+    // Ordenar por semanas bloqueadas (más antiguas primero)
+    return blocked.sort((a, b) => b.weeksSinceBlocked - a.weeksSinceBlocked);
+  }, [monthAllocations, allocations, employees, projects]);
 
   // Mapa de calor: carga semanal por empleado
   const heatmapData = useMemo(() => {
@@ -746,6 +793,69 @@ export default function ReportsPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Dependencias Bloqueadas */}
+          {blockedDependencies.length > 0 && (
+            <Card className="border-l-4 border-l-orange-400">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Link2 className="h-5 w-5 text-orange-500" />
+                  Tareas Bloqueadas por Dependencias
+                  <Badge variant="secondary" className="ml-2">{blockedDependencies.length}</Badge>
+                </CardTitle>
+                <CardDescription>
+                  Tareas que no pueden avanzar hasta que se complete su dependencia
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {blockedDependencies.slice(0, 5).map((dep, idx) => (
+                    <div
+                      key={`${dep.blockedTask.id}-${idx}`}
+                      className={cn(
+                        "p-3 rounded-lg border",
+                        dep.weeksSinceBlocked >= 2 && "bg-red-50 border-red-200",
+                        dep.weeksSinceBlocked === 1 && "bg-amber-50 border-amber-200",
+                        dep.weeksSinceBlocked === 0 && "bg-slate-50 border-slate-200"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 text-sm">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-orange-700 truncate">{dep.blockerTaskName}</span>
+                            <span className="text-xs text-muted-foreground">({dep.blockerEmployee})</span>
+                          </div>
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate">{dep.blockedTaskName}</span>
+                            <span className="text-xs text-muted-foreground">({dep.blockedEmployee})</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center mt-2">
+                        <span className="text-xs text-muted-foreground">{dep.projectName}</span>
+                        {dep.weeksSinceBlocked > 0 && (
+                          <Badge
+                            variant={dep.weeksSinceBlocked >= 2 ? 'destructive' : 'secondary'}
+                            className="text-xs"
+                          >
+                            {dep.weeksSinceBlocked} {dep.weeksSinceBlocked === 1 ? 'semana' : 'semanas'} esperando
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {blockedDependencies.length > 5 && (
+                    <p className="text-xs text-muted-foreground text-center pt-2">
+                      +{blockedDependencies.length - 5} tareas bloqueadas más
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Mapa de Calor de Carga */}
           <Card>
