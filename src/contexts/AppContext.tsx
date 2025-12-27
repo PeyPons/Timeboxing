@@ -172,28 +172,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Cargar datos iniciales
   useEffect(() => {
     fetchData();
+  }, []); // Solo ejecutar una vez al montar
+
+  // Escuchar cambios de autenticación (separado para evitar bucles)
+  useEffect(() => {
+    let isInitialMount = true;
     
-    // Escuchar cambios de autenticación para refrescar datos automáticamente
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Ignorar el primer evento (que es el estado inicial al montar)
+      // Ya se cargó todo en el useEffect anterior con fetchData()
+      if (isInitialMount) {
+        isInitialMount = false;
+        return;
+      }
+      
       console.log('[AppContext] Auth state changed:', event, session?.user?.email);
       
       if (event === 'SIGNED_OUT') {
         setCurrentUser(undefined);
         setIsLoading(false);
-      } else if (event === 'SIGNED_IN') {
-        // Solo refrescar cuando el usuario hace login explícitamente
-        // skipLoading=true para no poner isLoading en true y evitar redirecciones
-        console.log('[AppContext] Usuario hizo login, refrescando datos...');
-        await fetchData(true);
       }
-      // No refrescar en TOKEN_REFRESHED ni USER_UPDATED para evitar refrescos innecesarios
-      // que causan redirecciones
+      // No hacer nada en SIGNED_IN porque fetchData() ya se ejecutó al montar
+      // y refrescar aquí causaría bucles infinitos al recargar la página
     });
     
     return () => subscription.unsubscribe();
-  }, [fetchData]);
+  }, []); // Sin dependencias para evitar bucles
 
   const addEmployee = useCallback(async (employee: Omit<Employee, 'id'>) => {
     const { data, error } = await supabase.from('employees').insert({
