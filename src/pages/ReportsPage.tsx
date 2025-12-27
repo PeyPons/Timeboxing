@@ -1294,12 +1294,13 @@ export default function ReportsPage() {
                 Mapa de carga semanal
               </CardTitle>
               <CardDescription>
-                Visualización de la ocupación por empleado y semana.
-                <span className="ml-2 inline-flex items-center gap-1">
-                  <span className="h-3 w-3 rounded bg-emerald-500" /> Óptimo
-                  <span className="h-3 w-3 rounded bg-amber-500 ml-2" /> Alto
-                  <span className="h-3 w-3 rounded bg-red-500 ml-2" /> Sobrecargado
-                  <span className="h-3 w-3 rounded bg-blue-200 ml-2" /> Bajo
+                Visualización de la ocupación por empleado y semana. El color indica el nivel de carga respecto a la capacidad semanal.
+                <span className="ml-2 inline-flex items-center gap-1 flex-wrap">
+                  <span className="h-3 w-3 rounded bg-emerald-500" /> Óptimo (50-80%)
+                  <span className="h-3 w-3 rounded bg-emerald-600 ml-2" /> Alto (80-100%)
+                  <span className="h-3 w-3 rounded bg-amber-500 ml-2" /> Muy alto (100-120%)
+                  <span className="h-3 w-3 rounded bg-red-500 ml-2" /> Sobrecargado (+120%)
+                  <span className="h-3 w-3 rounded bg-blue-200 ml-2" /> Bajo (&lt;50%)
                 </span>
               </CardDescription>
             </CardHeader>
@@ -1315,7 +1316,7 @@ export default function ReportsPage() {
                       <tr className="border-b">
                         <th className="text-left py-2 px-3 font-medium text-muted-foreground w-40">Empleado</th>
                         {heatmapData[0]?.weeklyLoad.map(week => (
-                          <th key={week.week} className="text-center py-2 px-2 font-medium text-muted-foreground min-w-[70px]">
+                          <th key={week.week} className="text-center py-2 px-2 font-medium text-muted-foreground min-w-[90px]">
                             {week.weekLabel}
                           </th>
                         ))}
@@ -1329,24 +1330,55 @@ export default function ReportsPage() {
                             <td key={week.week} className="py-2 px-2 text-center">
                               <TooltipProvider>
                                 <Tooltip>
-                                  <TooltipTrigger>
+                                  <TooltipTrigger asChild>
                                     <div
                                       className={cn(
-                                        "h-8 w-full rounded flex items-center justify-center text-xs font-medium transition-colors cursor-help",
-                                        week.percentage === 0 && "bg-slate-100 text-slate-400",
-                                        week.percentage > 0 && week.percentage < 50 && "bg-blue-100 text-blue-700",
-                                        week.percentage >= 50 && week.percentage < 80 && "bg-emerald-100 text-emerald-700",
-                                        week.percentage >= 80 && week.percentage <= 100 && "bg-emerald-500 text-white",
-                                        week.percentage > 100 && week.percentage <= 120 && "bg-amber-500 text-white",
-                                        week.percentage > 120 && "bg-red-500 text-white"
+                                        "h-10 w-full rounded flex flex-col items-center justify-center text-xs font-medium transition-all cursor-help border",
+                                        week.percentage === 0 && "bg-slate-50 text-slate-400 border-slate-200",
+                                        week.percentage > 0 && week.percentage < 50 && "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100",
+                                        week.percentage >= 50 && week.percentage < 80 && "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
+                                        week.percentage >= 80 && week.percentage <= 100 && "bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600",
+                                        week.percentage > 100 && week.percentage <= 120 && "bg-amber-500 text-white border-amber-600 hover:bg-amber-600",
+                                        week.percentage > 120 && "bg-red-500 text-white border-red-600 hover:bg-red-600"
                                       )}
                                     >
-                                      {week.hours > 0 ? `${week.hours}h` : '-'}
+                                      {week.hours > 0 ? (
+                                        <>
+                                          <span className="font-semibold">{week.hours}h</span>
+                                          <span className="text-[10px] opacity-90 mt-0.5">
+                                            {week.percentage.toFixed(0)}%
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-slate-400">-</span>
+                                      )}
                                     </div>
                                   </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="font-medium">{row.employeeName}</p>
-                                    <p className="text-xs">{week.hours}h de {week.capacity}h ({week.percentage.toFixed(0)}%)</p>
+                                  <TooltipContent className="max-w-xs">
+                                    <p className="font-medium mb-1">{row.employeeName} - {week.weekLabel}</p>
+                                    <div className="space-y-0.5 text-xs">
+                                      <p><span className="font-medium">Horas asignadas:</span> {week.hours}h</p>
+                                      <p><span className="font-medium">Capacidad semanal:</span> {week.capacity}h</p>
+                                      <p><span className="font-medium">Ocupación:</span> {week.percentage.toFixed(1)}%</p>
+                                      {week.percentage === 0 && (
+                                        <p className="text-slate-500 mt-1">Sin asignaciones esta semana</p>
+                                      )}
+                                      {week.percentage > 0 && week.percentage < 50 && (
+                                        <p className="text-blue-600 mt-1">Carga baja - Capacidad disponible</p>
+                                      )}
+                                      {week.percentage >= 50 && week.percentage < 80 && (
+                                        <p className="text-emerald-600 mt-1">Carga óptima</p>
+                                      )}
+                                      {week.percentage >= 80 && week.percentage <= 100 && (
+                                        <p className="text-emerald-700 mt-1">Carga alta - Cerca del límite</p>
+                                      )}
+                                      {week.percentage > 100 && week.percentage <= 120 && (
+                                        <p className="text-amber-700 mt-1">⚠️ Sobrecarga moderada</p>
+                                      )}
+                                      {week.percentage > 120 && (
+                                        <p className="text-red-700 mt-1">🚨 Sobrecarga crítica</p>
+                                      )}
+                                    </div>
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
@@ -1441,7 +1473,7 @@ export default function ReportsPage() {
                     </div>
 
                     {/* Comparativa mes actual vs siguiente */}
-                    <div className="grid grid-cols-2 gap-4 mb-3">
+                    <div className="grid grid-cols-2 gap-4 mb-4">
                       {/* Mes actual */}
                       <div className="bg-slate-50 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">Mes actual</p>
@@ -1509,6 +1541,81 @@ export default function ReportsPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* Desglose detallado de la estimación */}
+                    <div className="bg-slate-50 rounded-lg p-3 mb-3 border border-slate-200">
+                      <p className="text-xs font-medium text-slate-700 mb-2">Desglose de la estimación</p>
+                      <div className="space-y-2">
+                        {/* Capacidad base */}
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-600">Capacidad base del mes:</span>
+                          <span className="font-medium">{emp.nextMonth.baseCapacity.toFixed(1)}h</span>
+                        </div>
+                        
+                        {/* Ausencias y eventos */}
+                        {(emp.nextMonth.absenceHours > 0 || emp.nextMonth.eventHours > 0) && (
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-600">Menos ausencias/eventos:</span>
+                            <span className="text-orange-600">
+                              -{(emp.nextMonth.absenceHours + emp.nextMonth.eventHours).toFixed(1)}h
+                            </span>
+                          </div>
+                        )}
+                        
+                        {/* Ajuste por fiabilidad */}
+                        {emp.adjustmentFactor !== 1 && (
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-600">Ajuste por fiabilidad ({emp.reliabilityIndex.toFixed(0)}%):</span>
+                            <span className={cn(
+                              emp.adjustmentFactor < 1 ? "text-emerald-600" : "text-amber-600"
+                            )}>
+                              {emp.adjustmentFactor < 1 ? '+' : '-'}
+                              {Math.abs((emp.nextMonth.baseCapacity - emp.nextMonth.absenceHours - emp.nextMonth.eventHours) - emp.nextMonth.capacity).toFixed(1)}h
+                            </span>
+                          </div>
+                        )}
+                        
+                        <div className="border-t border-slate-200 pt-1 mt-1">
+                          <div className="flex justify-between items-center text-xs font-medium">
+                            <span className="text-slate-700">Capacidad disponible ajustada:</span>
+                            <span>{emp.nextMonth.capacity.toFixed(1)}h</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Mix de carga (solo si hay estimación) */}
+                    {!emp.nextMonth.hasDeadlines && emp.historical.monthsAnalyzed > 0 && (
+                      <div className="bg-blue-50 rounded-lg p-3 mb-3 border border-blue-200">
+                        <p className="text-xs font-medium text-blue-700 mb-2">Mix de carga (estimación ponderada)</p>
+                        <div className="space-y-1.5">
+                          {emp.mixBreakdown.inertia > 0 && (
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-blue-600">Inercia del mes anterior (40%):</span>
+                              <span className="font-medium">{emp.mixBreakdown.inertia.toFixed(1)}h</span>
+                            </div>
+                          )}
+                          {emp.mixBreakdown.historical > 0 && (
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-blue-600">Media histórica ({emp.historical.monthsAnalyzed} meses, 40%):</span>
+                              <span className="font-medium">{emp.mixBreakdown.historical.toFixed(1)}h</span>
+                            </div>
+                          )}
+                          {emp.mixBreakdown.committed > 0 && (
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-blue-600">Compromisos reales (20%):</span>
+                              <span className="font-medium">{emp.mixBreakdown.committed.toFixed(1)}h</span>
+                            </div>
+                          )}
+                          <div className="border-t border-blue-200 pt-1 mt-1">
+                            <div className="flex justify-between items-center text-xs font-medium">
+                              <span className="text-blue-700">Carga estimada total:</span>
+                              <span>{emp.nextMonth.estimated.toFixed(1)}h</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Info adicional */}
                     <div className="text-xs text-muted-foreground border-t pt-2 flex justify-between">
