@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useAppTranslation } from "@/hooks/useAppTranslation";
+import { isChunkLoadError, reloadOnceForNewDeploy } from "@/lib/chunkReload";
 
 interface RouteErrorBoundaryProps {
   children: ReactNode;
@@ -9,6 +10,8 @@ interface RouteErrorBoundaryProps {
 
 interface RouteErrorBoundaryState {
   error: Error | null;
+  /** true mientras window.location.reload está en curso por chunk obsoleto. */
+  autoReloading: boolean;
 }
 
 function RouteErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }) {
@@ -33,28 +36,35 @@ function RouteErrorFallback({ error, onRetry }: { error: Error; onRetry: () => v
 
 /** Captura fallos de lazy import / render en rutas protegidas. */
 export class RouteErrorBoundary extends Component<RouteErrorBoundaryProps, RouteErrorBoundaryState> {
-  state: RouteErrorBoundaryState = { error: null };
+  state: RouteErrorBoundaryState = { error: null, autoReloading: false };
 
-  static getDerivedStateFromError(error: Error): RouteErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<RouteErrorBoundaryState> {
     return { error };
   }
 
   componentDidUpdate(prevProps: RouteErrorBoundaryProps) {
     if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
-      this.setState({ error: null });
+      this.setState({ error: null, autoReloading: false });
     }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[RouteErrorBoundary]", error, info.componentStack);
+    if (isChunkLoadError(error)) {
+      const autoReloading = reloadOnceForNewDeploy();
+      if (autoReloading) {
+        this.setState({ autoReloading: true });
+      }
+    }
   }
 
   handleRetry = () => {
-    this.setState({ error: null });
+    this.setState({ error: null, autoReloading: false });
   };
 
   render() {
     if (this.state.error) {
+      if (this.state.autoReloading) return null;
       return <RouteErrorFallback error={this.state.error} onRetry={this.handleRetry} />;
     }
     return this.props.children;

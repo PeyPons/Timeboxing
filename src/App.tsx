@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense } from "react";
 import { Toaster } from "@/lib/notify";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageLoader } from "@/components/layout/PageLoader";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { NotificationEngineHost } from "@/components/notifications/NotificationEngineHost";
+import { lazyWithRetry } from "@/lib/lazyWithRetry";
 
 // Componentes de auth
 import Login from "./pages/Login";
@@ -62,20 +63,7 @@ import { PublicLocaleSync } from "@/i18n/PublicLocaleSync";
 import { BlogPathSync } from "@/i18n/BlogPathSync";
 import { RouteHreflangSync } from "@/seo/RouteHreflangSync";
 
-// Wrapper para lazy loading con manejo de errores
-// DEBE estar ANTES de su uso para evitar "Cannot access before initialization"
-const lazyWithRetry = (importFn: () => Promise<{ default: React.ComponentType<unknown> }>) => {
-  return lazy(() =>
-    importFn().catch((error) => {
-      console.error('Error cargando módulo:', error);
-      // No recargar automáticamente para evitar bucles infinitos
-      throw error;
-    })
-  );
-};
-
-// Páginas con lazy loading (carga diferida para mejor rendimiento)
-// Usando lazyWithRetry para manejar errores de carga de módulos
+// Páginas con lazy loading (recuperación automática si el chunk ya no existe tras un deploy)
 const EmployeeDashboard = lazyWithRetry(() => import("./pages/EmployeeDashboard"));
 const OperationsRadarPage = lazyWithRetry(() => import("./pages/OperationsRadarPage"));
 const FinancialHealthPage = lazyWithRetry(() => import("./pages/FinancialHealthPage"));
