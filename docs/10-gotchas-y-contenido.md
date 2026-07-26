@@ -13,7 +13,12 @@
 
 **Mitigación en servidor (imprescindible)**: `index.html` **no** debe cachearse agresivamente; los `/assets/*` con hash sí (immutable).
 
-Ejemplo nginx:
+En producción (Pi) el frontend se sirve con `npx serve -s` (`mi-planificador` → `Timeboxing/dist`). La config va en [`public/serve.json`](../public/serve.json) (Vite la copia a `dist/` en cada build):
+
+- `/` e `*.html` → `Cache-Control: no-cache, no-store, must-revalidate`
+- `/assets/**` y estáticos hasheados → `public, max-age=31536000, immutable`
+
+Ejemplo nginx (si se sustituye `serve` algún día):
 
 ```nginx
 location = /index.html {
@@ -30,7 +35,7 @@ location / {
 }
 ```
 
-Si hay CDN/Cloudflare delante: regla equivalente (HTML/bypass cache para `/` e `index.html`; cache largo solo para `/assets/*`).
+Si hay CDN/Cloudflare delante: regla equivalente (HTML/bypass cache para `/` e `index.html`; cache largo solo para `/assets/*`). Cloudflare ya marca HTML como `DYNAMIC` en taimbox.com; igual conviene el header en origen para el navegador.
 
 ### 10.1 Keys duplicadas en listas con datos potencialmente duplicados
 **Archivo afectado**: `GlobalPlanningInconsistencies.tsx`
