@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import { useAgency } from '@/contexts/AgencyContext';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -23,14 +23,22 @@ import { AnonymizedContent } from '@/components/ads/AnonymizedContent';
 import { AdsStatCard } from '@/components/ads/AdsStatCard';
 import { AdsSyncStatusLine } from '@/components/ads/AdsSyncStatusLine';
 import { useAdsLastSync } from '@/hooks/useAdsLastSync';
+import { useAdsSyncJob } from '@/hooks/useAdsSyncJob';
+import { useClientSettingsMutations } from '@/hooks/useClientSettingsMutations';
+import {
+  computePacingMetrics,
+  formatAdsProjectName,
+  getAdsMonthBounds,
+  getRoasColor,
+  mapClientSettingsRows,
+  normalizeAdsAccountId,
+  type AdsClientSettingsMap,
+} from '@/utils/adsPacingUtils';
 
 interface MetaCampaignData { campaign_id: string; campaign_name: string; status: string; cost: number; conversions_value?: number; conversions?: number; clicks?: number; impressions?: number; daily_budget?: number; original_client_name?: string; original_client_id?: string; date?: string; client_id?: string; client_name?: string; created_at?: string; }
 interface SegmentationRule { id: string; account_id: string; keyword: string; virtual_name: string; platform: string; }
 interface ClientPacing { client_id: string; client_name: string; is_group: boolean; budget: number; spent: number; progress: number; forecast: number; recommendedDaily: number; avgDailySpend: number; status: 'ok' | 'risk' | 'over' | 'under'; remainingBudget: number; total_conversions_val: number; campaigns: MetaCampaignData[]; isHidden: boolean; groupName?: string; isManualGroupBudget?: boolean; isSalesAccount: boolean; realIdsList: { id: string, name: string }[]; globalRoas: number; }
 
-const formatProjectName = (name: string) => (name || '').replace(/^(Cliente|Client|Cuenta|Account)\s*[-:]?\s*/i, '');
-const normalizeId = (id: string) => id ? id.replace(/^act_/, '').trim() : '';
-const getRoasColor = (roas: number) => { if (roas >= 4) return "text-emerald-600 bg-emerald-50 border-emerald-200"; if (roas >= 2) return "text-blue-600 bg-blue-50 border-blue-200"; if (roas >= 1) return "text-amber-600 bg-amber-50 border-amber-200"; return "text-red-600 bg-red-50 border-red-200"; };
 const getStatusConfig = (status: string, t: any) => {
   switch (status) {
     case 'over': return { color: 'bg-red-500', text: t('ads.status.exceeded', 'Excedido'), badgeClass: 'bg-red-100 text-red-700 border-red-200' };
@@ -39,15 +47,6 @@ const getStatusConfig = (status: string, t: any) => {
     default: return { color: 'bg-emerald-500', text: t('ads.status.ok', 'OK'), badgeClass: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
   }
 };
-
-interface ClientSettingsMap {
-  [key: string]: {
-    budget: number;
-    group_name: string;
-    is_hidden: boolean;
-    is_sales_account: boolean;
-  };
-}
 
 interface RegisteredAccount {
   account_id: string;
@@ -62,7 +61,7 @@ export default function MetaAdsPage() {
   const { currentAgency } = useAgency();
   const { isActive: isAnonymized, anonymizer } = useAnonymizeAds();
   const [rawData, setRawData] = useState<MetaCampaignData[]>([]);
-  const [clientSettings, setClientSettings] = useState<ClientSettingsMap>({});
+  const [clientSettings, setClientSettings] = useState<AdsClientSettingsMap>({});
   const [registeredAccounts, setRegisteredAccounts] = useState<RegisteredAccount[]>([]);
   const { formatMoney, formatGlobalMoney, currencySymbolForClient } = useAdsFormatMoney(registeredAccounts);
   const [loading, setLoading] = useState(true);
@@ -75,24 +74,14 @@ export default function MetaAdsPage() {
   /** Si es true, también se listan cuentas con gasto 0 € en el mes. Si es false (defecto), se ocultan. Misma lógica que Google Ads. */
   const [showZeroSpend, setShowZeroSpend] = useState(false);
   const [expandedSubAccounts, setExpandedSubAccounts] = useState<Record<string, boolean>>({});
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncLogs, setSyncLogs] = useState<string[]>([]);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
-  const [syncProgress, setSyncProgress] = useState(0);
   const [editingClient, setEditingClient] = useState<{ id: string, name: string, group: string, hidden: boolean, isSales: boolean } | null>(null);
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [newRuleAccount, setNewRuleAccount] = useState('');
   const [openNewRuleAccount, setOpenNewRuleAccount] = useState(false);
   const [newRuleKeyword, setNewRuleKeyword] = useState('');
   const [newRuleName, setNewRuleName] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const { currentDay, daysInMonth, daysRemaining } = useMemo(() => {
-    const now = new Date();
-    const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const day = now.getDate();
-    return { currentDay: day, daysInMonth: dim, daysRemaining: dim - day };
-  }, []);
+  const monthBounds = useMemo(() => getAdsMonthBounds(), []);
+  const { currentDay, daysInMonth, daysRemaining } = monthBounds;
 
   const fetchData = useCallback(async () => {
     if (!currentAgency?.id) return;
@@ -103,10 +92,8 @@ export default function MetaAdsPage() {
         supabase.from('ad_accounts_config').select('*').eq('platform', 'meta').eq('is_active', true).eq('agency_id', currentAgency.id),
         supabase.from('segmentation_rules').select('*').eq('platform', 'meta').eq('agency_id', currentAgency.id)
       ]);
-      const settingsMap: ClientSettingsMap = {};
-      settingsRes.data?.forEach((s: { client_id: string; budget_limit?: number; group_name?: string; is_hidden?: boolean; is_sales_account?: boolean }) => { settingsMap[s.client_id] = { budget: Number(s.budget_limit) || 0, group_name: s.group_name || '', is_hidden: s.is_hidden || false, is_sales_account: s.is_sales_account !== false }; });
       setRawData(adsRes.data || []);
-      setClientSettings(settingsMap);
+      setClientSettings(mapClientSettingsRows(settingsRes.data));
       setRegisteredAccounts(accountsRes.data || []);
       setSegmentationRules(rulesRes.data || []);
     } catch (error) { console.error('Error fetching data', error); } finally { setLoading(false); }
@@ -122,79 +109,31 @@ export default function MetaAdsPage() {
     !loading,
   );
 
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const {
+    isSyncing,
+    setIsSyncing,
+    syncLogs,
+    syncStatus,
+    syncProgress,
+    scrollRef,
+    startSync: handleStartSync,
+  } = useAdsSyncJob({
+    platform: 'meta',
+    agencyId: currentAgency?.id,
+    onCompleted: fetchData,
+    refreshLastSync,
+  });
 
-  const handleStartSync = async () => {
-    if (!currentAgency) {
-      toast.error(t('common.errorIdentifyingAgency', 'Error: No se ha identificado la agencia actual.'));
-      return;
-    }
-    setIsSyncing(true); setSyncStatus('running'); setSyncLogs([t('ads.dialogs.sync.initMeta', '🚀 Conectando con Meta API...')]); setSyncProgress(0);
-    try {
-      const { data, error } = await supabase.from('meta_sync_logs').insert({
-        status: 'pending',
-        logs: ['Iniciando worker...'],
-        agency_id: currentAgency?.id
-      }).select().single();
-      if (error) throw error;
-      setCurrentJobId(data.id);
-
-      // Trigger Edge Function
-      const { error: funcError } = await supabase.functions.invoke('sync-meta-ads', {
-        body: { job_id: data.id, agency_id: currentAgency?.id }
-      });
-
-      if (funcError) throw funcError;
-
-    } catch (err: any) { setSyncStatus('error'); setSyncLogs(prev => [...prev, `❌ Error al iniciar: ${err.message}`]); setIsSyncing(false); }
-  };
-
-  // Efecto para sincronización resiliente (Realtime + Polling fallback)
-  useEffect(() => {
-    if (!currentJobId || !isSyncing) return;
-
-    const channel = supabase.channel(`meta-sync-${currentJobId}`);
-
-    const checkStatus = async () => {
-      const { data } = await supabase.from('meta_sync_logs').select('*').eq('id', currentJobId).single();
-      if (data) handleUpdate(data);
-    };
-
-    const handleUpdate = (row: any) => {
-      if (row.logs) setSyncLogs(row.logs);
-
-      if (row.status === 'completed') {
-        setSyncStatus('completed');
-        setSyncProgress(100);
-        toast.success(t('ads.dialogs.sync.completed', 'Sincronización completada'));
-        fetchData();
-        void refreshLastSync();
-        cleanup();
-        setTimeout(() => { setIsSyncing(false); setCurrentJobId(null); }, 2000);
-      } else if (row.status === 'error') {
-        setSyncStatus('error');
-        toast.error(t('ads.dialogs.sync.error', 'Error en el proceso'));
-        cleanup();
-      }
-    };
-
-    // 1. Suscripción Realtime
-    channel
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'meta_sync_logs', filter: `id=eq.${currentJobId}` }, (payload) => handleUpdate(payload.new))
-      .subscribe();
-
-    // 2. Polling Loop
-    const intervalId = setInterval(checkStatus, 2000);
-
-    const cleanup = () => {
-      clearInterval(intervalId);
-      supabase.removeChannel(channel);
-    };
-
-    return () => cleanup();
-  }, [currentJobId, isSyncing, fetchData, refreshLastSync, t]);
-
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [syncLogs, isSyncing]);
+  const {
+    saveBudget: handleSaveBudget,
+    saveClientConfig,
+  } = useClientSettingsMutations({
+    agencyId: currentAgency?.id,
+    setClientSettings,
+    refresh: fetchData,
+    budgetErrorMessage: t('common.errorSaving', 'Error guardando'),
+    configSuccessMessage: t('common.saved', 'Guardado'),
+  });
 
   const handleAddRule = async () => {
     if (!newRuleAccount || !newRuleKeyword || !newRuleName) { toast.error(t('common.fillRequiredFields', 'Rellena todos los campos')); return; }
@@ -210,18 +149,10 @@ export default function MetaAdsPage() {
     else { setSegmentationRules(prev => prev.filter(r => r.id !== id)); toast.info("Regla eliminada"); }
   };
 
-  const handleSaveBudget = async (clientId: string, amount: string) => {
-    if (!currentAgency?.id) return;
-    const numAmount = parseFloat(amount);
-    setClientSettings(prev => ({ ...prev, [clientId]: { ...prev[clientId], budget: isNaN(numAmount) ? 0 : numAmount } }));
-    const { error } = await supabase.from('client_settings').upsert({ client_id: clientId, budget_limit: isNaN(numAmount) ? 0 : numAmount, agency_id: currentAgency.id }, { onConflict: 'client_id' });
-    if (error) toast.error(t('common.errorSaving', "Error guardando")); else fetchData();
-  };
-
   const handleSaveClientSettings = async () => {
-    if (!editingClient || !currentAgency?.id) return;
-    await supabase.from('client_settings').upsert({ client_id: editingClient.id, group_name: editingClient.group, is_hidden: editingClient.hidden, is_sales_account: editingClient.isSales, agency_id: currentAgency.id }, { onConflict: 'client_id' });
-    setEditingClient(null); fetchData(); toast.success(t('common.saved', 'Guardado'));
+    if (!editingClient) return;
+    await saveClientConfig(editingClient);
+    setEditingClient(null);
   };
 
   const reportData = useMemo(() => {
@@ -244,7 +175,7 @@ export default function MetaAdsPage() {
         // NOTA: Se removió filtro isRegistered - causaba ocultación de datos
 
         let finalId = row.client_id, finalName = row.client_name || row.client_id; // Fallback: usar ID si no hay nombre
-        const rulesForAccount = segmentationRules.filter(r => normalizeId(r.account_id) === normalizeId(row.client_id));
+        const rulesForAccount = segmentationRules.filter(r => normalizeAdsAccountId(r.account_id, 'meta') === normalizeAdsAccountId(row.client_id, 'meta'));
         if (rulesForAccount.length > 0) { const match = rulesForAccount.find(r => row.campaign_name.toLowerCase().includes(r.keyword.toLowerCase())); if (match) { finalId = `${row.client_id}_${match.keyword.toUpperCase()}`; finalName = match.virtual_name; } }
         const settings = clientSettings[finalId] || { budget: 0, group_name: '', is_hidden: false, is_sales_account: true };
         const groupKey = settings.group_name?.trim() ? `GROUP-${settings.group_name}` : finalId;
@@ -275,12 +206,20 @@ export default function MetaAdsPage() {
       } else if (value.budget > 0) {
         finalBudget = value.budget;
       }
-      const spent = value.spent, avgDailySpend = currentDay > 0 ? spent / currentDay : 0, forecast = avgDailySpend * daysInMonth;
-      const progress = finalBudget > 0 ? (spent / finalBudget) * 100 : 0, remainingBudget = Math.max(0, finalBudget - spent);
-      const recommendedDaily = daysRemaining > 0 ? remainingBudget / daysRemaining : 0;
+      const spent = value.spent;
+      const {
+        avgDailySpend,
+        forecast,
+        progress,
+        remainingBudget,
+        recommendedDaily,
+        status,
+      } = computePacingMetrics({
+        spent,
+        budget: finalBudget,
+        month: monthBounds,
+      });
       const globalRoas = spent > 0 ? value.total_conversions_val / spent : 0;
-      let status: 'ok' | 'risk' | 'over' | 'under' = 'ok';
-      if (finalBudget > 0) { if (spent > finalBudget) status = 'over'; else if (forecast > finalBudget) status = 'risk'; else if (progress < 50 && currentDay > 20) status = 'under'; }
       report.push({ client_id: key, client_name: value.name, is_group: value.is_group, budget: finalBudget, spent, progress, forecast, recommendedDaily, avgDailySpend, status, remainingBudget, total_conversions_val: value.total_conversions_val, isHidden: value.isHidden, isSalesAccount: value.isSalesAccount, groupName: value.is_group ? value.name : undefined, isManualGroupBudget: value.isManualGroupBudget, realIdsList: value.realIdsNames, campaigns: value.campaigns.sort((a, b) => b.cost - a.cost), globalRoas });
     });
     let filtered = report;
@@ -292,7 +231,7 @@ export default function MetaAdsPage() {
     }
     if (searchTerm) { const lower = searchTerm.toLowerCase(); filtered = filtered.filter(c => c.client_name.toLowerCase().includes(lower) || c.campaigns.some(camp => camp.campaign_name.toLowerCase().includes(lower))); }
     return filtered.sort((a, b) => b.spent - a.spent);
-  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden, showZeroSpend, segmentationRules, currentDay, daysInMonth, daysRemaining]);
+  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden, showZeroSpend, segmentationRules, currentDay, daysInMonth, daysRemaining, monthBounds]);
 
   const globalStats = useMemo(() => {
     const totalBudget = reportData.reduce((acc, r) => acc + r.budget, 0), totalSpent = reportData.reduce((acc, r) => acc + r.spent, 0);
@@ -392,7 +331,7 @@ export default function MetaAdsPage() {
                       <div className="text-left">
                         <div className="flex items-center gap-2 flex-wrap">
                           <div>
-                            <AnonymizedContent isActive={isAnonymized} className="font-bold text-lg text-slate-900" asBlock placeholder={anonymizer.account(client.client_id)}>{formatProjectName(client.client_name)}</AnonymizedContent>
+                            <AnonymizedContent isActive={isAnonymized} className="font-bold text-lg text-slate-900" asBlock placeholder={anonymizer.account(client.client_id)}>{formatAdsProjectName(client.client_name)}</AnonymizedContent>
                             {isAnonymized && (client.realIdsList[0]?.id || client.client_id) && (
                               <div className="text-[10px] font-mono text-slate-400 mt-0.5">ID: {client.realIdsList[0]?.id || client.client_id}</div>
                             )}
@@ -526,7 +465,7 @@ export default function MetaAdsPage() {
                                           </span>
                                           {client.is_group && (camp.original_client_name || camp.original_client_id) && (
                                             <AnonymizedContent isActive={isAnonymized} className="truncate max-w-[100px]" placeholder={anonymizer.account(camp.original_client_id || camp.client_id || '')}>
-                                              | {formatProjectName(camp.original_client_name || '')}
+                                              | {formatAdsProjectName(camp.original_client_name || '')}
                                             </AnonymizedContent>
                                           )}
                                         </div>
@@ -595,7 +534,7 @@ export default function MetaAdsPage() {
                                       </td>
                                       <td className="px-3 py-2.5 font-medium text-slate-700">
                                         <div>
-                                          <AnonymizedContent isActive={isAnonymized} placeholder={anonymizer.account(sub.id)}>{formatProjectName(sub.name)}</AnonymizedContent>
+                                          <AnonymizedContent isActive={isAnonymized} placeholder={anonymizer.account(sub.id)}>{formatAdsProjectName(sub.name)}</AnonymizedContent>
                                           {isAnonymized && <div className="text-[10px] font-mono text-slate-400 mt-0.5">ID: {sub.id}</div>}
                                         </div>
                                       </td>
@@ -784,7 +723,7 @@ export default function MetaAdsPage() {
                   {segmentationRules.map(rule => (
                     <div key={rule.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <Badge variant="outline" className="font-mono text-xs">{normalizeId(rule.account_id).slice(0, 10)}...</Badge>
+                        <Badge variant="outline" className="font-mono text-xs">{normalizeAdsAccountId(rule.account_id, 'meta').slice(0, 10)}...</Badge>
                         <span className="text-sm text-slate-500">
                           {t('ads.dialogs.splitAccounts.ifContainsLabel', { keyword: rule.keyword, defaultValue: `Si contiene "${rule.keyword}"` })}
                         </span>
