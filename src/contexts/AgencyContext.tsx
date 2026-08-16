@@ -724,18 +724,3 @@ export function useAgency() {
   return context;
 }
 
-export function useAgencySettings() {
-  const { currentAgency } = useAgency();
-  return currentAgency?.settings ?? null;
-}
-
-export function useAgencyModules() {
-  const settings = useAgencySettings();
-  return settings?.modules ?? null;
-}
-
-export function useUserAgencies() {
-  const { userAgencies, availableAgencies } = useAgency();
-  return { userAgencies, availableAgencies };
-}
-

@@ -35,10 +35,6 @@ export function defaultConditions(): NotificationIssueFlag[] {
   return ['needs_planning', 'behind_schedule', 'over_budget', 'no_activity'];
 }
 
-export const ADS_PPC_FLAG_IDS: AdsPpcIssueFlag[] = ['over', 'risk'];
-
-export const ADS_PLATFORM_IDS: AdsPlatformFilter[] = ['google', 'meta'];
-
 export function defaultAdsPpcFlags(): AdsPpcIssueFlag[] {
   return ['over', 'risk'];
 }

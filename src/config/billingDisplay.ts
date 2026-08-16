@@ -114,11 +114,3 @@ export function getStripePriceIdForCheckout(planId: PlanId): string {
 export function isPaidStripePlan(planId: PlanId): boolean {
   return planId === 'pro' || planId === 'business' || planId === 'scale';
 }
-
-export function formatSeatExtraHint(planId: PlanId, locale: 'es' | 'en'): string | null {
-  const lim = PLAN_LIMITS[planId];
-  if (lim.extraUserPriceUsd == null) return null;
-  return locale === 'es'
-    ? `+${lim.extraUserPriceUsd} $/persona extra`
-    : `+${lim.extraUserPriceUsd} $/extra seat`;
-}

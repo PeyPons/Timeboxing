@@ -47,7 +47,7 @@ function formatTotalAsLabel(totalSeconds: number): string {
 }
 
 /** Formato compacto para la barra lateral (estilo barra global de tiempo) */
-export function formatTodayCompact(totalSeconds: number): string {
+function formatTodayCompact(totalSeconds: number): string {
   if (totalSeconds <= 0) return '0:00';
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);

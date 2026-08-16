@@ -1,6 +1,6 @@
 export type PlannerSheetViewMode = 'day' | 'week' | 'month';
 
-export function isPlannerSheetViewMode(value: string | null | undefined): value is PlannerSheetViewMode {
+function isPlannerSheetViewMode(value: string | null | undefined): value is PlannerSheetViewMode {
   return value === 'day' || value === 'week' || value === 'month';
 }
 

@@ -1531,11 +1531,6 @@ export function useAppAbsencesAndEvents() {
   return { absences, teamEvents };
 }
 
-export function useAppTransfers() {
-  const { pendingTransfers, outgoingTransfers, fetchTransfers } = useApp();
-  return { pendingTransfers, outgoingTransfers, fetchTransfers };
-}
-
 export function useAppAllocationActions() {
   const { addAllocation, updateAllocation, deleteAllocation, isLoading } = useApp();
   return { addAllocation, updateAllocation, deleteAllocation, isLoading };

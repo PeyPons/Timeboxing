@@ -120,11 +120,6 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   },
 };
 
-/** @deprecated usar includedManagedUsers — alias para compatibilidad */
-export function getMaxEmployees(planId: PlanId): number | null {
-  return PLAN_LIMITS[planId]?.maxManagedUsers ?? PLAN_LIMITS.starter.maxManagedUsers;
-}
-
 /** Módulos (AgencySettings.modules) permitidos por plan */
 export const PLAN_MODULES: Record<PlanId, { weeklyFeedback?: boolean; professionalGoals?: boolean; deadlines?: boolean; timeTracker?: boolean; ppc?: boolean }> = {
   starter: { deadlines: true, timeTracker: true },
