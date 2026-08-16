@@ -299,6 +299,33 @@ VITE_META_APP_ID=<identificador_de_la_aplicacion_meta>
 
 **Dónde van en Docker:** las variables del bloque “contenedor `supabase-edge-functions`” se definen donde ya tienes `GOOGLE_CLIENT_ID` (por ejemplo `.env` junto al `docker-compose` de Supabase, o `environment:` del servicio `functions`). Ahí añade `META_APP_ID`, `META_APP_SECRET` y reinicia ese contenedor. `VITE_META_APP_ID` no se pone en Docker de funciones: va en el `.env` local/CI del **proyecto Vite** y se inyecta al hacer `npm run build`.
 
+#### Acceso solo lectura para tests / agentes Cloud (`taimbox_ci_readonly`)
+
+Para mejorar tests de integración **sin** poner credenciales de admin en GitHub ni en el chat:
+
+1. **En el servidor** (contenedor `supabase-db` en marcha), genera una contraseña y crea el rol:
+
+```bash
+cd /home/alex/Timeboxing && git pull
+export READONLY_PASSWORD="$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)"
+# Si el agente/CI entra por túnel SSH a Postgres local:54322 →
+READONLY_HOST=127.0.0.1 READONLY_PORT=54322 ./scripts/create-ci-readonly-role.sh
+```
+
+2. Copia la URL que imprime el script al secreto **`TAIMBOX_READONLY_DATABASE_URL`** (Cursor Environment Secrets y/o GitHub Actions). **No** la commits ni la pegues en el chat.
+
+3. El rol `taimbox_ci_readonly` tiene `SELECT` (+ `BYPASSRLS`) solo sobre `public`, timeouts cortos, sin `INSERT`/`UPDATE`/`DELETE`/`DDL`. SQL: [`scripts/sql/create_taimbox_ci_readonly_role.sql`](../scripts/sql/create_taimbox_ci_readonly_role.sql).
+
+4. Tests: [`src/__tests__/integration/readonlyDb.smoke.test.ts`](../src/__tests__/integration/readonlyDb.smoke.test.ts) se **saltan** si el secreto no existe. Con secreto:
+
+```bash
+TAIMBOX_READONLY_DATABASE_URL='postgresql://…' npm run test:run
+# o solo integración:
+TAIMBOX_READONLY_DATABASE_URL='postgresql://…' npm run test:integration
+```
+
+**No** uses este rol como API pública: sigue siendo acceso a datos reales (PII). Solo secretos de CI/agente.
+
 #### Acceso a la base de datos desde Cursor (MCP)
 
 El workspace incluye un servidor MCP para **consultar y auditar** la instancia Supabase self-hosted sin abrir el SQL Editor a mano en cada revisión.

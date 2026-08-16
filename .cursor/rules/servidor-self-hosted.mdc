@@ -23,6 +23,7 @@ Si no existe (p. ej. Cloud Agent sin copia local), usa la documentación públic
 ## Reglas de seguridad
 
 - **Nunca** commitear contraseñas, tokens JWT, `service_role`, claves Stripe ni `.cursor/server-access.local.md`.
+- Para tests/CI: rol `taimbox_ci_readonly` (`scripts/create-ci-readonly-role.sh`) y secreto `TAIMBOX_READONLY_DATABASE_URL` — ver `docs/05` § Acceso solo lectura.
 - Migraciones DDL: preferir `supabase_admin` como owner de tablas en self-hosted.
 - `actualizar.sh` en el servidor hace `git reset --hard origin/main` — avisar si hay cambios locales en el Pi.
 
