@@ -68,6 +68,8 @@ export function computeGlobalPlanningInconsistencies(params: {
     const projectId = deadline.projectId;
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
+    // No contrastar contra deadline de proyectos cerrados/archivados (p. ej. copiados por error).
+    if (project.status !== 'active') return;
 
     const employeeMap = new Map<string, InconsistencyEmployeeItem>();
     let totalDeadline = 0;

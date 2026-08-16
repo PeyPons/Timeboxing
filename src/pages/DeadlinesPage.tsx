@@ -40,6 +40,7 @@ import { toast } from '@/lib/notify';
 import { supabase } from '@/lib/supabase';
 import { Deadline, GlobalAssignment } from '@/types';
 import { fetchDeadlinesForMonth } from '@/utils/deadlineUtils';
+import { selectDeadlinesToCopyFromPreviousMonth } from '@/utils/deadlineMonthCopy';
 import { getEffectiveBudgetForMonth } from '@/utils/budgetUtils';
 import { cn } from '@/lib/utils';
 import { useProjectAliasing } from '@/hooks/useProjectAliasing';
@@ -474,19 +475,27 @@ export default function DeadlinesPage() {
         return;
       }
 
-      const existingProjectIds = new Set(deadlines.map((d) => d.projectId));
-      const validProjectIds = new Set(projects.map((p) => p.id));
-      const sourceDeadlines = previousDeadlines.filter(
-        (d) => validProjectIds.has(d.projectId) && !existingProjectIds.has(d.projectId)
-      );
-      const skippedExisting = previousDeadlines.length - sourceDeadlines.length;
+      const selection = selectDeadlinesToCopyFromPreviousMonth(previousDeadlines, {
+        existingProjectIds: deadlines.map((d) => d.projectId),
+        projects,
+      });
+      const sourceDeadlines = selection.toCopy;
+      const skippedTotal =
+        selection.skippedExisting + selection.skippedMissingProject + selection.skippedInactiveProject;
 
       if (sourceDeadlines.length === 0) {
-        toast.info(
-          skippedExisting > 0
-            ? t('deadlines.toasts.previousMonth.allAlreadyExist')
-            : t('deadlines.toasts.previousMonth.noneApplicable')
-        );
+        if (selection.skippedInactiveProject > 0 && selection.skippedExisting === 0 && selection.skippedMissingProject === 0) {
+          toast.info(
+            t(
+              'deadlines.toasts.previousMonth.onlyInactive',
+              'Solo había deadlines de proyectos completados o archivados; no se copian al mes nuevo.'
+            )
+          );
+        } else if (selection.skippedExisting > 0) {
+          toast.info(t('deadlines.toasts.previousMonth.allAlreadyExist'));
+        } else {
+          toast.info(t('deadlines.toasts.previousMonth.noneApplicable'));
+        }
         return;
       }
 
@@ -520,11 +529,25 @@ export default function DeadlinesPage() {
       }
 
       const insertedCount = insertedData?.length ?? 0;
-      toast.success(
-        skippedExisting > 0
-          ? t('deadlines.toasts.previousMonth.copySuccessWithSkipped', { count: insertedCount, skipped: skippedExisting })
-          : t('deadlines.toasts.previousMonth.copySuccess', { count: insertedCount })
-      );
+      if (skippedTotal > 0) {
+        toast.success(
+          t('deadlines.toasts.previousMonth.copySuccessWithSkipped', {
+            count: insertedCount,
+            skipped: skippedTotal,
+          })
+        );
+      } else {
+        toast.success(t('deadlines.toasts.previousMonth.copySuccess', { count: insertedCount }));
+      }
+      if (selection.skippedInactiveProject > 0) {
+        toast.info(
+          t(
+            'deadlines.toasts.previousMonth.skippedInactive',
+            'Se omitieron {{count}} proyecto(s) completado(s) o archivado(s).',
+            { count: selection.skippedInactiveProject }
+          )
+        );
+      }
     } catch (error) {
       console.error('Error copiando deadlines:', error);
       toast.error(t('deadlines.toasts.previousMonth.copyError'));
@@ -545,20 +568,28 @@ export default function DeadlinesPage() {
         return;
       }
 
-      const existingProjectIds = new Set(deadlines.map((d) => d.projectId));
-      const validProjectIds = new Set(projects.map((p) => p.id));
-      const copyableCount = previousDeadlines.filter(
-        (d) => validProjectIds.has(d.projectId) && !existingProjectIds.has(d.projectId)
-      ).length;
+      const selection = selectDeadlinesToCopyFromPreviousMonth(previousDeadlines, {
+        existingProjectIds: deadlines.map((d) => d.projectId),
+        projects,
+      });
 
-      if (copyableCount === 0) {
-        toast.info(t('deadlines.toasts.previousMonth.noneNewToCopy'));
+      if (selection.toCopy.length === 0) {
+        if (selection.skippedInactiveProject > 0 && selection.skippedExisting === 0) {
+          toast.info(
+            t(
+              'deadlines.toasts.previousMonth.onlyInactive',
+              'Solo había deadlines de proyectos completados o archivados; no se copian al mes nuevo.'
+            )
+          );
+        } else {
+          toast.info(t('deadlines.toasts.previousMonth.noneNewToCopy'));
+        }
         return;
       }
 
       setConfirmAction({
         type: 'copy_month',
-        data: { count: copyableCount }
+        data: { count: selection.toCopy.length }
       });
     } catch (error) {
       console.error('Error checking previous deadlines:', error);
