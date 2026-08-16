@@ -1,15 +1,19 @@
-import type { BlogBlock } from "@/lib/blog/blockSchema";
+import type {
+  BlogBlock,
+  HeadingBlock,
+  ParagraphBlock,
+} from "@/lib/blog/blockSchema";
 
 type BlockGroup =
-  | { kind: "prose"; blocks: Extract<BlogBlock, { type: "paragraph" }>[] }
-  | { kind: "subsection"; heading: Extract<BlogBlock, { type: "heading" }>; blocks: BlogBlock[] }
+  | { kind: "prose"; blocks: ParagraphBlock[] }
+  | { kind: "subsection"; heading: HeadingBlock; blocks: BlogBlock[] }
   | { kind: "block"; block: BlogBlock };
 
-function isSubheading(block: BlogBlock): block is Extract<BlogBlock, { type: "heading" }> {
+function isSubheading(block: BlogBlock): block is HeadingBlock {
   return block.type === "heading" && (block.level === 3 || block.level === 4);
 }
 
-function isParagraph(block: BlogBlock): block is Extract<BlogBlock, { type: "paragraph" }> {
+function isParagraph(block: BlogBlock): block is ParagraphBlock {
   return block.type === "paragraph";
 }
 
@@ -48,10 +52,10 @@ export function groupBlocksForLayout(blocks: BlogBlock[]): BlockGroup[] {
     }
 
     if (isParagraph(block)) {
-      const prose: Extract<BlogBlock, { type: "paragraph" }>[] = [block];
+      const prose: ParagraphBlock[] = [block];
       i++;
       while (i < blocks.length && isParagraph(blocks[i])) {
-        prose.push(blocks[i] as Extract<BlogBlock, { type: "paragraph" }>);
+        prose.push(blocks[i]);
         i++;
       }
       groups.push({ kind: "prose", blocks: prose });

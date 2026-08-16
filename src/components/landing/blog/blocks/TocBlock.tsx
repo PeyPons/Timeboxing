@@ -6,10 +6,16 @@ import type { BlogBlock } from "@/lib/blog/blockSchema";
  * anchorId definido. Si no hay headings con anchorId, no se renderiza.
  */
 export function TocBlock({ allBlocks }: { allBlocks: BlogBlock[] }) {
-  const items: BlogTOCItem[] = allBlocks
-    .filter((b): b is Extract<BlogBlock, { type: "heading" }> => b.type === "heading")
-    .filter((b) => typeof b.anchorId === "string" && b.anchorId.length > 0)
-    .map((b) => ({ id: b.anchorId as string, label: b.text }));
+  const items: BlogTOCItem[] = allBlocks.flatMap((block) => {
+    if (
+      block.type !== "heading" ||
+      typeof block.anchorId !== "string" ||
+      block.anchorId.length === 0
+    ) {
+      return [];
+    }
+    return [{ id: block.anchorId, label: block.text }];
+  });
 
   if (items.length === 0) return null;
   return (

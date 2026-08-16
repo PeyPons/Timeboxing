@@ -9,6 +9,7 @@ import { startOfWeek, format, addDays, startOfMonth, endOfMonth } from 'date-fns
 const currentDate = new Date();
 const monthStart = startOfMonth(currentDate);
 const monthEnd = endOfMonth(currentDate);
+const DEMO_AGENCY_ID = 'demo-agency';
 
 const weeks: string[] = [];
 let currentWeek = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -20,6 +21,7 @@ while (currentWeek <= monthEnd) {
 export const demoEmployees: Employee[] = [
   {
     id: 'demo-1',
+    agencyId: DEMO_AGENCY_ID,
     name: 'María González',
     first_name: 'María',
     role: 'Directora de cuentas',
@@ -33,6 +35,7 @@ export const demoEmployees: Employee[] = [
   },
   {
     id: 'demo-2',
+    agencyId: DEMO_AGENCY_ID,
     name: 'Carlos Ruiz',
     first_name: 'Carlos',
     role: 'Responsable de contenido',
@@ -46,6 +49,7 @@ export const demoEmployees: Employee[] = [
   },
   {
     id: 'demo-3',
+    agencyId: DEMO_AGENCY_ID,
     name: 'Ana Martínez',
     first_name: 'Ana',
     role: 'Project manager',
@@ -59,6 +63,7 @@ export const demoEmployees: Employee[] = [
   },
   {
     id: 'demo-4',
+    agencyId: DEMO_AGENCY_ID,
     name: 'Luis Fernández',
     first_name: 'Luis',
     role: 'Diseñador creativo',
@@ -73,18 +78,18 @@ export const demoEmployees: Employee[] = [
 ];
 
 export const demoClients: Client[] = [
-  { id: 'demo-c1', name: 'TechCorp', color: '#3b82f6' },
-  { id: 'demo-c2', name: 'E-Commerce Pro', color: '#10b981' },
-  { id: 'demo-c3', name: 'StartupHub', color: '#8b5cf6' },
-  { id: 'demo-c4', name: 'LocalBiz', color: '#f59e0b' },
+  { id: 'demo-c1', agencyId: DEMO_AGENCY_ID, name: 'TechCorp', color: '#3b82f6' },
+  { id: 'demo-c2', agencyId: DEMO_AGENCY_ID, name: 'E-Commerce Pro', color: '#10b981' },
+  { id: 'demo-c3', agencyId: DEMO_AGENCY_ID, name: 'StartupHub', color: '#8b5cf6' },
+  { id: 'demo-c4', agencyId: DEMO_AGENCY_ID, name: 'LocalBiz', color: '#f59e0b' },
 ];
 
 export const demoProjects: Project[] = [
-  { id: 'demo-p1', clientId: 'demo-c1', name: 'Web corporativa', status: 'active', budgetHours: 160, minimumHours: 0 },
-  { id: 'demo-p2', clientId: 'demo-c1', name: 'Contenidos', status: 'active', budgetHours: 120, minimumHours: 0 },
-  { id: 'demo-p3', clientId: 'demo-c2', name: 'PR y alianzas', status: 'active', budgetHours: 80, minimumHours: 0 },
-  { id: 'demo-p4', clientId: 'demo-c3', name: 'Retainer global', status: 'active', budgetHours: 200, minimumHours: 0 },
-  { id: 'demo-p5', clientId: 'demo-c4', name: 'Campaña de lanzamiento', status: 'active', budgetHours: 60, minimumHours: 0 },
+  { id: 'demo-p1', agencyId: DEMO_AGENCY_ID, clientId: 'demo-c1', name: 'Web corporativa', status: 'active', budgetHours: 160, minimumHours: 0 },
+  { id: 'demo-p2', agencyId: DEMO_AGENCY_ID, clientId: 'demo-c1', name: 'Contenidos', status: 'active', budgetHours: 120, minimumHours: 0 },
+  { id: 'demo-p3', agencyId: DEMO_AGENCY_ID, clientId: 'demo-c2', name: 'PR y alianzas', status: 'active', budgetHours: 80, minimumHours: 0 },
+  { id: 'demo-p4', agencyId: DEMO_AGENCY_ID, clientId: 'demo-c3', name: 'Retainer global', status: 'active', budgetHours: 200, minimumHours: 0 },
+  { id: 'demo-p5', agencyId: DEMO_AGENCY_ID, clientId: 'demo-c4', name: 'Campaña de lanzamiento', status: 'active', budgetHours: 60, minimumHours: 0 },
 ];
 
 export const demoAllocations: Allocation[] = [

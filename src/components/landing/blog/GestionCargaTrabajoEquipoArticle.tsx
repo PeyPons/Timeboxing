@@ -47,7 +47,7 @@ export function GestionCargaTrabajoEquipoArticle({
           <p dangerouslySetInnerHTML={{ __html: sanitizeInlineHtml(t(`posts.${postKey}.intro.p2`)) }} />
           <div className="rounded-2xl border-l-4 border-violet-400 bg-violet-500/10 border border-violet-500/20 p-4 sm:p-6 my-6">
             <p className="text-white/95 font-medium m-0">
-              {capsule.ok ? (
+              {capsule.ok === true ? (
                 <>
                   {capsule.p.before1}
                   <LocaleLink to="/blog/planificacion-proyectos-cronograma-recursos" className="text-violet-300 hover:text-white underline underline-offset-2">

@@ -1,4 +1,7 @@
-import type { BlogBlock } from "@/lib/blog/blockSchema";
+import type {
+  BlogBlock,
+  HeadingBlock as HeadingBlockData,
+} from "@/lib/blog/blockSchema";
 import { ParagraphBlock } from "./blocks/ParagraphBlock";
 import { HeadingBlock } from "./blocks/HeadingBlock";
 import { CalloutBlock } from "./blocks/CalloutBlock";
@@ -16,13 +19,13 @@ interface BlockRendererProps {
   blocks: BlogBlock[];
 }
 
-function isH2(block: BlogBlock): block is Extract<BlogBlock, { type: "heading" }> {
+function isH2(block: BlogBlock): block is HeadingBlockData {
   return block.type === "heading" && block.level === 2;
 }
 
 function splitIntoSections(blocks: BlogBlock[]) {
   const intro: BlogBlock[] = [];
-  const sections: { heading: Extract<BlogBlock, { type: "heading" }>; blocks: BlogBlock[] }[] = [];
+  const sections: { heading: HeadingBlockData; blocks: BlogBlock[] }[] = [];
 
   let i = 0;
   while (i < blocks.length && !isH2(blocks[i])) {
@@ -36,7 +39,7 @@ function splitIntoSections(blocks: BlogBlock[]) {
       i++;
       continue;
     }
-    const heading = blocks[i] as Extract<BlogBlock, { type: "heading" }>;
+    const heading = blocks[i];
     const sectionBlocks: BlogBlock[] = [];
     i++;
     while (i < blocks.length && !isH2(blocks[i])) {

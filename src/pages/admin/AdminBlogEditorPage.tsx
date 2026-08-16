@@ -146,7 +146,7 @@ function tryParseJson<T>(raw: string): { ok: true; value: T } | { ok: false; err
 
 function safeParseBlocksRaw(raw: string): BlogBlock[] | string {
   const parsed = tryParseJson<unknown>(raw);
-  if (!parsed.ok) return parsed.error;
+  if (parsed.ok === false) return parsed.error;
   if (parsed.value === undefined) return [];
   const validated = BlogBlocksSchema.safeParse(parsed.value);
   if (!validated.success) {
@@ -157,7 +157,7 @@ function safeParseBlocksRaw(raw: string): BlogBlock[] | string {
 
 function safeParseBlocksDraftRaw(raw: string): BlogBlockDraft[] | string {
   const parsed = tryParseJson<unknown>(raw);
-  if (!parsed.ok) return parsed.error;
+  if (parsed.ok === false) return parsed.error;
   if (parsed.value === undefined) return [];
   const validated = BlogBlocksDraftSchema.safeParse(parsed.value);
   if (!validated.success) {
@@ -230,7 +230,7 @@ export default function AdminBlogEditorPage() {
     try {
       const text = await file.text();
       const parsed = parseBlogCmsSeed(JSON.parse(text));
-      if (!parsed.ok) {
+      if (parsed.ok === false) {
         toast.error(parsed.error);
         return;
       }
@@ -321,9 +321,9 @@ export default function AdminBlogEditorPage() {
     if (blocksEsError) return t("admin.blog.errBlocksEs") + blocksEsError;
     if (blocksEnError) return t("admin.blog.errBlocksEn") + blocksEnError;
     const jsonLdEs = tryParseJson(form.jsonLdEsRaw);
-    if (!jsonLdEs.ok) return t("admin.blog.errJsonLdEs") + jsonLdEs.error;
+    if (jsonLdEs.ok === false) return t("admin.blog.errJsonLdEs") + jsonLdEs.error;
     const jsonLdEn = tryParseJson(form.jsonLdEnRaw);
-    if (!jsonLdEn.ok) return t("admin.blog.errJsonLdEn") + jsonLdEn.error;
+    if (jsonLdEn.ok === false) return t("admin.blog.errJsonLdEn") + jsonLdEn.error;
     return null;
   };
 
