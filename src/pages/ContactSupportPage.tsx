@@ -340,36 +340,36 @@ export default function ContactSupportPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {myTickets.map((t) => (
-                  <TableRow key={t.id}>
+                {myTickets.map((ticket) => (
+                  <TableRow key={ticket.id}>
                     <TableCell>
-                      <span className="font-medium">{t.subject}</span>
-                      {t.message && (
-                        <p className="text-xs text-slate-500 truncate max-w-[200px]" title={t.message}>
-                          {t.message}
+                      <span className="font-medium">{ticket.subject}</span>
+                      {ticket.message && (
+                        <p className="text-xs text-slate-500 truncate max-w-[200px]" title={ticket.message}>
+                          {ticket.message}
                         </p>
                       )}
                     </TableCell>
                     <TableCell>
                       <Badge
                         variant={
-                          t.status === "closed"
+                          ticket.status === "closed"
                             ? "secondary"
-                            : t.status === "in_progress"
+                            : ticket.status === "in_progress"
                               ? "default"
                               : "outline"
                         }
                       >
-                        {getStatusLabel(t.status)}
+                        {getStatusLabel(ticket.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-slate-500 text-sm">{formatDate(t.created_at)}</TableCell>
+                    <TableCell className="text-slate-500 text-sm">{formatDate(ticket.created_at)}</TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-8 gap-1"
-                        onClick={() => setSelectedTicketId(t.id)}
+                        onClick={() => setSelectedTicketId(ticket.id)}
                       >
                         <Eye className="h-4 w-4" />
                         {t("support.contact.tickets.view")}

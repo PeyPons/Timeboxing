@@ -383,6 +383,7 @@ export default function AdsPage() {
   const reportData = useMemo(() => {
     if (!rawData.length) return [];
 
+    const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
     const monthStart = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
