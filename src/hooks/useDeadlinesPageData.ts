@@ -33,7 +33,29 @@ const logPerf = (label: string, start: number, meta?: unknown) => {
   }
 };
 
-export type EditingLock = { employeeId: string; employeeName: string; lockedAt: string };
+export type EditingLock = {
+  employeeId: string;
+  employeeName: string;
+  lockedAt: string;
+  /** ISO; permite podar badges locales sin esperar Realtime. */
+  expiresAt: string;
+};
+
+function pruneExpiredEditingLocks(
+  prev: Record<string, EditingLock>,
+  nowMs = Date.now()
+): Record<string, EditingLock> {
+  let changed = false;
+  const next: Record<string, EditingLock> = {};
+  for (const [projectId, lock] of Object.entries(prev)) {
+    if (new Date(lock.expiresAt).getTime() > nowMs) {
+      next[projectId] = lock;
+    } else {
+      changed = true;
+    }
+  }
+  return changed ? next : prev;
+}
 
 export type MonthlyCapacityResult = {
   total: number;
@@ -278,6 +300,21 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
           filter: `month=eq.${selectedMonth}`,
         },
         (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const oldLock = payload.old as { project_id?: string; employee_id?: string };
+            const projectId = oldLock.project_id;
+            if (!projectId) return;
+            setEditingLocks((prev) => {
+              const existing = prev[projectId];
+              if (!existing) return prev;
+              if (oldLock.employee_id && existing.employeeId !== oldLock.employee_id) return prev;
+              const next = { ...prev };
+              delete next[projectId];
+              return next;
+            });
+            return;
+          }
+
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const lock = payload.new as {
               employee_id: string;
@@ -285,17 +322,27 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
               expires_at: string;
               locked_at: string;
             };
-            if (lock.employee_id !== currentUser?.id && lock.expires_at > new Date().toISOString()) {
-              const employee = (employees ?? []).find((e) => e.id === lock.employee_id);
-              setEditingLocks((prev) => ({
-                ...prev,
-                [lock.project_id]: {
-                  employeeId: lock.employee_id,
-                  employeeName: employee?.first_name || employee?.name || 'Alguien',
-                  lockedAt: lock.locked_at,
-                },
-              }));
+            const isActive = lock.expires_at > new Date().toISOString();
+            if (!isActive || lock.employee_id === currentUser?.id) {
+              setEditingLocks((prev) => {
+                if (!prev[lock.project_id]) return prev;
+                if (prev[lock.project_id].employeeId !== lock.employee_id && isActive) return prev;
+                const next = { ...prev };
+                delete next[lock.project_id];
+                return next;
+              });
+              return;
             }
+            const employee = (employees ?? []).find((e) => e.id === lock.employee_id);
+            setEditingLocks((prev) => ({
+              ...prev,
+              [lock.project_id]: {
+                employeeId: lock.employee_id,
+                employeeName: employee?.first_name || employee?.name || 'Alguien',
+                lockedAt: lock.locked_at,
+                expiresAt: lock.expires_at,
+              },
+            }));
           }
         }
       )
@@ -344,18 +391,15 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
               expires_at: string;
               locked_at: string;
             }) => {
+              if (lock.employee_id === currentUser?.id) return;
+              if (!(lock.expires_at > new Date().toISOString())) return;
               const employee = (employees ?? []).find((e) => e.id === lock.employee_id);
-              if (
-                employee &&
-                lock.employee_id !== currentUser?.id &&
-                lock.expires_at > new Date().toISOString()
-              ) {
-                locksMap[lock.project_id] = {
-                  employeeId: lock.employee_id,
-                  employeeName: employee.first_name || employee.name || 'Desconocido',
-                  lockedAt: lock.locked_at,
-                };
-              }
+              locksMap[lock.project_id] = {
+                employeeId: lock.employee_id,
+                employeeName: employee?.first_name || employee?.name || 'Alguien',
+                lockedAt: lock.locked_at,
+                expiresAt: lock.expires_at,
+              };
             }
           );
           setEditingLocks(locksMap);
@@ -377,9 +421,10 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
       } catch (error) {
         console.error('Error en limpieza de locks:', error);
       }
+      setEditingLocks((prev) => pruneExpiredEditingLocks(prev));
     };
     cleanupOrphanedLocks();
-    lockCleanupIntervalRef.current = setInterval(cleanupOrphanedLocks, 60 * 1000);
+    lockCleanupIntervalRef.current = setInterval(cleanupOrphanedLocks, 30 * 1000);
     return () => {
       if (lockCleanupIntervalRef.current) clearInterval(lockCleanupIntervalRef.current);
     };

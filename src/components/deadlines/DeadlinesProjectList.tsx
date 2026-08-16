@@ -64,6 +64,7 @@ export interface EditLock {
   employeeId: string;
   employeeName: string;
   lockedAt: string;
+  expiresAt?: string;
 }
 
 export interface DeadlinesProjectListProps {
@@ -229,7 +230,11 @@ export function DeadlinesProjectList({
                             )}
                             {!isEditing &&
                               editingLocks[project.id] &&
-                              editingLocks[project.id].employeeId !== currentUserId && (
+                              editingLocks[project.id].employeeId !== currentUserId &&
+                              !(
+                                editingLocks[project.id].expiresAt &&
+                                new Date(editingLocks[project.id].expiresAt!).getTime() <= Date.now()
+                              ) && (
                                 <Badge
                                   variant="outline"
                                   className="text-[10px] px-1.5 py-0 bg-amber-50 border-amber-200 text-amber-700"

@@ -48,11 +48,12 @@ En `DeadlinesPage`, los eventos de la tabla `deadlines` se filtran por agencia: 
 
 #### Sistema de Bloqueos (Locking)
 Previene conflictos de edición simultánea en el mismo proyecto.
-1. **Adquisición**: Al editar, se inserta una fila en `project_editing_locks` con fecha de expiración.
-2. **Validación**: Si ya existe un lock válido de otro usuario, la UI bloquea la edición.
+1. **Adquisición**: Al editar, se inserta (o se renueva) una fila en `project_editing_locks` con TTL ~60s. Si existe un lock **caducado** o **stale** (sin heartbeat reciente, <30s de margen), se toma el lock en lugar de bloquear.
+2. **Validación**: Si hay un lock activo de otro usuario, la UI muestra badge + toast y bloquea la edición. `verifyEditLock` también sincroniza el badge (no solo el toast).
 3. **Liberación**:
-   - **Explícita**: Al guardar o cancelar.
-   - **Broadcast**: Se envía evento `lock-released` para notificar inmediatamente a otros clientes.
-   - **Limpieza**: Al desmontar componente o cerrar pestaña, se intenta liberar locks propios.
+   - **Explícita**: Al cerrar la edición.
+   - **Broadcast** `lock-released` + **Realtime DELETE** (ambos; el badge no depende solo del broadcast).
+   - **Pestaña oculta**: se acorta el TTL y, si sigue oculta ~8s, se libera (alternativa ligera a un canal de presencia).
+   - **Limpieza**: poda local de badges por `expiresAt` (~30s) y borrado en BD de filas caducadas.
 
 ---
