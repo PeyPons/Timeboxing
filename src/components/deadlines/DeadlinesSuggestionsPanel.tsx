@@ -669,6 +669,7 @@ function ResumenPropuesto({
   rightPanelPorProyectoOpen?: boolean;
   setRightPanelPorProyectoOpen?: (v: boolean) => void;
 }) {
+  const { t } = useTranslation('app');
   const byFrom = new Map<string, { fromName: string; fromAvatar?: string; hours: number }>();
   const byProject: {
     projectId: string;

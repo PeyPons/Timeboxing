@@ -399,51 +399,51 @@ export default function AdminSupportPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tickets.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="font-medium">{t.agency_name}</TableCell>
+                {tickets.map((ticket) => (
+                  <TableRow key={ticket.id}>
+                    <TableCell className="font-medium">{ticket.agency_name}</TableCell>
                     <TableCell>
-                      <div className="max-w-[200px] truncate" title={t.subject}>
-                        {t.subject}
+                      <div className="max-w-[200px] truncate" title={ticket.subject}>
+                        {ticket.subject}
                       </div>
-                      {t.message && (
-                        <div className="text-xs text-slate-500 truncate max-w-[200px]" title={t.message}>
-                          {t.message}
+                      {ticket.message && (
+                        <div className="text-xs text-slate-500 truncate max-w-[200px]" title={ticket.message}>
+                          {ticket.message}
                         </div>
                       )}
                     </TableCell>
                     <TableCell>
                       <Badge
                         variant={
-                          t.status === "closed"
+                          ticket.status === "closed"
                             ? "secondary"
-                            : t.status === "in_progress"
+                            : ticket.status === "in_progress"
                               ? "default"
                               : "outline"
                         }
                       >
-                        {statusLabel[t.status] ?? t.status}
+                        {statusLabel[ticket.status] ?? ticket.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-slate-500">{formatDate(t.created_at)}</TableCell>
+                    <TableCell className="text-slate-500">{formatDate(ticket.created_at)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-8 gap-1"
-                          onClick={() => setSelectedTicketId(t.id)}
+                          onClick={() => setSelectedTicketId(ticket.id)}
                         >
                           <Eye className="h-4 w-4" />
                           Ver
                         </Button>
                         <Select
-                          value={t.status}
-                          onValueChange={(v) => updateStatus(t.id, v)}
-                          disabled={updatingId === t.id}
+                          value={ticket.status}
+                          onValueChange={(v) => updateStatus(ticket.id, v)}
+                          disabled={updatingId === ticket.id}
                         >
                           <SelectTrigger className="w-[120px] h-8">
-                            {updatingId === t.id ? (
+                            {updatingId === ticket.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <SelectValue />

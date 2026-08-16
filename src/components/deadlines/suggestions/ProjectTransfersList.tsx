@@ -73,13 +73,13 @@ export function ProjectTransfersList({
               </div>
               <OpenProjectButton projectId={proj.projectId} onOpenProject={onOpenProject} />
             </div>
-            {shown.map((t) => (
-              <div key={t.fromId} className="flex items-center gap-2 text-xs bg-slate-50 rounded-lg p-2">
-                <span className="font-medium text-slate-700 truncate flex-1">{t.fromName}</span>
+            {shown.map((xfer) => (
+              <div key={xfer.fromId} className="flex items-center gap-2 text-xs bg-slate-50 rounded-lg p-2">
+                <span className="font-medium text-slate-700 truncate flex-1">{xfer.fromName}</span>
                 <ArrowRight className="h-3 w-3 text-slate-400 shrink-0" />
                 <span className="font-mono text-primary font-semibold shrink-0">
                   {t('deadlines.suggestions.upToHours', 'hasta {{hours}}h', {
-                    hours: formatDeadlineHoursForDisplay(t.suggestedHours),
+                    hours: formatDeadlineHoursForDisplay(xfer.suggestedHours),
                   })}
                 </span>
               </div>
