@@ -22,6 +22,9 @@ import { useDateLocale } from '@/hooks/useDateLocale';
 import { getEffectiveCompletedHours } from '@/utils/hoursTracking';
 import { isAllocationInEffectiveMonth } from '@/utils/dateUtils';
 import { SensitiveText } from '@/components/privacy/SensitiveText';
+import { PlanningCoherenceHoursMetrics } from '@/components/employee/planning/PlanningCoherenceHoursMetrics';
+import { mobileDeltaMeta } from '@/utils/planningCoherenceDisplay';
+import { round2 } from '@/utils/numbers';
 
 /** Píldora compacta: icono violeta (#7C3AED), texto gris pizarra, borde/sombra muy suaves (referencia UX). */
 const addTasksButtonClass =
@@ -32,73 +35,6 @@ interface PlanningInconsistenciesCardProps {
   viewDate: Date;
   isManager?: boolean; // Si es manager, puede ver información de compañeros
   onAddTasksForProject?: (projectId: string) => void;
-}
-
-const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
-
-function MobileHoursMetrics({
-  deadlineHours,
-  plannedHours,
-  computedHours,
-  t,
-}: {
-  deadlineHours: number;
-  plannedHours: number;
-  computedHours: number;
-  t: (key: string, options?: Record<string, unknown>) => string;
-}) {
-  const columns = [
-    ...(deadlineHours > 0
-      ? [{ label: t('employeeDashboard.hours.deadline'), value: deadlineHours, valueClass: 'text-slate-900' }]
-      : []),
-    { label: t('employeeDashboard.hours.planned'), value: plannedHours, valueClass: 'text-slate-900' },
-    { label: t('employeeDashboard.hours.computed'), value: computedHours, valueClass: 'text-slate-900' },
-  ];
-
-  return (
-    <div className="rounded-xl border border-slate-200/70 bg-white/80 shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
-      <div className="flex items-stretch divide-x divide-slate-100">
-        {columns.map((col) => (
-          <div key={col.label} className="flex-1 px-2 py-2.5 text-center min-w-0">
-            <p className="text-[10px] font-medium text-slate-400 leading-none mb-1.5 truncate">
-              {col.label}
-            </p>
-            <p className={cn('text-[15px] font-semibold tabular-nums tracking-tight leading-none', col.valueClass)}>
-              {col.value}h
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function mobileDeltaMeta(
-  difference: number,
-  t: (key: string, options?: Record<string, unknown>) => string
-) {
-  if (difference < 0) {
-    return {
-      dot: 'bg-red-500',
-      text: 'text-red-700',
-      label: t('employeeDashboard.planning.hoursToPlan', { hours: difference }),
-      Icon: TrendingDown,
-    };
-  }
-  if (difference > 0) {
-    return {
-      dot: 'bg-amber-500',
-      text: 'text-amber-700',
-      label: t('employeeDashboard.planning.deviationPositive', { hours: difference }),
-      Icon: TrendingUp,
-    };
-  }
-  return {
-    dot: 'bg-emerald-500',
-    text: 'text-emerald-700',
-    label: t('employeeDashboard.planning.noDeviation'),
-    Icon: CheckCircle2,
-  };
 }
 
 export const PlanningInconsistenciesCard = memo(function PlanningInconsistenciesCard({
@@ -689,7 +625,7 @@ export const PlanningInconsistenciesCard = memo(function PlanningInconsistencies
                       {!isExpanded && (
                         isMobile ? (
                           <>
-                            <MobileHoursMetrics
+                            <PlanningCoherenceHoursMetrics
                               deadlineHours={inc.deadlineHours}
                               plannedHours={inc.plannedHours}
                               computedHours={inc.computedHours}
@@ -836,7 +772,7 @@ export const PlanningInconsistenciesCard = memo(function PlanningInconsistencies
                               )}
                             </div>
 
-                            <MobileHoursMetrics
+                            <PlanningCoherenceHoursMetrics
                               deadlineHours={inc.deadlineHours}
                               plannedHours={inc.plannedHours}
                               computedHours={inc.computedHours}
@@ -1031,7 +967,7 @@ export const PlanningInconsistenciesCard = memo(function PlanningInconsistencies
                                     <div className="flex-1 min-w-0">
                                       {isMobile ? (
                                         <>
-                                          <MobileHoursMetrics
+                                          <PlanningCoherenceHoursMetrics
                                             deadlineHours={tm.deadlineHours}
                                             plannedHours={tm.plannedHours}
                                             computedHours={tm.computedHours}

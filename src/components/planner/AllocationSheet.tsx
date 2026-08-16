@@ -8,11 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAppAllocationActions, useAppAllocations, useAppEmployees, useAppProjects, useAppWeeklyFeedback } from '@/contexts/AppContext';
 import { useAgency } from '@/contexts/AgencyContext';
 import { Allocation, Project } from '@/types';
-import { CalendarDays, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, TrendingUp, TrendingDown, CheckCircle2, Users, ChevronDown, Palmtree, Zap, Clock, LayoutGrid, Calendar, FoldVertical, UnfoldVertical, ArrowUpDown, SortAsc, SortDesc, Filter, SlidersHorizontal, ArrowRightLeft, Lock, Check, Plus, Link as LinkIcon, AlertTriangle } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, TrendingUp, TrendingDown, CheckCircle2, Users, ChevronDown, Palmtree, Zap, Clock, LayoutGrid, Calendar, FoldVertical, UnfoldVertical, ArrowUpDown, SortAsc, SortDesc, Filter, SlidersHorizontal, ArrowRightLeft, Lock, Check, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey, isAllocationInEffectiveMonth, getWeekEndDate } from '@/utils/dateUtils';
 import { useWeeklyCloseDay } from '@/hooks/useWeeklyCloseDay';
@@ -27,7 +26,6 @@ import { useAllocationActions } from '@/hooks/useAllocationActions';
 import { useAllocationNoteCountsForEmployeeMonth } from '@/hooks/useAllocationNotes';
 import { TaskNotesTrigger } from '@/components/planner/allocation/TaskNotesTrigger';
 import { AllocationProjectHeader } from '@/components/planner/allocation/AllocationProjectHeader';
-import { AllocationTaskRow } from '@/components/planner/allocation/AllocationTaskRow';
 import { PlannerTaskContextMenu } from '@/components/planner/allocation/PlannerTaskContextMenu';
 import { AllocationSheetHeader } from '@/components/planner/allocation/AllocationSheetHeader';
 import {
@@ -36,11 +34,9 @@ import {
   type PlannerSheetViewMode,
 } from '@/components/planner/allocation/plannerSheetViewMode';
 import type { WeekStripItemSummary } from '@/components/planner/allocation/allocationWeekMetricsUtils';
-import { resolveDisplayStatus, weekCardSurfaceClass } from '@/components/planner/allocation/allocationWeekMetricsUtils';
-import { AllocationMonthWeekCardHeader } from '@/components/planner/allocation/AllocationMonthWeekCardHeader';
-import { AllocationMonthProjectCardHeader } from '@/components/planner/allocation/AllocationMonthProjectCardHeader';
+import { resolveDisplayStatus } from '@/components/planner/allocation/allocationWeekMetricsUtils';
+import { AllocationMonthWeekColumn } from '@/components/planner/allocation/AllocationMonthWeekColumn';
 import { MonthWeekScrollControls } from '@/components/planner/allocation/MonthWeekScrollControls';
-import { ScrollWheelArea } from '@/components/ui/scroll-wheel-area';
 import { scrollChildIntoHorizontalView, useHorizontalPanScroll } from '@/hooks/useHorizontalPanScroll';
 import { TaskTimer } from '@/components/employee/TaskTimer';
 import { BatchTaskRow } from '@/components/planner/BatchTaskRow';
@@ -77,10 +73,6 @@ interface AllocationSheetProps {
 }
 
 type SortOption = 'budget_desc' | 'budget_asc' | 'my_hours_desc' | 'my_hours_asc' | 'name_asc' | 'name_desc';
-
-/** Ancho fijo por columna en vista mes con scroll horizontal (evita que semanas vacías queden más estrechas). */
-const MONTH_SCROLL_WEEK_COL_CLASS =
-  'flex-none w-[280px] sm:w-[300px] snap-center';
 
 export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, viewDateContext }: AllocationSheetProps) {
   const { t } = useAppTranslation();
@@ -1311,26 +1303,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                       }
 
                       // VISTA COMPACTA para vista mensual (múltiples semanas)
-                      // Mostrar loading si está cargando
-                      if (isGlobalLoading || isLoadingTasks) {
-                        return (
-                          <div
-                            key={weekStr}
-                            data-week-index={index}
-                            className={cn(
-                              'flex flex-col gap-2 p-3 rounded-xl border bg-white min-h-[280px] animate-pulse',
-                              isMonthView && 'h-full min-h-0',
-                              isMonthScrollLayout
-                                ? MONTH_SCROLL_WEEK_COL_CLASS
-                                : 'min-w-0 w-full'
-                            )}
-                          >
-                            <div className="h-16 bg-slate-100 rounded-lg" />
-                            <div className="flex-1 bg-slate-50 rounded-lg min-h-[180px]" />
-                          </div>
-                        );
-                      }
-
                       const weekSummary: WeekStripItemSummary = weekStripSummaries[index] ?? {
                         planHours: weekEst,
                         loadHours: round2(load.hours),
@@ -1343,160 +1315,59 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                       const cardStatus = resolveDisplayStatus(weekSummary);
 
                       return (
-                        <div
+                        <AllocationMonthWeekColumn
                           key={weekStr}
-                          data-week-index={index}
-                          className={cn(
-                            'flex flex-col gap-2 p-2.5 sm:p-3 rounded-xl border min-h-[280px]',
-                            isMonthView && 'h-full min-h-0',
-                            weekCardSurfaceClass(cardStatus),
-                            isMonthScrollLayout &&
-                              cn(MONTH_SCROLL_WEEK_COL_CLASS, 'shadow-sm'),
-                            isMonthGridLayout &&
-                              'min-w-0 w-full shadow-sm hover:shadow-md transition-shadow'
-                          )}
-                        >
-                          <AllocationMonthWeekCardHeader
-                            weekIndex={index}
-                            weekDateLabel={weekDateLabel}
-                            summary={weekSummary}
-                            loadPercentage={load.percentage}
-                            breakdown={load.breakdown}
-                            compactMetrics={false}
-                          />
-
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="w-full shrink-0 gap-1.5 border-dashed border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 hover:border-indigo-300"
-                            onClick={() => startAdd(week.weekStart)}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            {t('planner.allocationSheet.addTask', 'Añadir tarea')}
-                          </Button>
-
-                          {/* LISTA TAREAS */}
-                          <ScrollWheelArea className={cn('flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0', isMobile ? 'pr-2' : 'pr-0.5')}>
-                            {sortedGroups.length === 0 ? (
-                              <p className="text-center py-4 text-xs text-slate-400">{t('planner.allocationSheet.noTasks', 'Sin tareas')}</p>
-                            ) : sortedGroups.map(([projId, projAllocations]) => {
-                              const project = getProjectById(projId);
-                              const allCompleted = projAllocations.every(a => a.status === 'completed') && !projAllocations.some(a => recentlyToggled.has(a.id));
-                              const isCollapsed = autoExpand ? collapsedProjects.has(projId) : !collapsedProjects.has(projId);
-                              const sortedTasks = sortTasks(projAllocations);
-
-                              // Calcular horas del empleado actual en este proyecto
-                              const completedCount = projAllocations.filter(a => a.status === 'completed').length;
-                              const totalCount = projAllocations.length;
-                              const myHoursInProject = {
-                                estimated: round2(projAllocations.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0)),
-                                completed: completedCount,
-                                computed: round2(projAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + getEffectiveCompletedHours(a, preference), 0))
-                              };
-
-                              const isSelected = selectedProjectId === projId;
-
-                              return (
-                                <Collapsible key={projId} open={!isCollapsed} onOpenChange={() => toggleProjectCollapse(projId)}>
-                                  <div className={cn(
-                                    "bg-white border rounded-lg overflow-hidden transition-all duration-200",
-                                    allCompleted && "opacity-75 hover:opacity-100",
-                                    isSelected && "ring-2 ring-indigo-400 border-indigo-300",
-                                    !isCollapsed && "shadow-sm"
-                                  )}>
-                                    <div className="relative group flex items-stretch">
-                                      <CollapsibleTrigger asChild>
-                                        <button
-                                          type="button"
-                                          className={cn(
-                                            'flex-1 min-w-0 text-left cursor-pointer',
-                                            allCompleted ? 'bg-emerald-50/60' : 'hover:bg-slate-50'
-                                          )}
-                                        >
-                                          <AllocationMonthProjectCardHeader
-                                            projectId={projId}
-                                            projectName={formatProjectName(project?.name || 'Proyecto')}
-                                            allCompleted={allCompleted}
-                                            completedCount={completedCount}
-                                            totalCount={totalCount}
-                                            estimatedHours={myHoursInProject.estimated}
-                                            isCollapsed={isCollapsed}
-                                          />
-                                        </button>
-                                      </CollapsibleTrigger>
-                                      {isMonthView && (
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="sm"
-                                              className={cn(
-                                                'h-auto self-stretch rounded-none border-l px-2.5 shrink-0 hover:bg-indigo-50 hover:text-indigo-700',
-                                                isSelected && 'bg-indigo-50 text-indigo-700'
-                                              )}
-                                              aria-label={t('planner.allocationSheet.teamAndBudgetAria')}
-                                              onClick={() => setSelectedProjectId(isSelected ? null : projId)}
-                                            >
-                                              <Users className="w-3.5 h-3.5" />
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent side="left" className="text-xs">
-                                            {t('planner.allocationSheet.teamAndBudget')}
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      )}
-                                    </div>
-                                    <CollapsibleContent>
-                                      <div className="divide-y divide-slate-100 border-t">
-                                        {sortedTasks.map(alloc => (
-                                          <AllocationTaskRow
-                                            key={alloc.id}
-                                            alloc={alloc}
-                                            weekIndex={index}
-                                            isInlineEditing={inlineEditingId === alloc.id}
-                                            inlineNameValue={inlineNameValue}
-                                            onInlineNameChange={setInlineNameValue}
-                                            onSaveInline={() => saveInlineEdit(alloc)}
-                                            onStartInlineEdit={() => startInlineEdit(alloc)}
-                                            onToggleCompletion={() => toggleTaskCompletionWithSums(alloc)}
-                                            onUpdateInlineHours={(field, value) => updateInlineHours(alloc, field, value)}
-                                            onStartEditFull={() => startEditFull(alloc)}
-                                            onMoveTask={(targetWeekStart) => moveTaskToWeek(alloc, targetWeekStart)}
-                                            nextWeekStart={weeks[(index + 1) % weeks.length].weekStart}
-                                            employees={employees}
-                                            allocations={allocations}
-                                            outgoingTransfers={outgoingTransfers}
-                                            weeklyFeedback={weeklyFeedback}
-                                            showAllWeeks={isMonthView}
-                                            setTransferTask={setTransferTask}
-                                            setTransferDialogOpen={setTransferDialogOpen}
-                                            isWeeklyEnabled={isWeeklyEnabled}
-                                            isMobile={isMobile}
-                                            showTaskTimer={isTimeTrackerEnabled}
-                                            onTimeLogged={handleTimeLogged}
-                                            timeEntriesSum={timeEntrySumsByAllocationId[alloc.id]}
-                                            noteCount={noteCounts[alloc.id] ?? 0}
-                                            ownerEmployeeId={employeeId}
-                                            onOpenWeeklyForTask={
-                                              isWeeklyEnabled
-                                                ? (a) => {
-                                                    setWeeklyFocusAllocationId(a.id);
-                                                    setWeeklyOpen(true);
-                                                  }
-                                                : undefined
-                                            }
-                                          />
-                                        ))}
-                                      </div>
-                                    </CollapsibleContent>
-                                  </div>
-                                </Collapsible>
-                              );
-                            })}
-                          </ScrollWheelArea>
-                        </div>
+                          weekStr={weekStr}
+                          weekIndex={index}
+                          isLoading={isGlobalLoading || isLoadingTasks}
+                          isMonthView={isMonthView}
+                          isMonthScrollLayout={isMonthScrollLayout}
+                          isMonthGridLayout={isMonthGridLayout}
+                          weekDateLabel={weekDateLabel}
+                          weekSummary={weekSummary}
+                          cardStatus={cardStatus}
+                          load={load}
+                          sortedGroups={sortedGroups}
+                          week={week}
+                          weeks={weeks}
+                          getProjectById={getProjectById}
+                          formatProjectName={formatProjectName}
+                          recentlyToggled={recentlyToggled}
+                          autoExpand={autoExpand}
+                          collapsedProjects={collapsedProjects}
+                          toggleProjectCollapse={toggleProjectCollapse}
+                          sortTasks={sortTasks}
+                          selectedProjectId={selectedProjectId}
+                          setSelectedProjectId={setSelectedProjectId}
+                          onStartAdd={startAdd}
+                          inlineEditingId={inlineEditingId}
+                          inlineNameValue={inlineNameValue}
+                          setInlineNameValue={setInlineNameValue}
+                          saveInlineEdit={saveInlineEdit}
+                          startInlineEdit={startInlineEdit}
+                          toggleTaskCompletionWithSums={toggleTaskCompletionWithSums}
+                          updateInlineHours={updateInlineHours}
+                          startEditFull={startEditFull}
+                          moveTaskToWeek={moveTaskToWeek}
+                          employees={employees}
+                          allocations={allocations}
+                          outgoingTransfers={outgoingTransfers}
+                          weeklyFeedback={weeklyFeedback}
+                          setTransferTask={setTransferTask}
+                          setTransferDialogOpen={setTransferDialogOpen}
+                          isWeeklyEnabled={isWeeklyEnabled}
+                          isMobile={isMobile}
+                          isTimeTrackerEnabled={isTimeTrackerEnabled}
+                          onTimeLogged={handleTimeLogged}
+                          timeEntrySumsByAllocationId={timeEntrySumsByAllocationId}
+                          noteCounts={noteCounts}
+                          employeeId={employeeId}
+                          onOpenWeeklyForTask={(a) => {
+                            setWeeklyFocusAllocationId(a.id);
+                            setWeeklyOpen(true);
+                          }}
+                          hoursTrackingPreference={preference}
+                        />
                       );
                     })}
                 </div>
