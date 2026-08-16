@@ -23,7 +23,7 @@ import {
   defaultAdsPlatforms,
   defaultConditions,
   ISSUE_FLAG_IDS,
-} from '@/components/agency/notificationRulesShared';
+} from '@/components/agency/notificationRulesConstants';
 import { NotificationRuleFormFields } from '@/components/agency/NotificationRuleFormFields';
 import {
   mapNotificationRuleFromDb,

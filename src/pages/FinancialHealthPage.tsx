@@ -61,10 +61,8 @@ import {
     normalizeCommonExpenseEntriesDepartments,
     type AllocateCommonExpensesFailure,
 } from '@/utils/commonExpensesAllocation';
-import {
-    CommonExpensesSettingsCard,
-    validateCommonExpensesDraft,
-} from '@/components/agency/CommonExpensesSettingsCard';
+import { CommonExpensesSettingsCard } from '@/components/agency/CommonExpensesSettingsCard';
+import { validateCommonExpensesDraft } from '@/utils/commonExpensesDraftValidation';
 import { toast } from '@/lib/notify';
 import { usePermissions } from '@/hooks/usePermissions';
 import {

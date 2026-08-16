@@ -1,10 +1,10 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { AllocationWeekMetricsDisplay } from '@/components/planner/allocation/allocationWeekMetrics';
 import {
-  AllocationWeekMetricsDisplay,
   loadPercentageTone,
   resolveDisplayStatus,
-  WeekStripItemSummary,
-} from '@/components/planner/allocation/allocationWeekMetrics';
+  type WeekStripItemSummary,
+} from '@/components/planner/allocation/allocationWeekMetricsUtils';
 import { cn } from '@/lib/utils';
 import { round2 } from '@/utils/numbers';
 import { Palmtree, Zap } from 'lucide-react';

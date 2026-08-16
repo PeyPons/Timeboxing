@@ -24,4 +24,19 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
     },
   },
+  // Provider + hook / CVA / boundary: patrón intencional; HMR sigue funcionando al editar el archivo.
+  {
+    files: [
+      "src/contexts/**/*.{ts,tsx}",
+      "src/components/ui/**/*.{ts,tsx}",
+      "src/components/admin/ImpersonationBanner.tsx",
+      "src/components/deadlines/DeadlinesTour.tsx",
+      "src/components/employee/WelcomeTour.tsx",
+      "src/components/routing/RouteErrorBoundary.tsx",
+      "src/hooks/useAppTranslation.tsx",
+    ],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
 );
