@@ -1583,9 +1583,13 @@ export default function AgencySettingsPage() {
               isAddingAccount={isAddingAccount}
               syncingMetaAccounts={syncingMetaAccounts}
               setSyncingMetaAccounts={setSyncingMetaAccounts}
-              onAddAccount={handleAddAccount}
+              onAddAccount={() => {
+                void handleAddAccount();
+              }}
               onRemoveAccount={handleRemoveAccount}
-              fetchConnectedAccounts={fetchConnectedAccounts}
+              fetchConnectedAccounts={() => {
+                void fetchConnectedAccounts();
+              }}
             />
           </TabsContent>
 

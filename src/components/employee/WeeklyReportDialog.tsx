@@ -19,12 +19,12 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useProjectFilters } from '@/hooks/useProjectFilters';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { format, parseISO, startOfWeek, startOfMonth, addDays, addMonths, isBefore, isSameWeek } from 'date-fns';
+import { format, parseISO, startOfMonth, addDays, addMonths, isSameWeek } from 'date-fns';
 import { useDateLocale } from '@/hooks/useDateLocale';
 import { CheckCircle2, AlertCircle, AlertTriangle, Plus, Clock, Trash2, Search } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from '@/lib/notify';
-import { getStorageKey, getWeeksForMonth, isAllocationInEffectiveMonth, getWeekEndDate, parseDateStringLocal } from '@/utils/dateUtils';
+import { getStorageKey, getWeeksForMonth, isAllocationInEffectiveMonth, parseDateStringLocal } from '@/utils/dateUtils';
 import { filterEmployeesForOperationalMonthDate } from '@/utils/employeeAssignmentVisibility';
 import { useWeeklyCloseDay } from '@/hooks/useWeeklyCloseDay';
 import {
@@ -33,7 +33,6 @@ import {
   normalizeWeeklyHourInput,
 } from '@/hooks/useWeeklyCloseMutations';
 import {
-  getWeeklyProcessedAllocationIds,
   canPostponeTaskInWeekly,
   formatWeeklyTaskHoursSummary,
   getWeeklyTaskGuidance,
@@ -47,6 +46,7 @@ import {
   roundTaskHours,
 } from '@/utils/weeklyReportActionUtils';
 import { WeeklyOptionalNote, WeeklyRequiredNote } from '@/components/employee/WeeklyReportNotes';
+import { useWeeklyReportTaskPool } from '@/hooks/useWeeklyReportTaskPool';
 import { cn } from '@/lib/utils';
 import { useProjectAliasing } from '@/hooks/useProjectAliasing';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -112,114 +112,27 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
   const [keepConfirmOpen, setKeepConfirmOpen] = useState(false);
   const [weeklyTab, setWeeklyTab] = useState<'past' | 'current'>('past');
 
-  const taskMatchesSearch = useCallback(
-    (task: (typeof allocations)[0]) => {
-      const q = modalSearch.trim().toLowerCase();
-      if (!q) return true;
-      const proj = projects.find(p => p.id === task.projectId);
-      const rawProjectName = proj
-        ? typeof (proj as any).name === 'string'
-          ? (proj as any).name
-          : typeof (proj as any).project_name === 'string'
-            ? (proj as any).project_name
-            : typeof (proj as any).title === 'string'
-              ? (proj as any).title
-              : ''
-        : '';
-      const projectLabel = formatProjectName(rawProjectName).toLowerCase();
-      const rawTaskName = typeof (task as any).taskName === 'string' ? (task as any).taskName : '';
-      const taskLabel = rawTaskName.toLowerCase().replace(/\(transferida de[^)]*\)/gi, '').trim();
-      return projectLabel.includes(q) || taskLabel.includes(q);
-    },
-    [modalSearch, projects, formatProjectName]
-  );
+  const { activeFilters, filterProject } = useProjectFilters();
 
-  const { activeFilters, filterProject, getFilterDisplayName } = useProjectFilters();
-  const getTargetWeek = (): string | null => {
-    const monthEnd = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0);
-    if (isBefore(monthEnd, new Date())) {
-      return format(startOfWeek(monthEnd, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-    }
-    return null;
-  };
-  const targetWeek = getTargetWeek();
-
-  const { openTasks, transferredTasks } = useMemo(() => {
-    const today = new Date();
-    const processedByWeeklyIds = getWeeklyProcessedAllocationIds(weeklyFeedback);
-
-    const open: typeof allocations = [];
-    const transferred: typeof allocations = [];
-
-    const pushFocusedIfMissing = () => {
-      if (!open || !focusAllocationId) return;
-      const focused = allocations.find(a => a.id === focusAllocationId && a.employeeId === employeeId);
-      if (!focused || processedByWeeklyIds.has(focused.id) || focused.status === 'completed') return;
-      const seen = new Set([...open.map(t => t.id), ...transferred.map(t => t.id)]);
-      if (seen.has(focused.id)) return;
-      try {
-        const isTransferredTask = focused.transferredFromAllocationId !== undefined && focused.transferredFromAllocationId !== null
-          || focused.taskName?.includes('(transferida de');
-        if (isTransferredTask) transferred.push(focused);
-        else open.push(focused);
-      } catch { /* ignore */ }
-    };
-
-    allocations.forEach(a => {
-      if (a.employeeId !== employeeId) return;
-      if (processedByWeeklyIds.has(a.id)) return;
-      try {
-        const taskWeekDate = parseDateStringLocal(a.weekStartDate);
-        if (!isAllocationInEffectiveMonth(a.weekStartDate, viewDate)) return;
-        const taskWeekEnd = getWeekEndDate(taskWeekDate, weeklyCloseDay);
-        if (targetWeek !== null) {
-          if (getStorageKey(taskWeekDate, viewDate) !== targetWeek) return;
-        } else {
-          // Permitir ajustes proactivos de la semana actual aunque aún no haya llegado el día de cierre.
-          const isCurrentCalendarWeek = isSameWeek(taskWeekDate, today, { weekStartsOn: 1 });
-          if (taskWeekEnd > today && !isCurrentCalendarWeek) return;
-        }
-        const isTransferredTask = a.transferredFromAllocationId !== undefined && a.transferredFromAllocationId !== null
-          || a.taskName?.includes('(transferida de');
-        if (isTransferredTask && a.status !== 'completed') { transferred.push(a); return; }
-        if (a.status !== 'completed') { open.push(a); }
-      } catch { /* ignore parse errors */ }
-    });
-
-    pushFocusedIfMissing();
-
-    return {
-      openTasks: Array.from(new Map(open.map(t => [t.id, t])).values()),
-      transferredTasks: Array.from(new Map(transferred.map(t => [t.id, t])).values())
-    };
-  }, [allocations, employeeId, viewDate, weeklyFeedback, weeklyCloseDay, focusAllocationId, targetWeek]);
-
-  const allTasks = useMemo(
-    () => [...openTasks, ...transferredTasks],
-    [openTasks, transferredTasks]
-  );
-
-  /**
-   * Semana actual vs atrasadas: misma semana ISO (lunes inicio) que hoy, usando fecha local de `week_start_date`.
-   * `parseISO` solo con YYYY-MM-DD puede correr un día en UTC− y mandar todo a «Requieren cierre» por error.
-   */
-  const { pastTasks, currentTasks } = useMemo(() => {
-    const today = new Date();
-    const past: typeof allTasks = [];
-    const current: typeof allTasks = [];
-    for (const t of allTasks) {
-      try {
-        const d = parseDateStringLocal(t.weekStartDate);
-        if (isSameWeek(d, today, { weekStartsOn: 1 })) current.push(t);
-        else past.push(t);
-      } catch {
-        past.push(t);
-      }
-    }
-    return { pastTasks: past, currentTasks: current };
-  }, [allTasks]);
-
-  const singleTaskFromPlanner = Boolean(open && focusAllocationId && allTasks.length === 1 && allTasks[0]?.id === focusAllocationId);
+  const {
+    allTasks,
+    pastTasks,
+    currentTasks,
+    singleTaskFromPlanner,
+    filteredTasks,
+  } = useWeeklyReportTaskPool({
+    open,
+    allocations,
+    employeeId,
+    viewDate,
+    weeklyFeedback,
+    weeklyCloseDay,
+    focusAllocationId,
+    weeklyTab,
+    modalSearch,
+    formatProjectName,
+    projects,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -258,13 +171,6 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
     }
     setWeeklyTab('past');
   }, [open, focusAllocationId, allocations, employeeId]);
-
-  const tabTaskPool = singleTaskFromPlanner
-    ? allTasks
-    : weeklyTab === 'past'
-      ? pastTasks
-      : currentTasks;
-  const filteredTasks = useMemo(() => tabTaskPool.filter(taskMatchesSearch), [tabTaskPool, taskMatchesSearch]);
 
   /** Selección acorde a pestaña y filtro de búsqueda. */
   useEffect(() => {
