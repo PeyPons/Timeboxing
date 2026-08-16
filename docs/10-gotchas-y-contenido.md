@@ -74,7 +74,13 @@ Al eliminar un empleado **debe borrarse todo rastro en la base de datos**. No se
 - **Empleados inexistentes**: Si por datos antiguos o fallo de migración quedara algún `employee_id` sin correspondencia en `employees`, no se muestra "Desconocido": se excluyen esas filas (red de seguridad; la solución correcta es la limpieza en BD, ver 10.3).
 - **Proyectos completados/archivados**: La coherencia **no** usa `employee_hours` de deadlines de proyectos no activos como objetivo del mes (evita “horas pendientes” fantasma tras copiar el mes). Sí pueden aparecer si hay tareas planificadas/computadas del mes. "Copiar del mes anterior" solo inserta deadlines de proyectos `active` (`selectDeadlinesToCopyFromPreviousMonth`).
 
-### 10.5 Robustez en mapeos y búsquedas (find/map)
+### 10.5 Suite de tests (Vitest vs node:test)
+- **Correr la suite completa** con `npx vitest run` (no solo el archivo tocado). `npm test` abre Vitest en modo watch.
+- **`scripts/*.test.mjs`** (p. ej. auditoría blog) usan **`node:test`**: `npm run test:audit-blog`. Están excluidos de Vitest a propósito.
+- Sin `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`, cualquier import de `@/lib/supabase` rompía suites enteras al cargar el módulo (`createClient` no acepta URL vacía). El setup de Vitest stubbea valores dummy.
+- Los tests unitarios **no sustituyen** QA manual de flujos UI (Deadlines → Dashboard, Realtime, RLS).
+
+### 10.6 Robustez en mapeos y búsquedas (find/map)
 - **Fallbacks en Contextos/Hooks**: Siempre asume que las listas (`allocations`, `employees`, `pendingTransfers`) pueden ser `undefined` durante la carga inicial o en entornos de prueba/demo.
 - **Patrón Recomendado**:
   ```tsx
