@@ -16,7 +16,7 @@ export interface Notification {
 
 const MAX_INBOX = 50;
 
-export function inboxStorageKey(agencyId: string, userId: string): string {
+function inboxStorageKey(agencyId: string, userId: string): string {
   return `tb_inbox_${agencyId}_${userId}`;
 }
 

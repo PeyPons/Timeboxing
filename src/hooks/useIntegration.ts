@@ -18,18 +18,3 @@ export function useWeeklyModuleEnabled(): boolean {
   if (isLoading || !currentAgency) return false;
   return resolveWeeklyEnabled(currentAgency.settings);
 }
-
-/**
- * Hook para verificar múltiples integraciones a la vez
- * @param integrationIds - Array de IDs de integraciones a verificar
- * @returns Objeto con el estado de cada integración
- */
-export function useIntegrations(integrationIds: string[]): Record<string, boolean> {
-  const { currentAgency } = useAgency();
-  const enabled = currentAgency?.settings?.enabledIntegrations ?? {};
-
-  return integrationIds.reduce((acc, id) => {
-    acc[id] = enabled[id] ?? false;
-    return acc;
-  }, {} as Record<string, boolean>);
-}

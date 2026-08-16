@@ -56,7 +56,7 @@ Cuando el modo está activo, los textos sustituidos se muestran con efecto blur 
 
 **Auditoría / búsqueda en el código** (para encontrar fugas de nombres reales): en el repo, buscar patrones como `{client.name}`, `client?.name`, `{clientName}`, `clients.find(... )?.name`, `formatProjectName(...)` en JSX de solo lectura, y `title={...}` con nombres de proyecto o cliente. Revisar también `OkrsPage.tsx`, `ClientsAndProjectsPage.tsx`, `FinancialHealthPage.tsx` (rentabilidad) cuando se añadan filas nuevas.
 
-**Deadlines** (`DeadlinesPage.tsx`): los **nombres de proyecto** van envueltos en `SensitiveText` con `kind="project"` en `DeadlinesProjectList.tsx`, `DeadlinesProjectEditSheet.tsx`, `DeadlinesSuggestionsPanel.tsx` (lista, filtros por proyecto, desglose por proyecto); la demo estática `DemoDeadlinesPage.tsx` alinea el mismo criterio en el título del proyecto.
+**Deadlines** (`DeadlinesPage.tsx`): los **nombres de proyecto** van envueltos en `SensitiveText` con `kind="project"` en `DeadlinesProjectList.tsx`, `DeadlinesProjectEditSheet.tsx`, `DeadlinesSuggestionsPanel.tsx` (lista, filtros por proyecto, desglose por proyecto).
 
 **Indicador global**: una franja discreta (no el banner verde de Ads) en el layout principal (`PrivacyDemoIndicator` en `AppLayout.tsx`). En **escritorio** usa `lg:pl-64` para que el texto no quede bajo el **sidebar fijo** (`z-50`, `w-64`); lo mismo aplica a `DepartmentViewBanner` y `SubscriptionSoftLockBanner`. La **vista admin como agencia** va en una línea al pie del sidebar (`SidebarImpersonationPanel`), encima del selector de vista global, no en franja superior. En las páginas de Ads se eliminó el banner verde duplicado y los badges "Datos protegidos" redundantes para no repetir avisos.
 

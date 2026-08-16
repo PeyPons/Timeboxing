@@ -3,7 +3,6 @@ import {
   createPost,
   deletePost,
   getPostByPath,
-  getPostBySlug,
   getRelatedSummary,
   listAllPostSummaries,
   listPublishedPaths,
@@ -22,7 +21,6 @@ export const blogQueryKeys = {
   adminSummaries: ["blog", "admin-summaries"] as const,
   paths: ["blog", "paths"] as const,
   byPath: (path: string) => ["blog", "by-path", path] as const,
-  bySlug: (slug: string) => ["blog", "by-slug", slug] as const,
   relatedSummary: (slug: string) => ["blog", "related-summary", slug] as const,
 };
 
@@ -63,15 +61,6 @@ export function usePostByPath(pathname: string | undefined) {
     queryFn: () => (pathname != null ? getPostByPath(pathname) : Promise.resolve(null)),
     enabled: pathname != null && pathname.length > 0,
     staleTime: STALE_5_MIN,
-  });
-}
-
-/** Resolucion por slug (admin). */
-export function usePostBySlug(slug: string | undefined) {
-  return useQuery({
-    queryKey: slug != null ? blogQueryKeys.bySlug(slug) : ["blog", "by-slug", "__noop"],
-    queryFn: () => (slug != null ? getPostBySlug(slug) : Promise.resolve(null)),
-    enabled: slug != null && slug.length > 0,
   });
 }
 

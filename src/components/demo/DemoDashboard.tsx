@@ -10,9 +10,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getWeeksForMonth } from '@/utils/dateUtils';
 import { format, addDays } from 'date-fns';
 import { es, enUS } from 'date-fns/locale';
-import { demoEmployees, demoClients, demoProjects, demoAllocations } from '@/data/demoData';
-import { DemoProvider, useDemo } from '@/contexts/DemoContext';
-import { DemoEmployeeDashboard } from './DemoEmployeeDashboard';
+import { useDemo } from '@/contexts/DemoContext';
 import { cn } from '@/lib/utils';
 import { AlertCircle, Info } from 'lucide-react';
 
@@ -317,13 +315,5 @@ export function DemoPlanner() {
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-export function DemoDashboard() {
-  return (
-    <DemoProvider>
-      <DemoEmployeeDashboard />
-    </DemoProvider>
   );
 }

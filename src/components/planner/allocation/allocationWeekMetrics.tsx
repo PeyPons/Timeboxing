@@ -6,7 +6,7 @@ import {
   type WeekStripItemSummary,
 } from '@/components/planner/allocation/allocationWeekMetricsUtils';
 
-export function MetricLine({
+function MetricLine({
   label,
   children,
   isActive,

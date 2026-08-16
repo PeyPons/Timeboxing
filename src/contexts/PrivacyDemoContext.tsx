@@ -29,8 +29,3 @@ export function usePrivacyDemo(): PrivacyDemoContextValue {
   }
   return ctx;
 }
-
-/** Para pruebas o rutas sin provider (no debería usarse en producción). */
-export function usePrivacyDemoOptional(): PrivacyDemoContextValue | null {
-  return useContext(PrivacyDemoContext);
-}
