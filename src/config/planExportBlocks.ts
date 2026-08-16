@@ -1,5 +1,7 @@
 import type { PlanId } from '@/types';
-import { getPlanLimit } from '@/config/plans';
+import { planIncludesAdvancedExports } from '@/config/plans';
+
+export { planIncludesAdvancedExports } from '@/config/plans';
 
 /** Bloques de exportación incluidos en Team (exports básicos). */
 export const PLAN_EXPORT_BLOCKS_BASIC = [
@@ -20,10 +22,6 @@ export const PLAN_EXPORT_BLOCKS_ADVANCED = [
 export type PlanExportBlockId =
   | (typeof PLAN_EXPORT_BLOCKS_BASIC)[number]
   | (typeof PLAN_EXPORT_BLOCKS_ADVANCED)[number];
-
-export function planIncludesAdvancedExports(planId: PlanId): boolean {
-  return getPlanLimit(planId).advancedExports;
-}
 
 export function canExportBlock(planId: PlanId, block: PlanExportBlockId): boolean {
   if (planId === 'starter') return false;
