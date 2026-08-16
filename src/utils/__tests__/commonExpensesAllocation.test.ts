@@ -153,7 +153,7 @@ describe('allocateCommonExpenses', () => {
       getEmployeeHours: () => 10,
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('NEGATIVE_AMOUNT');
+    if (r.ok === false) expect(r.code).toBe('NEGATIVE_AMOUNT');
   });
 
   it('rechaza split inválido', () => {
@@ -174,7 +174,7 @@ describe('allocateCommonExpenses', () => {
       getEmployeeHours: () => 10,
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('SPLIT_SUM_OUT_OF_RANGE');
+    if (r.ok === false) expect(r.code).toBe('SPLIT_SUM_OUT_OF_RANGE');
   });
 
   it('lista empleados con 0h cuando otros trabajan y hay gasto', () => {

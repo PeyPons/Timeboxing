@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import type { Employee } from '@/types';
 import {
   DEFAULT_MONTHLY_HOURS,

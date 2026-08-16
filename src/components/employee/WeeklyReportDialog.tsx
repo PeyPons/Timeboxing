@@ -190,6 +190,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
     applyDistribute,
     getSlotsForTaskWeek,
   } = useWeeklyCloseMutations(viewDate);
+  const isActualHoursPreference = preference === 'actual';
 
   const parseHours = parseWeeklyCloseHours;
 
@@ -804,14 +805,14 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
         } else if (action === 'keep') {
           const hours = keepTaskHours[task.id];
           const actual = hours ? parseHours(hours.actual) : (task.hoursActual || task.hoursAssigned);
-          const computed = preference === 'actual' ? actual : (hours ? parseHours(hours.computed) : (task.hoursComputed || actual));
+          const computed = isActualHoursPreference ? actual : (hours ? parseHours(hours.computed) : (task.hoursComputed || actual));
           result = await applyKeep(task, employeeId, actual, computed, taskComments[task.id]);
         } else if (action === 'postpone') {
           const hours = rolloverHours[task.id];
           const destWeekStr = rolloverTargetWeek[task.id] || '';
           const actual = hours ? parseHours(hours.actual) : 0;
           const computed =
-            preference === 'actual' ? actual : hours ? parseHours(hours.computed) || actual : actual;
+            isActualHoursPreference ? actual : hours ? parseHours(hours.computed) || actual : actual;
           const newEstimate = round2(task.hoursAssigned - actual);
           if (newEstimate <= 0) {
             result = { ok: false, message: `"${task.taskName}": debe quedar saldo para posponer` };
@@ -826,7 +827,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
           continue;
         }
 
-        if (!result.ok) {
+        if ('message' in result) {
           failures.push({ taskId: task.id, taskName: task.taskName || t('weeklyReport.sidebar.noName'), message: result.message });
         } else {
           processedCount += 1;
@@ -1279,17 +1280,17 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
                                           [selectedTask.id]: { 
                                             ...prev[selectedTask.id], 
                                             actual: v,
-                                            ...(preference === 'actual' ? { computed: v } : {}) 
+                                            ...(isActualHoursPreference ? { computed: v } : {}) 
                                           } 
                                         })); 
                                       }}
                                       placeholder="0.00" />
                                   </div>
-                                  {preference !== 'actual' && (
+                                  {!isActualHoursPreference && (
                                   <div className="space-y-1">
                                     <Label className="text-xs font-medium">{t('weeklyReport.ui.billing')}</Label>
                                     <Input type="text" inputMode="decimal" className="h-8 font-mono text-sm" value={hours.computed}
-                                      disabled={preference === 'actual'}
+                                      disabled={isActualHoursPreference}
                                       onChange={(e) => { const v = normalizeWeeklyHourInput(e.target.value); setKeepTaskHours(prev => ({ ...prev, [selectedTask.id]: { ...prev[selectedTask.id], computed: v } })); }}
                                       placeholder="0.00" />
                                   </div>
@@ -1334,7 +1335,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
                                           [selectedTask.id]: { 
                                             ...prev[selectedTask.id], 
                                             actual: v,
-                                            ...(preference === 'actual' ? { computed: v } : {}) 
+                                            ...(isActualHoursPreference ? { computed: v } : {}) 
                                           } 
                                         })); 
                                       }}
@@ -1346,11 +1347,11 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
                                       }}
                                     />
                                   </div>
-                                  {preference !== 'actual' && (
+                                  {!isActualHoursPreference && (
                                   <div className="space-y-1">
                                     <Label className="text-xs font-medium">{t('weeklyReport.ui.billing')}</Label>
                                     <Input type="text" inputMode="decimal" className="h-8 font-mono text-sm" value={hours.computed}
-                                      disabled={preference === 'actual'}
+                                      disabled={isActualHoursPreference}
                                       onChange={(e) => { const v = normalizeWeeklyHourInput(e.target.value); setRolloverHours(prev => ({ ...prev, [selectedTask.id]: { ...prev[selectedTask.id], computed: v } })); }}
                                       placeholder="0.00" />
                                   </div>

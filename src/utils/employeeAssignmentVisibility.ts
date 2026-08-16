@@ -2,6 +2,8 @@ import { format } from 'date-fns';
 import type { Allocation, Deadline, Employee, GlobalAssignment } from '@/types';
 import { isAllocationInEffectiveMonth } from '@/utils/dateUtils';
 
+type OperationalWorkloadDeadline = Pick<Deadline, 'month' | 'employeeHours'>;
+
 function monthKeyToViewDate(monthKey: string): Date {
   const [y, m] = monthKey.split('-').map(Number);
   if (!y || !m) return new Date();
@@ -17,7 +19,7 @@ function monthKeyToViewDate(monthKey: string): Date {
 export function employeeIdsWithOperationalWorkloadInMonth(
   monthKey: string,
   ctx: {
-    deadlines?: Deadline[];
+    deadlines?: OperationalWorkloadDeadline[];
     globalAssignments?: GlobalAssignment[];
     allocations?: Allocation[];
     /** Si se pasa, solo se consideran empleados de este universo (p. ej. vista departamento). */
@@ -69,7 +71,7 @@ export function filterEmployeesForOperationalMonth(
   employees: Employee[],
   monthKey: string,
   ctx: {
-    deadlines?: Deadline[];
+    deadlines?: OperationalWorkloadDeadline[];
     globalAssignments?: GlobalAssignment[];
     allocations?: Allocation[];
   }
@@ -125,7 +127,7 @@ export function filterEmployeesForOperationalMonthDate(
   employees: Employee[],
   month: Date,
   ctx: {
-    deadlines?: Deadline[];
+    deadlines?: OperationalWorkloadDeadline[];
     globalAssignments?: GlobalAssignment[];
     allocations?: Allocation[];
   }

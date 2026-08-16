@@ -54,7 +54,7 @@ export function ComoMedirRentabilidadProyectoArticle({
 
         <div className="space-y-5 text-indigo-100/95 text-base sm:text-lg leading-[1.75]">
           <p>
-            {introP1.ok ? (
+            {introP1.ok === true ? (
               <>
                 {introP1.p.before}
                 <LocaleLink to="/blog/por-que-tu-agencia-pierde-rentabilidad-equipo-ocupado" className="text-violet-300 hover:text-white underline underline-offset-2">
@@ -205,7 +205,7 @@ export function ComoMedirRentabilidadProyectoArticle({
           <div className="space-y-4 text-indigo-100/90 text-base sm:text-lg leading-relaxed">
             <p>{t(`posts.${postKey}.section5.p1`)}</p>
             <p>
-              {section5p2.ok ? (
+              {section5p2.ok === true ? (
                 <>
                   {section5p2.p.before1}
                   <LocaleLink to="/blog/plantilla-planificacion-recursos-agencia" className="text-cyan-300 hover:text-white underline underline-offset-2">

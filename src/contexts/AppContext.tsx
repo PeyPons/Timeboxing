@@ -784,7 +784,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const authUserId = employeeToDelete?.user_id ?? null;
 
     const purge = await purgeEmployeeRowAndRelatedData(id);
-    if (!purge.ok) {
+    if ('error' in purge) {
       console.error('Error eliminando empleado:', purge.error);
       const msg = purge.error.toLowerCase();
       toast.error(
@@ -821,7 +821,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       if (links.employees === 0 && links.userAgencies === 0) {
         const authRes = await invokeDeleteAuthUser(authUserId);
-        if (!authRes.ok) {
+        if ('error' in authRes) {
           console.error('Error eliminando usuario Auth:', authRes.error);
           toast.warning(
             'Empleado eliminado, pero el usuario de acceso podría seguir activo (error de sincronización).'

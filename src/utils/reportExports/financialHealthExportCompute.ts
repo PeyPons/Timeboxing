@@ -1,5 +1,5 @@
 import { format, isSameMonth } from 'date-fns';
-import type { Agency, Allocation, Client, Employee, GlobalAssignment, Project } from '@/types';
+import type { Agency, Allocation, Client, Deadline, Employee, GlobalAssignment, Project } from '@/types';
 import { filterEmployeesForOperationalMonthDate } from '@/utils/employeeAssignmentVisibility';
 import { normalizeDepartments, employeeBelongsToDepartment } from '@/utils/departmentUtils';
 import { isAllocationInEffectiveMonth, getWorkingDaysInMonth, getWorkingDaysElapsedInMonth } from '@/utils/dateUtils';
@@ -19,7 +19,7 @@ export interface FinancialHealthExportComputeInput {
   employees: Employee[];
   deadlinesForMonth: ProjectMetricsDeadline[];
   /** Filas completas de Deadlines (horas por empleado) para métricas y reparto de gastos con inactivos con carga. */
-  deadlinesRows?: Array<{ month: string; employeeHours: Record<string, number> }>;
+  deadlinesRows?: Array<Pick<Deadline, 'month' | 'employeeHours'>>;
   globalAssignmentsForMonth?: GlobalAssignment[];
   selectedDepartmentId: string | null;
   agency: Pick<Agency, 'id' | 'name' | 'settings'> | null;

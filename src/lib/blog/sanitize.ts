@@ -1,4 +1,4 @@
-import DOMPurify from "dompurify";
+import DOMPurify, { type Config } from "dompurify";
 
 const ALLOWED_TAGS = [
   "a", "b", "br", "code", "em", "i", "p", "span", "strong", "sub", "sup",
@@ -23,12 +23,12 @@ const ALLOWED_ATTR = [
   "colspan", "rowspan",
 ];
 
-const PURIFY_CONFIG_INLINE: DOMPurify.Config = {
+const PURIFY_CONFIG_INLINE: Config = {
   ALLOWED_TAGS,
   ALLOWED_ATTR,
 };
 
-const PURIFY_CONFIG_FULL: DOMPurify.Config = {
+const PURIFY_CONFIG_FULL: Config = {
   ALLOWED_TAGS: ALLOWED_TAGS_FULL,
   ALLOWED_ATTR,
 };
@@ -56,10 +56,10 @@ function normalizeLegacyBlogHtml(input: string): string {
 
 /** Sanitiza HTML inline (parrafos, items de lista, callouts): solo formato basico + enlaces. */
 export function sanitizeInlineHtml(input: string): string {
-  return DOMPurify.sanitize(normalizeLegacyBlogHtml(input), PURIFY_CONFIG_INLINE) as string;
+  return DOMPurify.sanitize(normalizeLegacyBlogHtml(input), PURIFY_CONFIG_INLINE);
 }
 
 /** Sanitiza HTML libre (bloque html): permite estructura mas amplia, sigue sin scripts ni event handlers. */
 export function sanitizeHtml(input: string): string {
-  return DOMPurify.sanitize(input, PURIFY_CONFIG_FULL) as string;
+  return DOMPurify.sanitize(input, PURIFY_CONFIG_FULL);
 }

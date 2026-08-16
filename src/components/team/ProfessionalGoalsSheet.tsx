@@ -63,7 +63,7 @@ const parseKeyResults = (keyResults: string | unknown | null): KeyResult[] => {
   }
 };
 
-const calculateProgress = (krs: KeyResult[]): number => {
+const calculateProgress = (krs: Partial<KeyResult>[] = []): number => {
   if (!krs || krs.length === 0) return 0;
 
   let totalPercentage = 0;

@@ -949,9 +949,8 @@ export default function FinancialHealthPage() {
     }, [employeeMetricsForView, employees, projectTotalHoursFromBreakdown, projectByIdForAttr, hoursMode, effectiveCostMode, projectIdsWithActivity, employeeHoursGlobalById, overheadByEmployee]);
 
     const agencyTotalOverheadApplied = commonExpensesAlloc.ok ? commonExpensesAlloc.totalOverheadApplied : 0;
-    const commonExpensesAllocError: AllocateCommonExpensesFailure | null = commonExpensesAlloc.ok
-        ? null
-        : commonExpensesAlloc;
+    const commonExpensesAllocError: AllocateCommonExpensesFailure | null =
+        'code' in commonExpensesAlloc ? commonExpensesAlloc : null;
     const commonExpensesBreakdown = useMemo(() => {
         const recurring = currentAgency?.settings?.commonExpensesRecurring ?? [];
         const recurringInMonth = recurring.filter(e => {

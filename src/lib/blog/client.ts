@@ -8,28 +8,12 @@ import type {
 } from "./types";
 
 /** Columnas usadas para listado (sin cuerpo) — payload mas pequeno. */
-const SUMMARY_COLUMNS = [
-  "id", "slug", "status",
-  "path_es", "path_en",
-  "title_es", "title_en",
-  "description_es", "description_en",
-  "date", "reading_minutes", "related_slug", "related_slug_en",
-  "published_at", "updated_at",
-].join(",");
+const SUMMARY_COLUMNS =
+  "id,slug,status,path_es,path_en,title_es,title_en,description_es,description_en,date,reading_minutes,related_slug,related_slug_en,published_at,updated_at";
 
 /** Columnas completas (incluye blocks_* y json_ld_*). */
-const FULL_COLUMNS = [
-  "id", "slug", "status",
-  "path_es", "path_en",
-  "title_es", "title_en",
-  "description_es", "description_en",
-  "meta_title_es", "meta_title_en",
-  "meta_description_es", "meta_description_en",
-  "date", "reading_minutes", "related_slug", "related_slug_en",
-  "schema_version", "blocks_es", "blocks_en",
-  "json_ld_es", "json_ld_en",
-  "published_at", "created_at", "updated_at",
-].join(",");
+const FULL_COLUMNS =
+  "id,slug,status,path_es,path_en,title_es,title_en,description_es,description_en,meta_title_es,meta_title_en,meta_description_es,meta_description_en,date,reading_minutes,related_slug,related_slug_en,schema_version,blocks_es,blocks_en,json_ld_es,json_ld_en,published_at,created_at,updated_at";
 
 function rowToRecord(row: BlogPostRow): BlogPostRecord {
   return {
@@ -94,7 +78,7 @@ export async function listPublishedPostSummaries(): Promise<BlogPostSummary[]> {
     .eq("status", "published")
     .order("date", { ascending: false });
   if (error) throw error;
-  return ((data ?? []) as BlogPostRow[]).map(rowToSummary);
+  return (data ?? []).map(rowToSummary);
 }
 
 /** Listado admin: incluye drafts. */
@@ -104,7 +88,7 @@ export async function listAllPostSummaries(): Promise<BlogPostSummary[]> {
     .select(SUMMARY_COLUMNS)
     .order("date", { ascending: false });
   if (error) throw error;
-  return ((data ?? []) as BlogPostRow[]).map(rowToSummary);
+  return (data ?? []).map(rowToSummary);
 }
 
 /** Mapa { path_es | path_en } -> id resuelto en runtime para sustituir PUBLIC_PATH_ES_TO_EN del blog. */
@@ -136,7 +120,7 @@ export async function getPostByPath(pathname: string): Promise<BlogPostRecord | 
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return rowToRecord(data as BlogPostRow);
+  return rowToRecord(data);
 }
 
 /** Busca post por id (admin: incluye drafts; requiere is_platform_admin en RLS). */
@@ -148,7 +132,7 @@ export async function getPostById(id: string): Promise<BlogPostRecord | null> {
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return rowToRecord(data as BlogPostRow);
+  return rowToRecord(data);
 }
 
 /** Busca post por slug (admin: incluye drafts). */
@@ -160,7 +144,7 @@ export async function getPostBySlug(slug: string): Promise<BlogPostRecord | null
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return rowToRecord(data as BlogPostRow);
+  return rowToRecord(data);
 }
 
 /** Resumen de un post relacionado (publico, solo published). */
@@ -173,7 +157,7 @@ export async function getRelatedSummary(slug: string): Promise<BlogPostSummary |
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return rowToSummary(data as BlogPostRow);
+  return rowToSummary(data);
 }
 
 // ----- Mutaciones admin ---------------------------------------------------
@@ -261,7 +245,7 @@ export async function updatePost(
     .maybeSingle();
   if (selectError) throw selectError;
   if (!data) throw new Error(`Post actualizado pero no se pudo recuperar (id=${id})`);
-  return rowToRecord(data as BlogPostRow);
+  return rowToRecord(data);
 }
 
 export async function deletePost(id: string): Promise<void> {

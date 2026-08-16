@@ -29,7 +29,10 @@ export function EmployeeRow({
   const { t } = useAppTranslation();
 
   const availableRoles = currentAgency?.settings?.roles || [];
-  const displayRole = translateRoleLabel(getValidRole(employee, availableRoles), t);
+  const displayRole = translateRoleLabel(
+    getValidRole(employee, availableRoles),
+    (key, fallback) => t(key, { defaultValue: fallback ?? key }),
+  );
 
   return (
     <div className="contents group">

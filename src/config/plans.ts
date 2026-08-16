@@ -155,10 +155,10 @@ export function getPlanLimit(planId: PlanId): PlanLimits {
 export function canAccessRoute(planId: PlanId, path: string): boolean {
   if (planId === 'enterprise' || planId === 'scale') return true;
   if (ROUTES_REQUIRE_BUSINESS.some((p) => path.startsWith(p))) {
-    return planId === 'business' || planId === 'scale';
+    return planId === 'business';
   }
   if (ROUTES_REQUIRE_PRO.some((p) => path.startsWith(p))) {
-    return planId === 'pro' || planId === 'business' || planId === 'scale';
+    return planId === 'pro' || planId === 'business';
   }
   return true;
 }

@@ -8,7 +8,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from '@/lib/notify';
 import { supabase } from '@/lib/supabase';
 import { fetchGlobalAssignmentsForMonth } from '@/utils/globalAssignmentsUtils';
-import { Deadline, GlobalAssignment, Project, Client, Employee, Absence, TeamEvent, Allocation } from '@/types';
+import { Deadline, GlobalAssignment, Project, Client, Employee, Absence, TeamEvent, Allocation, Agency } from '@/types';
 import {
   filterEmployeesForDeadlinesMonth,
   employeeIdsWithDeadlineProjectHoursInMonth,
@@ -68,7 +68,7 @@ export type MonthlyCapacityResult = {
 
 export interface UseDeadlinesPageDataParams {
   selectedMonth: string;
-  currentAgency: { id: string } | null;
+  currentAgency: Pick<Agency, 'id' | 'settings'> | null;
   projects: Project[];
   clients: Client[];
   employees: Employee[] | null;

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Employee, Allocation, LoadStatus } from '@/types';
+import { Employee, Allocation, LoadStatus, type RolePermissions } from '@/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
@@ -72,7 +72,7 @@ interface MobileEmployeeCardProps {
   getEmployeeLoadForWeek: (employeeId: string, weekStartDate: string, effectiveStart?: Date, effectiveEnd?: Date, viewDate?: Date) => { hours: number; capacity: number; status: LoadStatus; percentage: number; baseCapacity: number; breakdown: { reason: string; hours: number; type: 'absence' | 'event' }[] };
   getEmployeeMonthlyLoad: (employeeId: string, year: number, month: number) => { hours: number; capacity: number; status: LoadStatus; percentage: number };
   onOpenSheet: (employeeId: string, weekStart: Date, autoAdd?: boolean) => void;
-  availableRoles: { name: string }[];
+  availableRoles: RolePermissions[];
   cellVariant?: 'compact' | 'detailed';
 }
 

@@ -116,7 +116,6 @@ export default function Login() {
     if (error) {
       toast.error(
         t("auth.login.toast.error", {
-          // @ts-expect-error i18next interpolation
           message: error.message,
         })
       );
