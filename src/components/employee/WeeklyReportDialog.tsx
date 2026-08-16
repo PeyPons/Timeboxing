@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -35,120 +34,24 @@ import {
 } from '@/hooks/useWeeklyCloseMutations';
 import {
   getWeeklyProcessedAllocationIds,
-  getWeeklyTaskPendingHours,
   canPostponeTaskInWeekly,
   formatWeeklyTaskHoursSummary,
   getWeeklyTaskGuidance,
   validateKeepHours,
 } from '@/utils/weeklyCloseShared';
+import {
+  getEnabledActionsForOutcome,
+  getOutcomeForAction,
+  getTaskPendingHours,
+  isWeeklyOutcomeDisabled,
+  roundTaskHours,
+} from '@/utils/weeklyReportActionUtils';
+import { WeeklyOptionalNote, WeeklyRequiredNote } from '@/components/employee/WeeklyReportNotes';
 import { cn } from '@/lib/utils';
 import { useProjectAliasing } from '@/hooks/useProjectAliasing';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useWeeklyReportI18n, type WeeklyActionId, type WeeklyOutcomeId } from '@/hooks/useWeeklyReportI18n';
 import { sanitizeInlineHtml } from '@/lib/blog/sanitize';
-
-import type { Allocation } from '@/types';
-
-function getOutcomeForAction(
-  action: WeeklyActionId | null | undefined,
-  weeklyOutcomeGroups: ReturnType<typeof useWeeklyReportI18n>['weeklyOutcomeGroups']
-): WeeklyOutcomeId | null {
-  if (!action) return null;
-  for (const group of weeklyOutcomeGroups) {
-    if (group.actions.includes(action)) return group.id;
-  }
-  return null;
-}
-
-function isWeeklyActionDisabledForTask(
-  action: WeeklyActionId,
-  task: Pick<Allocation, 'hoursAssigned' | 'hoursActual' | 'weekStartDate'>,
-  getSlots?: (taskWeekStart: string) => readonly unknown[],
-): boolean {
-  const pending = getTaskPendingHours(task);
-  if (action === 'postpone') {
-    if (!canPostponeTaskInWeekly(task)) return true;
-    if (getSlots && getSlots(task.weekStartDate).length === 0) return true;
-    return false;
-  }
-  if (action === 'distribute' || action === 'moveToEmployee') return pending <= 0;
-  return false;
-}
-
-function isWeeklyOutcomeDisabled(
-  outcomeId: WeeklyOutcomeId,
-  task: Pick<Allocation, 'hoursAssigned' | 'hoursActual' | 'weekStartDate'>,
-  weeklyOutcomeGroups: ReturnType<typeof useWeeklyReportI18n>['weeklyOutcomeGroups'],
-  getSlots?: (taskWeekStart: string) => readonly unknown[],
-): boolean {
-  const group = weeklyOutcomeGroups.find((g) => g.id === outcomeId);
-  if (!group) return true;
-  return group.actions.every((action) => isWeeklyActionDisabledForTask(action, task, getSlots));
-}
-
-function getEnabledActionsForOutcome(
-  outcomeId: WeeklyOutcomeId,
-  task: Pick<Allocation, 'hoursAssigned' | 'hoursActual' | 'weekStartDate'>,
-  weeklyOutcomeGroups: ReturnType<typeof useWeeklyReportI18n>['weeklyOutcomeGroups'],
-  getSlots?: (taskWeekStart: string) => readonly unknown[],
-): WeeklyActionId[] {
-  const group = weeklyOutcomeGroups.find((g) => g.id === outcomeId);
-  if (!group) return [];
-  return group.actions.filter((action) => !isWeeklyActionDisabledForTask(action, task, getSlots));
-}
-
-function roundTaskHours(num: number) {
-  return Math.round((num + Number.EPSILON) * 100) / 100;
-}
-
-function getTaskPendingHours(task: Pick<Allocation, 'hoursAssigned' | 'hoursActual'>) {
-  return roundTaskHours(getWeeklyTaskPendingHours(task));
-}
-
-function WeeklyOptionalNote({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const { t } = useAppTranslation();
-  return (
-    <div className="space-y-1 border-t pt-3">
-      <Label className="text-xs font-medium text-muted-foreground">{t('weeklyReport.notes.optionalLabel')}</Label>
-      <Textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={2}
-        className="min-h-[48px] max-h-24 resize-y text-sm"
-        placeholder={t('weeklyReport.notes.optionalPlaceholder')}
-      />
-    </div>
-  );
-}
-
-function WeeklyRequiredNote({
-  value,
-  onChange,
-  placeholder,
-  helperText,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  helperText?: string;
-}) {
-  const { t } = useAppTranslation();
-  const resolvedPlaceholder = placeholder ?? t('weeklyReport.notes.requiredPlaceholder');
-  const resolvedHelper = helperText ?? t('weeklyReport.notes.requiredHelperDefault');
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs font-medium">{t('weeklyReport.notes.requiredLabel')}</Label>
-      <Textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={2}
-        className="min-h-[48px] max-h-24 resize-y text-sm"
-        placeholder={resolvedPlaceholder}
-      />
-      <p className="text-[11px] text-muted-foreground">{resolvedHelper}</p>
-    </div>
-  );
-}
 
 interface WeeklyReportDialogProps {
   open: boolean;

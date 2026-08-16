@@ -9,6 +9,9 @@ import { useProjectMetrics, type ProjectMetricsDeadline } from '@/hooks/useProje
 import { useFinancialCommonExpenses } from '@/hooks/useFinancialCommonExpenses';
 import { useFinancialMonthPacing } from '@/hooks/useFinancialMonthPacing';
 import { useFinancialDepartmentView } from '@/hooks/useFinancialDepartmentView';
+import { useFinancialCostAttribution } from '@/hooks/useFinancialCostAttribution';
+import { useFinancialGlobalKpis } from '@/hooks/useFinancialGlobalKpis';
+import { useEmployeeProfitability } from '@/hooks/useEmployeeProfitability';
 import { fetchDeadlinesForMonth } from '@/utils/deadlineUtils';
 import { fetchGlobalAssignmentsForMonth } from '@/utils/globalAssignmentsUtils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,19 +48,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { normalizeDepartments } from '@/utils/departmentUtils';
 import { formatEhrTargetForDisplay } from '@/utils/positiveDecimalInput';
-import type { Project, Deadline, GlobalAssignment } from '@/types';
+import type { Deadline, GlobalAssignment } from '@/types';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { SensitiveText } from '@/components/privacy/SensitiveText';
 import { usePrivacyDemo } from '@/contexts/PrivacyDemoContext';
 import { usePermissions } from '@/hooks/usePermissions';
-import {
-    filterEmployeeProfitabilityRowsForDisplay,
-    getRowCost,
-    getStandardHourlyCost,
-    getStandardMonthlyCapacity,
-    overheadShareForRow,
-} from '@/utils/profitabilityCost';
+import { getStandardMonthlyCapacity } from '@/utils/profitabilityCost';
 import { getMarginSemaphore } from '@/utils/marginSemaphore';
 import { DeliverableLifecycleTable } from '@/components/financial/DeliverableLifecycleTable';
 import { ProfitabilityAttributionMobileList } from '@/components/financial/ProfitabilityAttributionMobileList';
@@ -211,13 +208,6 @@ export default function FinancialHealthPage() {
         hoursMode,
     });
 
-    const totalsForView = useMemo(() => {
-        const totalFee = projectMetricsBillableWithActivity.reduce((s, p) => s + p.monthlyFee, 0);
-        const totalActual = projectMetricsBillableWithActivity.reduce((s, p) => s + p.actual, 0);
-        const totalComputed = projectMetricsBillableWithActivity.reduce((s, p) => s + p.computed, 0);
-        return { totalFee, totalActual, totalComputed };
-    }, [projectMetricsBillableWithActivity]);
-
     const {
         isViewingCurrentMonth,
         dynamicCostFallbackActive,
@@ -233,168 +223,66 @@ export default function FinancialHealthPage() {
         projectMetricsBillableWithActivity,
     });
 
-    // === KPI 1: Precio Hora Efectivo global (según vista) === Horas según filtro Reales/Computadas. Ingreso devengado si mes en curso.
-    const totalRevenue = isViewingCurrentMonth ? totalDisplayRevenue : totalsForView.totalFee;
-    const totalHoursForView = hoursMode === 'computed' ? totalsForView.totalComputed : totalsForView.totalActual;
-    const effectiveHourlyRate = totalHoursForView > 0 ? totalRevenue / totalHoursForView : 0;
+    const {
+        projectByIdForAttr,
+        projectTotalHoursFromBreakdown,
+        projectCostAndMarginMap,
+        projectEmployeeAttributionMap,
+        projectById,
+        departmentProfitability,
+    } = useFinancialCostAttribution({
+        employeeMetricsForView,
+        projectMetricsForView,
+        projectMetricsBillableWithActivity,
+        employees,
+        projects,
+        departments,
+        hoursMode,
+        effectiveCostMode,
+        employeeHoursGlobalById,
+        overheadByEmployee,
+        projectDisplayFeeMap,
+        noDepartmentLabel: t('financialHealth.departmentProfitability.noDepartment'),
+    });
 
-    // Coste mensual total de la vista (nóminas): contabilidad pura. Cada empleado tiene un coste mensual; se reparte a proyectos por proporción de horas.
-    const totalMonthlyCostView = useMemo(() => {
-        return employeeMetricsForView.reduce((sum, em) => {
-            const emp = employees.find(e => e.id === em.employeeId);
-            return sum + (emp?.monthlyCost ?? emp?.hourlyRate ?? 0);
-        }, 0);
-    }, [employeeMetricsForView, employees]);
-
-    const totalHoursForCostDenominator =
-        hoursMode === 'computed' ? totalsForView.totalComputed : totalsForView.totalActual;
-    const avgHourlyCost =
-        totalHoursForCostDenominator > 0 ? totalMonthlyCostView / totalHoursForCostDenominator : 0;
-
-    const usesLoadedCostForTarget =
-        commonExpensesAlloc.ok && commonExpensesAlloc.totalConfiguredAmount > 0;
-    const avgLoadedHourlyCost =
-        totalHoursForCostDenominator > 0
-            ? (totalMonthlyCostView + totalOverheadInView) / totalHoursForCostDenominator
-            : 0;
-    const avgForTarget =
-        usesLoadedCostForTarget && avgLoadedHourlyCost > 0 ? avgLoadedHourlyCost : avgHourlyCost;
-
-    // Objetivo de EHR: configurable en agencia o por defecto 75 €/h (coste cargado si hay gastos comunes en el mes)
-    const defaultEhrTarget = avgForTarget > 0 ? Math.max(avgForTarget, 75) : 75;
-    const ehrTarget = (currentAgency?.settings?.ehrTarget != null && currentAgency.settings.ehrTarget > 0)
-        ? currentAgency.settings.ehrTarget
-        : defaultEhrTarget;
-    const ehrIsHealthy = effectiveHourlyRate >= ehrTarget && totalHoursForView > 0;
-
-    // === Ranking de hemorragias: solo proyectos facturables (con actividad por defecto) ===
-    type EnrichedProject = {
-        metric: typeof projectMetrics[number];
-        clientName: string;
-        ehr: number;          // € / h real
-        ehrLabel: string;     // texto para UI (incluye "Sin iniciar" si procede)
-    };
-
-    const enrichedProjects: EnrichedProject[] = useMemo(() => {
-        return projectMetricsBillableWithActivity.map(p => {
-            const clientName = clientById.get(p.clientId) || p.clientName || t('financialHealth.unknownClient');
-            const projectHours = hoursMode === 'computed' ? p.computed : p.actual;
-            const ehr = projectHours > 0 ? (p.monthlyFee || 0) / projectHours : Number.POSITIVE_INFINITY;
-            const ehrLabel = projectHours > 0
-                ? `${formatPerHour((ehr || 0), 0)}`
-                : t('financialHealth.kpis.ehr.notStarted');
-            return { metric: p, clientName, ehr, ehrLabel };
-        });
-    }, [projectMetricsBillableWithActivity, clientById, hoursMode, formatPerHour, t]);
-
-    const sortedProjects = useMemo(() => {
-        return [...enrichedProjects].sort((a, b) => {
-            const ehrA = a.ehr;
-            const ehrB = b.ehr;
-            if (!isFinite(ehrA) && !isFinite(ehrB)) return 0;
-            if (!isFinite(ehrA)) return 1;
-            if (!isFinite(ehrB)) return -1;
-            return ehrA - ehrB; // de peor (más bajo) a mejor
-        });
-    }, [enrichedProjects]);
+    const {
+        totalsForView,
+        totalRevenue,
+        totalHoursForView,
+        effectiveHourlyRate,
+        totalMonthlyCostView,
+        avgHourlyCost,
+        usesLoadedCostForTarget,
+        avgLoadedHourlyCost,
+        ehrTarget,
+        ehrIsHealthy,
+        enrichedProjects,
+        sortedProjects,
+        totalInternalCost,
+        netMargin,
+        marginIsPositive,
+        marginPercent,
+    } = useFinancialGlobalKpis({
+        projectMetricsBillableWithActivity,
+        employeeMetricsForView,
+        employees,
+        hoursMode,
+        isViewingCurrentMonth,
+        totalDisplayRevenue,
+        totalOverheadInView,
+        commonExpensesTotalConfigured: commonExpensesAlloc.ok
+            ? commonExpensesAlloc.totalConfiguredAmount
+            : 0,
+        projectCostAndMarginMap,
+        clientById,
+        ehrTargetSetting: currentAgency?.settings?.ehrTarget,
+        formatPerHour,
+        unknownClientLabel: t('financialHealth.unknownClient'),
+        ehrNotStartedLabel: t('financialHealth.kpis.ehr.notStarted'),
+    });
 
     const [showAllProjects, setShowAllProjects] = useState(false);
     const projectsToShow = showAllProjects ? sortedProjects : sortedProjects.slice(0, 10);
-
-    // Mapa proyecto -> desglose por empleado (hours = computadas, actual = reales)
-    const projectEmployeesMap = useMemo(() => {
-        const map = new Map<string, { employeeId: string; hours: number; actual: number }[]>();
-        employeeMetricsForView.forEach(em => {
-            em.projectBreakdown.forEach(pb => {
-                const list = map.get(pb.projectId) || [];
-                list.push({ employeeId: em.employeeId, hours: pb.hours, actual: pb.actual ?? 0 });
-                map.set(pb.projectId, list);
-            });
-        });
-        return map;
-    }, [employeeMetricsForView]);
-
-    const projectByIdForAttr = useMemo(() => {
-        const map = new Map<string, { actual: number; monthlyFee: number }>();
-        projectMetricsForView.forEach(p => map.set(p.projectId, { actual: p.actual, monthlyFee: p.monthlyFee || 0 }));
-        return map;
-    }, [projectMetricsForView]);
-
-    // Total de horas por proyecto según el mismo breakdown que los empleados (computed), para repartir el fee sin distorsión
-    const projectTotalHoursFromBreakdown = useMemo(() => {
-        const map = new Map<string, number>();
-        projectEmployeesMap.forEach((rows, projectId) => {
-            map.set(projectId, rows.reduce((s, r) => s + r.hours, 0));
-        });
-        return map;
-    }, [projectEmployeesMap]);
-
-    // Coste por proyecto: reparto del coste mensual (nómina) por horas en el modo actual (reales/computadas). Contabilidad pura.
-    const projectCostAndMarginMap = useMemo(() => {
-        const map = new Map<string, { cost: number; payrollCost: number; overheadCost: number; margin: number }>();
-        const employeeTotalsByMode = new Map<string, number>();
-        employeeMetricsForView.forEach(em => {
-            const totalInMode = hoursMode === 'computed' ? em.totalComputed : em.totalActual;
-            employeeTotalsByMode.set(em.employeeId, totalInMode);
-        });
-        projectMetricsForView.forEach(p => {
-            const breakdown = projectEmployeesMap.get(p.projectId) || [];
-            let payrollCost = 0;
-            let overheadCost = 0;
-            breakdown.forEach(row => {
-                const emp = employees.find(e => e.id === row.employeeId);
-                const totalHEmployeeInMode = employeeTotalsByMode.get(row.employeeId) ?? 0;
-                const hoursDisplay = hoursMode === 'computed' ? row.hours : (row.actual ?? 0);
-                const totalHGlobal = employeeHoursGlobalById.get(row.employeeId) ?? totalHEmployeeInMode;
-                payrollCost += getRowCost(emp, hoursDisplay, totalHEmployeeInMode, effectiveCostMode);
-                overheadCost += overheadShareForRow(row.employeeId, hoursDisplay, totalHGlobal, overheadByEmployee);
-            });
-            const cost = payrollCost + overheadCost;
-            const fee = p.monthlyFee || 0;
-            map.set(p.projectId, { cost, payrollCost, overheadCost, margin: fee - cost });
-        });
-        return map;
-    }, [projectMetricsForView, projectEmployeesMap, employees, hoursMode, effectiveCostMode, employeeMetricsForView, employeeHoursGlobalById, overheadByEmployee]);
-
-    // === KPI 2: Margen Neto Global === Coste = solo el coste atribuido a los proyectos visibles (filtro búsqueda).
-    const totalInternalCost = useMemo(() => {
-        return projectMetricsBillableWithActivity.reduce(
-            (sum, p) => sum + (projectCostAndMarginMap.get(p.projectId)?.cost ?? 0),
-            0
-        );
-    }, [projectMetricsBillableWithActivity, projectCostAndMarginMap]);
-
-    const netMargin = totalRevenue - totalInternalCost;
-    const marginIsPositive = netMargin >= 0;
-    const marginPercent: number | null = totalRevenue > 0 ? (netMargin / totalRevenue) * 100 : null;
-
-    // Desglose por empleado en proyecto. hoursDisplay = horas a mostrar según modo (reales/computadas); en modo reales se escalan para que la suma = horas reales del proyecto.
-    const projectEmployeeAttributionMap = useMemo(() => {
-        const map = new Map<string, { employeeId: string; hours: number; hoursDisplay: number; cost: number; attributedRevenue: number; margin: number }[]>();
-        employeeMetricsForView.forEach(em => {
-            const emp = employees.find(e => e.id === em.employeeId);
-            const totalHEmployeeInMode = hoursMode === 'computed' ? em.totalComputed : em.totalActual;
-            em.projectBreakdown.forEach(pb => {
-                const hours = pb.hours;
-                const actualHours = pb.actual ?? 0;
-                const projectActual = projectByIdForAttr.get(pb.projectId)?.actual ?? 0;
-                const totalHours = projectTotalHoursFromBreakdown.get(pb.projectId) ?? 0;
-                const hoursDisplay = hoursMode === 'computed' ? hours : actualHours;
-                const totalHGlobal = employeeHoursGlobalById.get(em.employeeId) ?? totalHEmployeeInMode;
-                const payrollCost = getRowCost(emp, hoursDisplay, totalHEmployeeInMode, effectiveCostMode);
-                const overheadCost = overheadShareForRow(em.employeeId, hoursDisplay, totalHGlobal, overheadByEmployee);
-                const cost = payrollCost + overheadCost;
-                const monthlyFee = projectByIdForAttr.get(pb.projectId)?.monthlyFee ?? 0;
-                const totalHoursInMode = hoursMode === 'computed' ? totalHours : projectActual;
-                const attributedRevenue = totalHoursInMode > 0 ? (hoursDisplay / totalHoursInMode) * monthlyFee : 0;
-                const margin = attributedRevenue - cost;
-                const list = map.get(pb.projectId) || [];
-                list.push({ employeeId: em.employeeId, hours, hoursDisplay, cost, attributedRevenue, margin });
-                map.set(pb.projectId, list);
-            });
-        });
-        return map;
-    }, [employeeMetricsForView, employees, projectTotalHoursFromBreakdown, projectByIdForAttr, hoursMode, effectiveCostMode, employeeHoursGlobalById, overheadByEmployee]);
 
     const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
     const toggleProject = (projectId: string) => {
@@ -406,299 +294,22 @@ export default function FinancialHealthPage() {
         });
     };
 
-    // === Rentabilidad por departamento (área) ===
-    const projectById = useMemo(() => {
-        const map = new Map<string, Project>();
-        projects.forEach(p => map.set(p.id, p));
-        return map;
-    }, [projects]);
-
-    const departmentProfitability = useMemo(() => {
-        const records: {
-            id: string;
-            name: string;
-            ehr: number;
-            revenue: number;
-            hours: number;
-            payrollCost: number;
-            overheadCost: number;
-            cost: number;
-            margin: number;
-        }[] = [];
-        departments.forEach(dept => {
-            let revenue = 0;
-            let hours = 0;
-            let payrollCost = 0;
-            let overheadCost = 0;
-            projectMetricsBillableWithActivity.forEach(pm => {
-                const proj = projectById.get(pm.projectId);
-                if (!proj) return;
-                if (!proj.responsibleDepartmentId) return;
-                if (proj.responsibleDepartmentId !== dept.id && proj.responsibleDepartmentId !== dept.name) return;
-                const fee = projectDisplayFeeMap.get(pm.projectId) ?? pm.monthlyFee ?? 0;
-                revenue += fee;
-                hours += hoursMode === 'computed' ? pm.computed : pm.actual;
-                const cm = projectCostAndMarginMap.get(pm.projectId);
-                payrollCost += cm?.payrollCost ?? 0;
-                overheadCost += cm?.overheadCost ?? 0;
-            });
-            const cost = payrollCost + overheadCost;
-            const margin = revenue - cost;
-            if (hours > 0 && revenue > 0) {
-                const ehr = revenue / hours;
-                records.push({
-                    id: dept.id,
-                    name: dept.name,
-                    ehr,
-                    revenue,
-                    hours,
-                    payrollCost,
-                    overheadCost,
-                    cost,
-                    margin,
-                });
-            }
-        });
-
-        const NO_DEPT_ID = '__none__';
-        let revenueNone = 0;
-        let hoursNone = 0;
-        let payrollCostNone = 0;
-        let overheadCostNone = 0;
-        projectMetricsBillableWithActivity.forEach(pm => {
-            const proj = projectById.get(pm.projectId);
-            if (!proj || proj.responsibleDepartmentId) return;
-            const fee = projectDisplayFeeMap.get(pm.projectId) ?? pm.monthlyFee ?? 0;
-            revenueNone += fee;
-            hoursNone += hoursMode === 'computed' ? pm.computed : pm.actual;
-            const cm = projectCostAndMarginMap.get(pm.projectId);
-            payrollCostNone += cm?.payrollCost ?? 0;
-            overheadCostNone += cm?.overheadCost ?? 0;
-        });
-        const costNone = payrollCostNone + overheadCostNone;
-        const marginNone = revenueNone - costNone;
-        if (hoursNone > 0 && revenueNone > 0) {
-            records.push({
-                id: NO_DEPT_ID,
-                name: t('financialHealth.departmentProfitability.noDepartment'),
-                ehr: revenueNone / hoursNone,
-                revenue: revenueNone,
-                hours: hoursNone,
-                payrollCost: payrollCostNone,
-                overheadCost: overheadCostNone,
-                cost: costNone,
-                margin: marginNone,
-            });
-        }
-
-        return {
-            items: records.sort((a, b) => b.ehr - a.ehr),
-        };
-    }, [
-        departments,
-        projectMetricsBillableWithActivity,
-        projectById,
+    const {
+        employeeProfitabilityList,
+        employeeProfitabilityFilteredBySearch,
+        employeeDisplayTotalsWhenSearch,
+    } = useEmployeeProfitability({
+        employeeMetricsForView,
+        employees,
         hoursMode,
-        projectCostAndMarginMap,
-        projectDisplayFeeMap,
-        t,
-    ]);
-
-    // === Por empleado: coste = coste mensual (nómina); ingreso atribuido = reparto del fee de proyectos por horas. Contabilidad pura. ===
-    type EmployeeProfitability = {
-        employeeId: string;
-        employeeName: string;
-        totalActual: number;
-        totalComputed: number;
-        /** Horas (según modo) solo de proyectos con actividad en la vista actual */
-        totalHoursDisplay: number;
-        /** Horas (según modo) totales del mes del empleado */
-        totalHoursGlobal: number;
-        /** Horas del mes no imputadas a ningún proyecto visible/interno (tareas fuera de vista) */
-        hoursNotAttributed: number;
-        /** Nómina mensual del empleado (€/mes) — tal como está configurada en su ficha */
-        payrollMonthly: number;
-        /** Overhead del mes total del empleado (gastos comunes que le tocan) */
-        overheadTotalEmployee: number;
-        /** Coste de las horas no imputadas en el modo actual (sólo significativo en modo dinámico) */
-        costNotAttributed: number;
-        payrollNotAttributed: number;
-        overheadNotAttributed: number;
-        /**
-         * Modo operativo: nómina no explicada por horas del mes × tarifa estándar (capacidad teórica > horas trabajadas).
-         * Cierra: nómina filas + no imputada + esto = nómina mensual (± céntimos).
-         */
-        payrollStandardIdle: number;
-        /** Nómina total cargada al coste del empleado (filas + no imputada + hueco operativo). */
-        payrollAllocatedTotal: number;
-        cost: number;
-        payrollCost: number;
-        overheadCost: number;
-        attributedRevenue: number;
-        margin: number;
-        marginPercent: number;
-        byProject: {
-            projectId: string;
-            projectName: string;
-            hours: number;
-            hoursDisplay: number;
-            payrollCost: number;
-            overheadCost: number;
-            cost: number;
-            attributedRevenue: number;
-            margin: number;
-            /** Fee mensual / horas totales del proyecto (mismo modo horas). Solo facturables; 0 si interno. */
-            projectEhr: number;
-        }[];
-    };
-
-    const projectIdsWithActivity = useMemo(
-        () => new Set(projectMetricsBillableWithActivity.map(p => p.projectId)),
-        [projectMetricsBillableWithActivity]
-    );
-
-    const employeeProfitabilityList = useMemo((): EmployeeProfitability[] => {
-        const rows = employeeMetricsForView.map(em => {
-            const emp = employees.find(e => e.id === em.employeeId);
-            const totalHEmployeeInMode = hoursMode === 'computed' ? em.totalComputed : em.totalActual;
-            const totalHGlobal = employeeHoursGlobalById.get(em.employeeId) ?? totalHEmployeeInMode;
-            let attributedRevenue = 0;
-            let costFromVisibleProjects = 0;
-            let payrollFromVisibleProjects = 0;
-            let overheadFromVisibleProjects = 0;
-            const byProject: EmployeeProfitability['byProject'] = [];
-            em.projectBreakdown.forEach(pb => {
-                const isBillableWithActivity = projectIdsWithActivity.has(pb.projectId);
-                const hours = pb.hours;
-                const actualHours = pb.actual ?? 0;
-                const projectActual = projectByIdForAttr.get(pb.projectId)?.actual ?? 0;
-                const totalHours = projectTotalHoursFromBreakdown.get(pb.projectId) ?? 0;
-                const hoursDisplay = hoursMode === 'computed' ? hours : actualHours;
-                const monthlyFee = projectByIdForAttr.get(pb.projectId)?.monthlyFee ?? 0;
-                const isInternal = (monthlyFee ?? 0) === 0;
-                const hasHours = hoursDisplay > 0;
-                /** Coste de nómina + overhead para cualquier imputación con horas (evita huecos vs total mensual del empleado). */
-                const includeCostRow = hasHours && (isInternal || (monthlyFee ?? 0) > 0);
-                if (!includeCostRow) return;
-
-                const payrollRow = getRowCost(emp, hoursDisplay, totalHEmployeeInMode, effectiveCostMode);
-                const overheadRow = overheadShareForRow(em.employeeId, hoursDisplay, totalHGlobal, overheadByEmployee);
-                const rowCost = payrollRow + overheadRow;
-                const totalHoursInMode = hoursMode === 'computed' ? totalHours : projectActual;
-                const attr = totalHoursInMode > 0 ? (hoursDisplay / totalHoursInMode) * (monthlyFee ?? 0) : 0;
-                const projectEhr =
-                    (monthlyFee ?? 0) > 0 && totalHoursInMode > 0 ? (monthlyFee ?? 0) / totalHoursInMode : 0;
-                const countRevenue = isBillableWithActivity;
-                if (countRevenue) {
-                    attributedRevenue += attr;
-                }
-                costFromVisibleProjects += rowCost;
-                payrollFromVisibleProjects += payrollRow;
-                overheadFromVisibleProjects += overheadRow;
-                const attributed = countRevenue ? attr : 0;
-                byProject.push({
-                    projectId: pb.projectId,
-                    projectName: pb.projectName,
-                    hours,
-                    hoursDisplay,
-                    payrollCost: payrollRow,
-                    overheadCost: overheadRow,
-                    cost: rowCost,
-                    attributedRevenue: attributed,
-                    margin: attributed - rowCost,
-                    projectEhr
-                });
-            });
-            const totalHoursDisplay = byProject.reduce((s, b) => s + b.hoursDisplay, 0);
-            const payrollMonthly = emp?.monthlyCost ?? emp?.hourlyRate ?? 0;
-            const overheadTotalEmployee = overheadByEmployee.get(em.employeeId) ?? 0;
-            /** Evita fila/total «No imputado» por ruido numérico: total mensual vs suma por proyecto suele diferir en centésimas de hora. */
-            const UNATTRIBUTED_HOURS_EPS = 0.02;
-            const hoursNotAttributedRaw = Math.max(0, totalHEmployeeInMode - totalHoursDisplay);
-            const hoursNotAttributed =
-                hoursNotAttributedRaw < UNATTRIBUTED_HOURS_EPS ? 0 : hoursNotAttributedRaw;
-            // Coste de horas no imputadas:
-            // - Modo dinámico: nómina × (hNA / hTotal) — así la suma cuadra con la nómina exacta.
-            // - Modo estándar: hNA × coste/h estándar (informativo, puede no cuadrar con nómina por capacidad teórica).
-            const payrollNotAttributed = effectiveCostMode === 'dynamic'
-                ? (totalHEmployeeInMode > 0 ? payrollMonthly * (hoursNotAttributed / totalHEmployeeInMode) : 0)
-                : hoursNotAttributed * getStandardHourlyCost(emp);
-            const overheadNotAttributed = overheadShareForRow(
-                em.employeeId,
-                hoursNotAttributed,
-                totalHGlobal,
-                overheadByEmployee
-            );
-            const costNotAttributed = payrollNotAttributed + overheadNotAttributed;
-            const payrollStandardIdle =
-                effectiveCostMode === 'standard' && emp && payrollMonthly > 0
-                    ? Math.max(
-                          0,
-                          Math.round((payrollMonthly - getStandardHourlyCost(emp) * totalHEmployeeInMode) * 100) / 100
-                      )
-                    : 0;
-            const payrollAllocatedTotal =
-                payrollFromVisibleProjects + payrollNotAttributed + payrollStandardIdle;
-            const costTotal =
-                costFromVisibleProjects + costNotAttributed + payrollStandardIdle;
-            const margin = attributedRevenue - costTotal;
-            const marginPercent = attributedRevenue > 0 ? (margin / attributedRevenue) * 100 : 0;
-            return {
-                employeeId: em.employeeId,
-                employeeName: em.employeeName,
-                totalActual: em.totalActual,
-                totalComputed: em.totalComputed,
-                totalHoursDisplay,
-                totalHoursGlobal: totalHEmployeeInMode,
-                hoursNotAttributed,
-                payrollMonthly,
-                overheadTotalEmployee,
-                costNotAttributed,
-                payrollNotAttributed,
-                overheadNotAttributed,
-                payrollStandardIdle,
-                payrollAllocatedTotal,
-                cost: costTotal,
-                payrollCost: payrollFromVisibleProjects,
-                overheadCost: overheadFromVisibleProjects,
-                attributedRevenue,
-                margin,
-                marginPercent,
-                byProject
-            };
-        });
-        return filterEmployeeProfitabilityRowsForDisplay(rows, employees ?? [], hoursMode);
-    }, [employeeMetricsForView, employees, projectTotalHoursFromBreakdown, projectByIdForAttr, hoursMode, effectiveCostMode, projectIdsWithActivity, employeeHoursGlobalById, overheadByEmployee]);
-
-    const employeeProfitabilityFilteredBySearch = useMemo(() => {
-        if (!searchQuery.trim()) return employeeProfitabilityList;
-        const q = searchQuery.trim().toLowerCase();
-        return employeeProfitabilityList.filter(ep => {
-            if (ep.employeeName.toLowerCase().includes(q)) return true;
-            return ep.byProject.some(bp => bp.projectName.toLowerCase().includes(q));
-        });
-    }, [employeeProfitabilityList, searchQuery]);
-
-    /** Con búsqueda activa: totales por empleado solo de proyectos que coinciden con el filtro (para fila y pie). */
-    const employeeDisplayTotalsWhenSearch = useMemo(() => {
-        if (!searchQuery.trim()) return null;
-        const q = searchQuery.trim().toLowerCase();
-        const map = new Map<
-            string,
-            { hours: number; attr: number; cost: number; margin: number; payroll: number; overhead: number }
-        >();
-        employeeProfitabilityFilteredBySearch.forEach(ep => {
-            const filtered = ep.byProject.filter(bp => bp.projectName.toLowerCase().includes(q));
-            const hours = filtered.reduce((s, b) => s + b.hoursDisplay, 0);
-            const attr = filtered.reduce((s, b) => s + b.attributedRevenue, 0);
-            const cost = filtered.reduce((s, b) => s + b.cost, 0);
-            const margin = filtered.reduce((s, b) => s + b.margin, 0);
-            const payroll = filtered.reduce((s, b) => s + b.payrollCost, 0);
-            const overhead = filtered.reduce((s, b) => s + b.overheadCost, 0);
-            map.set(ep.employeeId, { hours, attr, cost, margin, payroll, overhead });
-        });
-        return map;
-    }, [employeeProfitabilityFilteredBySearch, searchQuery]);
+        effectiveCostMode,
+        projectByIdForAttr,
+        projectTotalHoursFromBreakdown,
+        employeeHoursGlobalById,
+        overheadByEmployee,
+        projectMetricsBillableWithActivity,
+        searchQuery,
+    });
 
     const hoursHeaderLabel = hoursMode === 'computed'
         ? t('financialHealth.columns.hoursComputedHeader')
