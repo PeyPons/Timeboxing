@@ -31,7 +31,7 @@ export function groupBlocksForLayout(blocks: BlogBlock[]): BlockGroup[] {
       i++;
       while (i < blocks.length) {
         const next = blocks[i];
-        if (isSubheading(next) || next.type === "heading") break;
+        if (next.type === "heading") break;
         if (
           next.type === "visualRef" ||
           next.type === "callout" ||
@@ -54,8 +54,10 @@ export function groupBlocksForLayout(blocks: BlogBlock[]): BlockGroup[] {
     if (isParagraph(block)) {
       const prose: ParagraphBlock[] = [block];
       i++;
-      while (i < blocks.length && isParagraph(blocks[i])) {
-        prose.push(blocks[i]);
+      while (i < blocks.length) {
+        const next = blocks[i];
+        if (!isParagraph(next)) break;
+        prose.push(next);
         i++;
       }
       groups.push({ kind: "prose", blocks: prose });

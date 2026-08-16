@@ -34,12 +34,13 @@ function splitIntoSections(blocks: BlogBlock[]) {
   }
 
   while (i < blocks.length) {
-    if (!isH2(blocks[i])) {
-      intro.push(blocks[i]);
+    const block = blocks[i];
+    if (!isH2(block)) {
+      intro.push(block);
       i++;
       continue;
     }
-    const heading = blocks[i];
+    const heading = block;
     const sectionBlocks: BlogBlock[] = [];
     i++;
     while (i < blocks.length && !isH2(blocks[i])) {
