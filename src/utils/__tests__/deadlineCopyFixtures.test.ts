@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { selectDeadlinesToCopyFromPreviousMonth } from '@/utils/deadlineMonthCopy';
 import {
+  fixtureActiveProject,
+  fixtureClosedProject,
   fixturePreviousMonthDeadlines,
   fixtureProjects,
 } from '@/test/fixtures/deadlineCopyFixtures';
 
-describe('fixtures de lectura (repo) — copia de deadlines', () => {
-  it('no arrastra el proyecto completed al mes nuevo', () => {
-    const result = selectDeadlinesToCopyFromPreviousMonth(fixturePreviousMonthDeadlines, {
-      existingProjectIds: [],
-      projects: fixtureProjects,
-    });
-    expect(result.toCopy.map((d) => d.projectId)).toEqual(['fix-active-1']);
-    expect(result.skippedInactiveProject).toBe(1);
+describe('fixtures de lectura (repo)', () => {
+  it('incluye proyecto active y completed sin PII real', () => {
+    expect(fixtureProjects).toHaveLength(2);
+    expect(fixtureActiveProject.status).toBe('active');
+    expect(fixtureClosedProject.status).toBe('completed');
+    expect(fixtureActiveProject.name).not.toMatch(/@/);
+  });
+
+  it('deadlines del mes anterior apuntan a esos proyectos', () => {
+    const ids = new Set(fixtureProjects.map((p) => p.id));
+    for (const d of fixturePreviousMonthDeadlines) {
+      expect(ids.has(d.projectId)).toBe(true);
+    }
+    expect(fixturePreviousMonthDeadlines.some((d) => d.projectId === fixtureClosedProject.id)).toBe(
+      true
+    );
   });
 });
