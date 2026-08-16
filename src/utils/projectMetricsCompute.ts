@@ -9,7 +9,7 @@ import {
   eachDayOfInterval,
   isWeekend,
 } from 'date-fns';
-import type { Allocation, Project, Employee, Client, GlobalAssignment } from '@/types';
+import type { Allocation, Project, Employee, Client, Deadline, GlobalAssignment } from '@/types';
 import { employeeIdsWithOperationalWorkloadInMonth } from '@/utils/employeeAssignmentVisibility';
 import {
   getEffectiveBudgetForMonth,
@@ -80,7 +80,7 @@ export interface ComputeProjectMetricsParams {
    * Incluir filas de empleado inactivo si tienen carga en Deadlines / globales / planificador este mes.
    * Si no se pasa `deadlinesEmployeeVisibility`, solo cuentan allocations (y globales vacías).
    */
-  deadlinesEmployeeVisibility?: Array<{ month: string; employeeHours: Record<string, number> }>;
+  deadlinesEmployeeVisibility?: Array<Pick<Deadline, 'month' | 'employeeHours'>>;
   globalAssignmentsEmployeeVisibility?: GlobalAssignment[];
 }
 

@@ -1,6 +1,6 @@
 import { absoluteUrl } from '@/lib/publicSiteUrl';
 import { supabase } from '@/lib/supabase';
-import type { Allocation, Project } from '@/types';
+import type { Allocation, Employee, Project } from '@/types';
 import type {
   AdsPlatformFilter,
   AdsPpcIssueFlag,
@@ -44,7 +44,7 @@ export interface NotificationPreviewInput {
   hoursTrackingPreference: 'actual' | 'computed' | null | undefined;
   allocations: Allocation[];
   projects: Project[];
-  employees: Array<{ id: string; name: string; avatarUrl?: string }>;
+  employees: Employee[];
 }
 
 export interface NotificationPreviewResult {

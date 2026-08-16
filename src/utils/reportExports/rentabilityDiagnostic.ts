@@ -99,8 +99,14 @@ export function buildRentabilityDiagnosticPayload(params: BuildRentabilityDiagno
     employees,
   } = params;
 
-  const commonExpensesSerialized = commonExpensesAlloc.ok
+  const commonExpensesSerialized = commonExpensesAlloc.ok === false
     ? {
+        ok: false as const,
+        code: commonExpensesAlloc.code,
+        entryId: commonExpensesAlloc.entryId,
+        splitSum: commonExpensesAlloc.splitSum,
+      }
+    : {
         ok: true as const,
         totalOverheadApplied: commonExpensesAlloc.totalOverheadApplied,
         totalConfiguredAmount: commonExpensesAlloc.totalConfiguredAmount,
@@ -108,12 +114,6 @@ export function buildRentabilityDiagnosticPayload(params: BuildRentabilityDiagno
         unallocatedEntries: commonExpensesAlloc.unallocatedEntries,
         employeeIdsZeroHoursWithPeersWorking: commonExpensesAlloc.employeeIdsZeroHoursWithPeersWorking,
         overheadByEmployee: Object.fromEntries(commonExpensesAlloc.overheadByEmployee),
-      }
-    : {
-        ok: false as const,
-        code: commonExpensesAlloc.code,
-        entryId: commonExpensesAlloc.entryId,
-        splitSum: commonExpensesAlloc.splitSum,
       };
 
   return {

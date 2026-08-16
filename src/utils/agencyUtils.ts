@@ -27,6 +27,14 @@ interface SupabaseAgency {
   trial_used_at?: string | null;
 }
 
+type LegacyEnabledIntegrations = NonNullable<AgencySettings['enabledIntegrations']> & {
+  weekly_feedback?: boolean;
+};
+
+type LegacyAgencyModules = NonNullable<AgencySettings['modules']> & {
+  seo?: boolean;
+};
+
 /**
  * Carga la fila `agencies` vía RPC `get_agency_for_app_client` (Postgres): evita enviar
  * tokens Ads/Meta, secretos en `settings.integrations` e IDs Stripe a roles sin
@@ -73,8 +81,9 @@ export function resolveWeeklyEnabled(settings: AgencySettings | undefined): bool
   if (!settings) return true;
   if (settings.modules?.weeklyFeedback === false) return false;
   if (settings.modules?.weeklyFeedback === true) return true;
-  if (settings.enabledIntegrations?.weekly_feedback === false) return false;
-  if (settings.enabledIntegrations?.weekly_feedback === true) return true;
+  const legacyEnabled = settings.enabledIntegrations as LegacyEnabledIntegrations | undefined;
+  if (legacyEnabled?.weekly_feedback === false) return false;
+  if (legacyEnabled?.weekly_feedback === true) return true;
   return true;
 }
 
@@ -82,14 +91,14 @@ function stripLegacyWeeklyIntegration(
   enabled: AgencySettings['enabledIntegrations'] | undefined,
 ): AgencySettings['enabledIntegrations'] | undefined {
   if (!enabled) return enabled;
-  const { weekly_feedback: _legacy, ...rest } = enabled;
+  const { weekly_feedback: _legacy, ...rest } = enabled as LegacyEnabledIntegrations;
   return Object.keys(rest).length > 0 ? rest : undefined;
 }
 
 /** Normaliza settings al leer o antes de guardar: Weekly en modules, sin flag legacy en integraciones. */
 export function normalizeAgencySettings(settings: AgencySettings): AgencySettings {
   const weeklyOn = resolveWeeklyEnabled(settings);
-  const { seo: _legacySeo, ...modulesRest } = settings.modules ?? {};
+  const { seo: _legacySeo, ...modulesRest } = (settings.modules ?? {}) as LegacyAgencyModules;
   return {
     ...settings,
     currency: resolveAgencyCurrency(settings),
@@ -338,13 +347,13 @@ export async function removeUserFromAgencyUtil(
 
     if (empRow?.id) {
       const purge = await purgeEmployeeRowAndRelatedData(empRow.id);
-      if (!purge.ok) {
+      if (purge.ok === false) {
         throw new Error(purge.error);
       }
     }
 
     const authResult = await invokeDeleteAuthUser(userId);
-    if (!authResult.ok) {
+    if (authResult.ok === false) {
       throw new Error(
         authResult.error ||
           'Los datos del miembro se eliminaron, pero no se pudo eliminar la cuenta de acceso'

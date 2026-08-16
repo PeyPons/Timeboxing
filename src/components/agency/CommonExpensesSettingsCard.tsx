@@ -40,6 +40,10 @@ function prevMonthKey(yyyyMm: string): string {
   return format(subMonths(d, 1), 'yyyy-MM');
 }
 
+function getSplitPercentParts(allocation: CommonExpenseAllocation) {
+  return allocation.type === 'split_percent' ? allocation.parts : [];
+}
+
 /** Texto de ayuda bajo el selector de reparto. */
 function distributionHelpText(
   mode: 'byHours' | 'byHeadcount' | 'byPayroll',
@@ -163,12 +167,13 @@ export function CommonExpensesSettingsCard({
     if (Number.isNaN(e.amount) || e.amount < 0) {
       return t('agency.commonExpenses.errNegativeAmount', 'Cada importe debe ser mayor o igual que 0.');
     }
-    if (e.allocation.type === 'department') {
-      if (!e.allocation.departmentId?.trim()) {
+    const allocation = e.allocation;
+    if (allocation.type === 'department') {
+      if (!allocation.departmentId?.trim()) {
         return t('agency.commonExpenses.errDeptRequired', 'Selecciona un departamento en todas las líneas de tipo «Departamento».');
       }
       const known = departments.some(
-        d => d.id === e.allocation.departmentId || d.name === e.allocation.departmentId
+        d => d.id === allocation.departmentId || d.name === allocation.departmentId
       );
       if (!known) {
         return t('agency.commonExpenses.errDeptUnknown', 'Hay un departamento no válido. Elige uno de la lista.');
@@ -544,7 +549,7 @@ export function CommonExpensesSettingsCard({
                             onClick={() =>
                               updateRecurringAllocation(entry.id, {
                                 type: 'split_percent',
-                                parts: [...entry.allocation.parts, { departmentId: departments[0]?.id ?? '', percent: 0 }],
+                                parts: [...getSplitPercentParts(entry.allocation), { departmentId: departments[0]?.id ?? '', percent: 0 }],
                               })
                             }
                           >
@@ -560,7 +565,7 @@ export function CommonExpensesSettingsCard({
                               <Select
                                 value={part.departmentId}
                                 onValueChange={v => {
-                                  const parts = [...entry.allocation.parts];
+                                  const parts = [...getSplitPercentParts(entry.allocation)];
                                   parts[idx] = { ...parts[idx], departmentId: v };
                                   updateRecurringAllocation(entry.id, { type: 'split_percent', parts });
                                 }}
@@ -584,7 +589,7 @@ export function CommonExpensesSettingsCard({
                                 step="0.1"
                                 value={part.percent}
                                 onChange={e => {
-                                  const parts = [...entry.allocation.parts];
+                                  const parts = [...getSplitPercentParts(entry.allocation)];
                                   parts[idx] = { ...parts[idx], percent: parseFloat(e.target.value) || 0 };
                                   updateRecurringAllocation(entry.id, { type: 'split_percent', parts });
                                 }}
@@ -595,9 +600,9 @@ export function CommonExpensesSettingsCard({
                                 variant="ghost"
                                 size="icon"
                                 className="text-red-600"
-                                disabled={entry.allocation.parts.length <= 1}
+                                disabled={getSplitPercentParts(entry.allocation).length <= 1}
                                 onClick={() => {
-                                  const parts = entry.allocation.parts.filter((_, i) => i !== idx);
+                                  const parts = getSplitPercentParts(entry.allocation).filter((_, i) => i !== idx);
                                   updateRecurringAllocation(entry.id, { type: 'split_percent', parts });
                                 }}
                               >
@@ -817,7 +822,7 @@ export function CommonExpensesSettingsCard({
                           onClick={() =>
                             updateAllocation(entry.id, {
                               type: 'split_percent',
-                              parts: [...entry.allocation.parts, { departmentId: departments[0]?.id ?? '', percent: 0 }],
+                              parts: [...getSplitPercentParts(entry.allocation), { departmentId: departments[0]?.id ?? '', percent: 0 }],
                             })
                           }
                         >
@@ -833,7 +838,7 @@ export function CommonExpensesSettingsCard({
                             <Select
                               value={part.departmentId}
                               onValueChange={v => {
-                                const parts = [...entry.allocation.parts];
+                                const parts = [...getSplitPercentParts(entry.allocation)];
                                 parts[idx] = { ...parts[idx], departmentId: v };
                                 updateAllocation(entry.id, { type: 'split_percent', parts });
                               }}
@@ -857,7 +862,7 @@ export function CommonExpensesSettingsCard({
                               step="0.1"
                               value={part.percent}
                               onChange={e => {
-                                const parts = [...entry.allocation.parts];
+                                const parts = [...getSplitPercentParts(entry.allocation)];
                                 parts[idx] = { ...parts[idx], percent: parseFloat(e.target.value) || 0 };
                                 updateAllocation(entry.id, { type: 'split_percent', parts });
                               }}
@@ -868,9 +873,9 @@ export function CommonExpensesSettingsCard({
                               variant="ghost"
                               size="icon"
                               className="text-red-600"
-                              disabled={entry.allocation.parts.length <= 1}
+                              disabled={getSplitPercentParts(entry.allocation).length <= 1}
                               onClick={() => {
-                                const parts = entry.allocation.parts.filter((_, i) => i !== idx);
+                                const parts = getSplitPercentParts(entry.allocation).filter((_, i) => i !== idx);
                                 updateAllocation(entry.id, { type: 'split_percent', parts });
                               }}
                             >

@@ -7,6 +7,7 @@ const client: Client = {
   id: 'c1',
   agencyId: 'a1',
   name: 'Cliente',
+  color: '#000000',
 };
 
 const baseProject = (overrides: Partial<Project> = {}): Project => ({

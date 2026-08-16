@@ -18,12 +18,13 @@ function validateExpenseEntryList(
     if (Number.isNaN(e.amount) || e.amount < 0) {
       return t('agency.commonExpenses.errNegativeAmount', 'Cada importe debe ser mayor o igual que 0.');
     }
-    if (e.allocation.type === 'department') {
-      if (!e.allocation.departmentId?.trim()) {
+    const allocation = e.allocation;
+    if (allocation.type === 'department') {
+      if (!allocation.departmentId?.trim()) {
         return t('agency.commonExpenses.errDeptRequired', 'Selecciona un departamento en todas las líneas de tipo «Departamento».');
       }
       const known = departments.some(
-        d => d.id === e.allocation.departmentId || d.name === e.allocation.departmentId
+        d => d.id === allocation.departmentId || d.name === allocation.departmentId
       );
       if (!known) {
         return t('agency.commonExpenses.errDeptUnknown', 'Hay un departamento no válido. Elige uno de la lista.');
