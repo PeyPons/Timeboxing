@@ -37,6 +37,10 @@ location / {
 
 Si hay CDN/Cloudflare delante: regla equivalente (HTML/bypass cache para `/` e `index.html`; cache largo solo para `/assets/*`). Cloudflare ya marca HTML como `DYNAMIC` en taimbox.com; igual conviene el header en origen para el navegador.
 
+### 10.0b Mes “anterior” al abrir o cambiar de página
+El mes del planificador/dashboard/rentabilidad/etc. se compartía en **`localStorage.planner_date`**: si alguien miraba un mes pasado, al volver otro día seguía ahí. Ahora es **`sessionStorage`** + formato `yyyy-MM` (`src/utils/plannerMonthStorage.ts`): misma pestaña = mes compartido entre vistas; nueva visita = mes actual. Deadlines no usa esta clave (estado local propio). Al escribir el mes se emite `taimbox:planner-month-change` para sincronizar banner y hooks en la misma pestaña.
+
+
 ### 10.1 Keys duplicadas en listas con datos potencialmente duplicados
 **Archivo afectado**: `GlobalPlanningInconsistencies.tsx`
 
