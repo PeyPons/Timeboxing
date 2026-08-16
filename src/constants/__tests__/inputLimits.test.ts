@@ -82,13 +82,13 @@ describe('parseEmail (Edge shared)', () => {
 
 describe('parsePassword (Edge shared)', () => {
   it('acepta contraseña con longitud mínima y máxima', () => {
-    expect(parsePassword('123456')).toBe('123456');
+    expect(parsePassword('12345678')).toBe('12345678');
     const maxPwd = 'x'.repeat(EDGE_INPUT_LIMITS.password);
     expect(parsePassword(maxPwd)).toBe(maxPwd);
   });
 
   it('rechaza corta, no string o demasiado larga', () => {
-    expect(() => parsePassword('12345')).toThrow('La contraseña debe tener al menos 6 caracteres.');
+    expect(() => parsePassword('1234567')).toThrow('La contraseña debe tener al menos 8 caracteres.');
     expect(() => parsePassword(null)).toThrow('La contraseña es obligatoria.');
     const tooLong = 'x'.repeat(EDGE_INPUT_LIMITS.password + 1);
     expect(() => parsePassword(tooLong)).toThrow(
