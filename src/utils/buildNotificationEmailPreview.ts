@@ -241,7 +241,7 @@ export async function buildNotificationEmailPreview(
     const googleCampaigns = (googleCampaignsRes.data ?? []) as AdsCampaignRow[];
     const metaCampaigns = (metaCampaignsRes.data ?? []) as AdsCampaignRow[];
 
-    let alerts = buildAdsPpcAlerts({
+    const alerts = buildAdsPpcAlerts({
       settings,
       google: platforms.includes('google')
         ? {

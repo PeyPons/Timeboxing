@@ -99,7 +99,7 @@ serve(async (req) => {
       throw new Error("El nombre de la empresa ya existe. Por favor elige otro.");
     }
 
-    let slug = generateSlug(cleanAgencyName);
+    const slug = generateSlug(cleanAgencyName);
     let finalSlug = slug;
     let attempt = 0;
     while (attempt < 5) {

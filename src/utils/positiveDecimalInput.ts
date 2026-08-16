@@ -30,10 +30,10 @@ function normalizeSeparatorsForDecimal(input: string): string {
  * Devuelve un texto seguro para un input controlado mientras el usuario escribe.
  */
 export function sanitizePositiveDecimalInput(raw: string, maxDecimals = 2): string {
-  let s = raw.trim().replace(/\s/g, '').replace(/[-−]/g, '');
+  const s = raw.trim().replace(/\s/g, '').replace(/[-−]/g, '');
   if (s === '') return '';
 
-  let normalized = normalizeSeparatorsForDecimal(s);
+  const normalized = normalizeSeparatorsForDecimal(s);
   const firstDot = normalized.indexOf('.');
   let intPart: string;
   let fracRaw: string;

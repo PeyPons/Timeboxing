@@ -47,7 +47,9 @@ export function DepartmentViewProvider({ children }: { children: React.ReactNode
       try {
         if (id) localStorage.setItem(`${STORAGE_KEY_PREFIX}${agencyId}`, id);
         else localStorage.removeItem(`${STORAGE_KEY_PREFIX}${agencyId}`);
-      } catch {}
+      } catch {
+        // localStorage puede fallar (modo privado / cuota)
+      }
     }
   }, [currentAgency?.id]);
 

@@ -1737,7 +1737,7 @@ export default function AgencySettingsPage() {
                     const crmPackOn =
                       Boolean(enabledIntegrations.crm_user_id) && Boolean(enabledIntegrations.crm_export);
                     const crmLegacyPartial =
-                      Boolean(enabledIntegrations.crm_user_id) && !Boolean(enabledIntegrations.crm_export);
+                      Boolean(enabledIntegrations.crm_user_id) && !enabledIntegrations.crm_export;
                     return (
                       <div className="flex items-start justify-between p-4 rounded-lg border bg-white gap-4">
                         <div className="flex-1 space-y-2 min-w-0">

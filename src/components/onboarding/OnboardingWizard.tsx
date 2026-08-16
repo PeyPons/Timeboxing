@@ -1534,7 +1534,7 @@ export default function OnboardingWizard() {
                         {t('agency.integrations.crmPackTitle', 'IDs externos y exportación CSV')}
                       </p>
                       <p className="text-xs text-slate-600 leading-snug">{t('onboarding.integrations.crmPackShort')}</p>
-                      {Boolean(enabledIntegrations?.crm_user_id) && !Boolean(enabledIntegrations?.crm_export) ? (
+                      {Boolean(enabledIntegrations?.crm_user_id) && !enabledIntegrations?.crm_export ? (
                         <p className="flex items-start gap-1 pt-0.5 text-[11px] text-amber-700">
                           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                           <span>

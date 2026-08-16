@@ -323,7 +323,9 @@ export default function OkrsPage() {
         let krs: KeyResultItem[] = [];
         try {
             if (goal.keyResults?.startsWith('[')) krs = JSON.parse(goal.keyResults);
-        } catch (e) { }
+        } catch {
+          // keyResults no es JSON válido
+        }
         if (krs.length === 0) return null;
         return (
             <div className="mt-4 space-y-3">

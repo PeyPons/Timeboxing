@@ -54,7 +54,6 @@ export function useLandingLiteralDomMotion(_reduceMotion: boolean | null) {
         );
         if (items.length > 1) {
           let current = 0;
-          let statusCycleTimer: ReturnType<typeof window.setInterval> | undefined;
           let activeSlideStops: Array<() => void> = [];
 
           const setStatusItemState = (el: HTMLElement, visible: boolean) => {
@@ -96,9 +95,9 @@ export function useLandingLiteralDomMotion(_reduceMotion: boolean | null) {
             activeSlideStops.push(() => ctrlIn.stop());
           };
 
-          statusCycleTimer = window.setInterval(cycle, STATUS_CYCLE_MS);
+          const statusCycleTimer = window.setInterval(cycle, STATUS_CYCLE_MS);
           stopRef.current.push(() => {
-            if (statusCycleTimer !== undefined) window.clearInterval(statusCycleTimer);
+            window.clearInterval(statusCycleTimer);
             activeSlideStops.forEach((stop) => stop());
           });
         }

@@ -387,7 +387,7 @@ export function TransferAcceptanceDialog({ open, onOpenChange, transfer, onSucce
 
                                             // Usar weekLabel generado por dateUtils para consistencia con el Planner
                                             // week.weekLabel ya viene como "Semana X"
-                                            // @ts-ignore - weekLabel existe en el retorno de getWeeksForMonth
+                                            // @ts-expect-error - weekLabel existe en el retorno de getWeeksForMonth
                                             const weekLabel = week.weekLabel || `Semana ${getWeekOfMonth(weekStart, { weekStartsOn: 1 })}`;
 
                                             const label = `${weekLabel} - ${capitalizedMonth} (${format(weekStart, 'dd/MM')})`;
@@ -456,7 +456,7 @@ export function TransferAcceptanceDialog({ open, onOpenChange, transfer, onSucce
                                                         const monthName = format(weekStart, 'MMMM', { locale: dateLocale });
                                                         const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-                                                        // @ts-ignore
+                                                        // @ts-expect-error - weekLabel existe en el retorno de getWeeksForMonth
                                                         const weekLabel = week.weekLabel || `Semana ${getWeekOfMonth(weekStart, { weekStartsOn: 1 })}`;
                                                         const label = `${weekLabel} - ${capitalizedMonth} (${format(weekStart, 'dd/MM')})`;
 
