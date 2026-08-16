@@ -71,7 +71,7 @@ export default function OpenApiViewerPage() {
       mountRedoc();
       return () => {
         cancelled = true;
-        if (containerRef.current) containerRef.current.innerHTML = '';
+        container.innerHTML = '';
       };
     }
 
@@ -82,7 +82,7 @@ export default function OpenApiViewerPage() {
       return () => {
         cancelled = true;
         existing.removeEventListener('load', mountRedoc);
-        if (containerRef.current) containerRef.current.innerHTML = '';
+        container.innerHTML = '';
       };
     }
 
@@ -94,7 +94,7 @@ export default function OpenApiViewerPage() {
 
     return () => {
       cancelled = true;
-      if (containerRef.current) containerRef.current.innerHTML = '';
+      container.innerHTML = '';
     };
   }, []);
 

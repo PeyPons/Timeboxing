@@ -131,7 +131,7 @@ export const CollaborationCards = memo(function CollaborationCards({ employeeId,
     return Array.from(collabMap.values())
       .sort((a, b) => b.sharedProjects - a.sharedProjects || b.totalHoursTogether - a.totalHoursTogether)
       .slice(0, 5);
-  }, [projectGroups, employeesMap, getEmployeeMonthlyLoad, viewDate, allocations]);
+  }, [projectGroups, employeesMap, getEmployeeMonthlyLoad, viewDate]);
 
   // Compañeros que pueden ayudar - Ahora incluye 80-90% como "esfuerzo extra"
   const { availableHelpers, busyButWillingHelpers } = useMemo(() => {

@@ -15,10 +15,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { landingInlineStyle } from "@/components/landing/below/landingInlineStyle";
-import {
-  LANDING_BROWSER_NAV,
-  LandingBrowserFrame,
-} from "@/components/landing/below/LandingBrowserFrame";
+import { LandingBrowserFrame } from "@/components/landing/below/LandingBrowserFrame";
+import { LANDING_BROWSER_NAV } from "@/components/landing/below/landingBrowserNav";
 import { useHomeLiteralT } from "@/components/landing/below/useHomeLiteralT";
 import { cn } from "@/lib/utils";
 import { i18nAsArray } from "@/lib/i18nReturnObjects";

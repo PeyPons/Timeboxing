@@ -196,7 +196,7 @@ export default function EmployeeDashboard() {
     const hasTransferredTasks = transferredTasks.length > 0;
 
     return hasOpenTasks || hasTransferredTasks;
-  }, [allocations, myEmployeeProfile, currentMonth, weeklyFeedback]);
+  }, [allocations, myEmployeeProfile, currentMonth, weeklyFeedback, weeklyCloseDay]);
 
   const weeks = useMemo(() => getWeeksForMonth(currentMonth), [currentMonth]);
   const internalClient = useMemo(() => clients.find(c => c.name === INTERNAL_CLIENT_NAME), [clients]);
@@ -313,7 +313,7 @@ export default function EmployeeDashboard() {
     }
   };
 
-  const openAddTasksDialog = (defaultProjectId?: string) => {
+  const openAddTasksDialog = useCallback((defaultProjectId?: string) => {
     const defaultWeek = weeks[0]?.weekStart ? format(weeks[0].weekStart, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
     setNewTasks([{
       id: crypto.randomUUID(),
@@ -325,7 +325,7 @@ export default function EmployeeDashboard() {
       employeeId: canAssignToOthers ? undefined : myEmployeeProfile?.id // Si no puede asignar a otros, usar su propio ID
     }]);
     setIsAddingTasks(true);
-  };
+  }, [weeks, canAssignToOthers, myEmployeeProfile?.id]);
 
   const handleOpenPlanningFromMyDay = useCallback(() => {
     if (currentAgency?.setupCompleted === false) {

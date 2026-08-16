@@ -102,7 +102,7 @@ function useScrollSpy() {
     });
 
     return () => observerRef.current?.disconnect();
-  }, [navigate]);
+  }, [navigate, ids]);
 
   return { activeSection, navigateToSection };
 }

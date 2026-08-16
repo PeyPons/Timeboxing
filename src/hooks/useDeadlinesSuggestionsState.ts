@@ -91,7 +91,7 @@ export function useDeadlinesSuggestionsState({
       applyPrefs(defaultDeadlinesSuggestionsPrefs());
     }
     prefsLoadedRef.current = true;
-  }, [agencyId, userId, applyPrefs]);
+  }, [agencyId, userId, applyPrefs, validDonorIds, validProjectIds]);
 
   useEffect(() => {
     if (!prefsLoadedRef.current) return;
@@ -113,6 +113,7 @@ export function useDeadlinesSuggestionsState({
     if (sanitized.includedProjectIds.length !== includedProjectIds.size) {
       setIncludedProjectIds(new Set(sanitized.includedProjectIds));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-sanitize only when valid donor/project sets change
   }, [validDonorIds, validProjectIds]);
 
   useEffect(() => {

@@ -5,7 +5,7 @@ import {
   loadPercentageTone,
   weekCellSurfaceClass,
   type WeekStripItemSummary,
-} from '@/components/planner/allocation/allocationWeekMetrics';
+} from '@/components/planner/allocation/allocationWeekMetricsUtils';
 import { useAgency } from '@/contexts/AgencyContext';
 import {
   AlertCircle,

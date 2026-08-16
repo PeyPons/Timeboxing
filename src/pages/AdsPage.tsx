@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAgency } from '@/contexts/AgencyContext';
 import { useForm } from 'react-hook-form';
@@ -175,12 +175,14 @@ export default function AdsPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Datos del mes actual
-  const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const currentDay = now.getDate();
-  const daysRemaining = Math.max(1, daysInMonth - currentDay + 1);
+  const { currentDay, daysInMonth, daysRemaining } = useMemo(() => {
+    const now = new Date();
+    const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const day = now.getDate();
+    return { currentDay: day, daysInMonth: dim, daysRemaining: Math.max(1, dim - day + 1) };
+  }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!currentAgency?.id) return;
 
     try {
@@ -211,9 +213,12 @@ export default function AdsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentAgency?.id]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial
+  }, []);
 
   useRefreshMissingAdCurrencies(
     currentAgency?.id,
@@ -302,7 +307,7 @@ export default function AdsPage() {
     };
 
     return () => cleanup();
-  }, [currentJobId, isSyncing]);
+  }, [currentJobId, isSyncing, fetchData, refreshLastSync, t]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -566,7 +571,7 @@ export default function AdsPage() {
     }
 
     return filtered.sort((a, b) => b.spent - a.spent);
-  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden, showZeroSpend, segmentationRules, now, currentDay, daysInMonth, daysRemaining]);
+  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden, showZeroSpend, segmentationRules, currentDay, daysInMonth, daysRemaining]);
 
   // Estadísticas globales
   const globalStats = useMemo(() => {

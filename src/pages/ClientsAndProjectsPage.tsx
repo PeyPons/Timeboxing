@@ -453,7 +453,7 @@ export default function ClientsAndProjectsPage() {
         effectiveUsage
       };
     });
-  }, [projects, clients, allocations, currentMonth, monthProgress]);
+  }, [projects, clients, allocations, currentMonth, monthProgress, monthDeadlines, currentAgency?.settings?.hoursTrackingPreference]);
 
   // Agrupar proyectos por cliente
   const clientsWithProjects = useMemo(() => {
@@ -629,7 +629,7 @@ export default function ClientsAndProjectsPage() {
     });
 
     return regularClients;
-  }, [clients, projects, projectsAnalysis, allocations, employees, currentMonth, prevMonth, getProjectHoursForMonth]);
+  }, [clients, projects, projectsAnalysis, allocations, employees, currentMonth, prevMonth, getProjectHoursForMonth, currentAgency?.settings?.projectAliasingRules]);
 
   /** Cliente virtual o real bajo el que se lista el proyecto (aliasing agrupa en otro id que `project.clientId`). */
   const focusSectionClientId = useMemo(() => {
@@ -799,7 +799,7 @@ export default function ClientsAndProjectsPage() {
         // Si tienen las mismas horas, ordenar alfabéticamente
         return a.client.name.localeCompare(b.client.name);
       });
-  }, [clientsWithProjects, filterSnapshot, focusProjectIdFromUrl]);
+  }, [clientsWithProjects, filterSnapshot, focusProjectIdFromUrl, filterProject, formatProjectName]);
 
   /** Solo entregables de clientes expandidos: el badge solo se pinta ahí; evita N× fetch de fase para toda la agencia. */
   const deliverableLifecycleBatchIds = useMemo(() => {

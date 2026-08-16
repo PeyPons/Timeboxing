@@ -137,7 +137,7 @@ export default function ApiKeysPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentAgency?.id]);
+  }, [currentAgency?.id, t]);
 
   useEffect(() => { fetchTokens(); }, [fetchTokens]);
 

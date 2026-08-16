@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button';
+import { AllocationWeekMetricsDisplay } from '@/components/planner/allocation/allocationWeekMetrics';
 import {
-  AllocationWeekMetricsDisplay,
   resolveDisplayStatus,
-  WeekStripItemSummary,
-} from '@/components/planner/allocation/allocationWeekMetrics';
+  type WeekStripItemSummary,
+} from '@/components/planner/allocation/allocationWeekMetricsUtils';
 import { cn } from '@/lib/utils';
 import { LoadStatus } from '@/types';
 import { addDays, format } from 'date-fns';

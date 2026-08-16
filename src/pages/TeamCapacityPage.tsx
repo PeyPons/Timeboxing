@@ -65,7 +65,7 @@ export default function TeamCapacityPage() {
         return (employees ?? []).filter(e => employeeBelongsToDepartment(e.department, dept.id, dept.name));
     }, [employees, selectedDepartmentId, departments]);
 
-    const today = new Date();
+    const today = useMemo(() => new Date(), []);
     const [viewMode, setViewMode] = useState<ViewMode>('month');
 
     // Calcular rangos según el modo de vista, respetando límites del mes actual
@@ -184,7 +184,7 @@ export default function TeamCapacityPage() {
                 pendingTasks
             } as EmployeeCapacity;
         }).sort((a, b) => b.availableHours - a.availableHours);
-    }, [employeesForView, allocations, absences, teamEvents, rangeStart, rangeEnd, today]);
+    }, [employeesForView, allocations, absences, teamEvents, rangeStart, rangeEnd, today, viewMode]);
 
     // Filtrar por categorías
     const highAvailability = teamCapacity.filter(e => e.status === 'free' && e.availableHours >= (viewMode === 'week' ? 4 : 10));

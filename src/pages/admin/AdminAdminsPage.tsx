@@ -59,7 +59,7 @@ export default function AdminAdminsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchAdmins();

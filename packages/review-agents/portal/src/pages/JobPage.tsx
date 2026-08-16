@@ -70,7 +70,7 @@ export default function JobPage() {
     if (!job || isTerminalStatus(job.status)) return;
     const t = setInterval(() => void load(), 3000);
     return () => clearInterval(t);
-  }, [job?.status, load]);
+  }, [job, load]);
 
   useEffect(() => {
     if (!id) return;
@@ -107,7 +107,7 @@ export default function JobPage() {
       ? `${job.progress_pct}% — ${job.progress_message}`
       : `${job.progress_pct}%`;
     setProgressAnnouncement(text);
-  }, [job?.progress_pct, job?.progress_message]);
+  }, [job]);
 
   useEffect(() => {
     const skillName = job?.skill?.name;

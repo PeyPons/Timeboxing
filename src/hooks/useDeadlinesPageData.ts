@@ -168,6 +168,7 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
       }
     };
     cleanupMyLocks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on month/agency/user only; loaders are stable enough for this scope
   }, [selectedMonth, currentUser?.id, currentAgency?.id]);
 
   useEffect(() => {
@@ -369,7 +370,7 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
       broadcastChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [selectedMonth, currentAgency?.id, projects, currentUser?.id, employees, editingProjectIdRef]);
+  }, [selectedMonth, currentAgency, projects, currentUser?.id, employees, editingProjectIdRef]);
 
   useEffect(() => {
     const loadEditingLocks = async () => {

@@ -326,20 +326,6 @@ export function DeadlinesTour({ onComplete, forceShow = false }: DeadlinesTourPr
     };
   }, [isVisible, isReady, currentStep, calculatePositions]);
 
-  const handleNext = useCallback(() => {
-    if (currentStep < tourSteps.length - 1) {
-      setCurrentStep(prev => prev + 1);
-    } else {
-      handleComplete();
-    }
-  }, [currentStep]);
-
-  const handlePrev = useCallback(() => {
-    if (currentStep > 0) {
-      setCurrentStep(prev => prev - 1);
-    }
-  }, [currentStep]);
-
   const handleComplete = useCallback(async () => {
     // ✅ PRIMERO: Guardar en localStorage INMEDIATAMENTE (síncrono, sin delay, genérico)
     localStorage.setItem('timeboxing_deadlines_tour_completed', 'true');
@@ -373,6 +359,20 @@ export function DeadlinesTour({ onComplete, forceShow = false }: DeadlinesTourPr
     
     onComplete?.();
   }, [onComplete, currentUser, updateEmployee]);
+
+  const handleNext = useCallback(() => {
+    if (currentStep < tourSteps.length - 1) {
+      setCurrentStep(prev => prev + 1);
+    } else {
+      handleComplete();
+    }
+  }, [currentStep, handleComplete]);
+
+  const handlePrev = useCallback(() => {
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1);
+    }
+  }, [currentStep]);
 
   const handleSkip = useCallback(() => {
     handleComplete();

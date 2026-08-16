@@ -288,7 +288,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
       openTasks: Array.from(new Map(open.map(t => [t.id, t])).values()),
       transferredTasks: Array.from(new Map(transferred.map(t => [t.id, t])).values())
     };
-  }, [allocations, employeeId, viewDate, weeklyFeedback, weeklyCloseDay, open, focusAllocationId, targetWeek]);
+  }, [allocations, employeeId, viewDate, weeklyFeedback, weeklyCloseDay, focusAllocationId, targetWeek]);
 
   const allTasks = useMemo(
     () => [...openTasks, ...transferredTasks],
@@ -400,7 +400,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
   const selectedTransferName = selectedTransferMatch ? selectedTransferMatch[1] : null;
   const selectedTransferFrom = selectedTransferName ? employees.find(e => e.name === selectedTransferName) : null;
 
-  const getTaskStatus = (taskId: string): 'pending' | 'configured' | 'error' => {
+  const getTaskStatus = useCallback((taskId: string): 'pending' | 'configured' | 'error' => {
     const action = taskActions[taskId];
     if (!action) return 'pending';
     const task = allTasks.find(t => t.id === taskId);
@@ -432,7 +432,18 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
       if (!taskComments[taskId]?.trim()) return 'error';
     }
     return 'configured';
-  };
+  }, [
+    allTasks,
+    taskActions,
+    keepTaskHours,
+    rolloverTargetWeek,
+    rolloverHours,
+    moveToEmployee,
+    moveToWeek,
+    distributionTasks,
+    taskComments,
+    parseHours,
+  ]);
 
   const configuredCount = allTasks.filter((t) => getTaskStatus(t.id) === 'configured').length;
   const progress = allTasks.length > 0 ? (configuredCount / allTasks.length) * 100 : 0;
@@ -441,21 +452,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
     if (singleTaskFromPlanner) return 0;
     const pool = weeklyTab === 'past' ? currentTasks : pastTasks;
     return pool.filter((t) => getTaskStatus(t.id) !== 'configured').length;
-  }, [
-    singleTaskFromPlanner,
-    weeklyTab,
-    currentTasks,
-    pastTasks,
-    allTasks,
-    taskActions,
-    taskComments,
-    distributionTasks,
-    keepTaskHours,
-    rolloverHours,
-    rolloverTargetWeek,
-    moveToEmployee,
-    moveToWeek,
-  ]);
+  }, [singleTaskFromPlanner, weeklyTab, currentTasks, pastTasks, getTaskStatus]);
 
   // ── Validation (extracted from footer) ──
   let canSubmit = allTasks.length > 0 && configuredCount === allTasks.length;
@@ -686,7 +683,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
         const actual = h ? parseHours(h.actual) : (t.hoursActual ?? t.hoursAssigned);
         return actual < t.hoursAssigned - 0.01;
       }),
-    [allTasks, taskActions, keepTaskHours]
+    [allTasks, taskActions, keepTaskHours, parseHours]
   );
 
   const getActionConsequence = useCallback(
@@ -775,6 +772,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
       rolloverHours,
       rolloverTargetWeek,
       dateLocale,
+      parseHours,
     ]
   );
 

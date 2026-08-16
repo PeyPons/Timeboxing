@@ -16,7 +16,7 @@ import { format, parseISO, addDays } from 'date-fns';
 import { useDateLocale } from '@/hooks/useDateLocale';
 import { Users, ChevronLeft, ChevronRight, CalendarDays, Check, ChevronDown, Activity, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { loadPercentageTone } from '@/components/planner/allocation/allocationWeekMetrics';
+import { loadPercentageTone } from '@/components/planner/allocation/allocationWeekMetricsUtils';
 import { getStorageKey, getWeeksForMonth } from '@/utils/dateUtils';
 import { useWeeklyCloseDay } from '@/hooks/useWeeklyCloseDay';
 import { ActivityLogSection } from '@/components/shared/ActivityLogSection';

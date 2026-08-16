@@ -215,7 +215,7 @@ export default function DeadlinesPage() {
 
   const lastSuggestionsFlowMode = useMemo(
     () => loadDeadlinesSuggestionsPrefs(currentAgency?.id, currentUser?.id)?.lastFlowMode,
-    [currentAgency?.id, currentUser?.id, isSuggestionsExpandedOpen]
+    [currentAgency?.id, currentUser?.id]
   );
 
   const editing = useDeadlinesEditing({

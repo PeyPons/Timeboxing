@@ -68,16 +68,3 @@ export function SuggestionActiveRulesChips({
     </div>
   );
 }
-
-export function scopeLabel(scope: FlowProjectScope, t: (key: string, fallback: string) => string): string {
-  switch (scope) {
-    case 'shared':
-      return t('deadlines.suggestions.scopeShared', 'Solo proyectos en común');
-    case 'focus_projects':
-      return t('deadlines.suggestions.scopeFocusProjects', 'Todos los proyectos de la persona');
-    case 'manual':
-      return t('deadlines.suggestions.scopeManual', 'Elige proyectos marcando la casilla');
-    default:
-      return '';
-  }
-}

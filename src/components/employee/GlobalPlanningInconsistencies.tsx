@@ -284,7 +284,7 @@ export const GlobalPlanningInconsistencies = memo(function GlobalPlanningInconsi
     return () => {
       cancelled = true;
     };
-  }, [tasksModalProjectId, deliverableModalPhase, phaseModalRetryNonce, agencyIdForPhaseFetch]);
+  }, [tasksModalProjectId, deliverableModalPhase, phaseModalRetryNonce, agencyIdForPhaseFetch, t]);
 
   /** Fusiona filas de fase con el contexto (misma tarea) para reflejar ediciones locales sin recargar. */
   const mergedPhaseAllocationsForModal = useMemo(() => {

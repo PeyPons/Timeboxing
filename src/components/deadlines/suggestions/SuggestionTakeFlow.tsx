@@ -110,16 +110,14 @@ export function SuggestionTakeFlow({
     [suggestionsByEmployeeAndProject]
   );
 
-  const allRows = focusEmployeeId
-    ? getDonorTransferRows(suggestionsByEmployeeAndProject, focusEmployeeId)
-    : [];
-
   const excludedReceiverSet = useMemo(() => new Set(excludedReceiverIds), [excludedReceiverIds]);
 
-  const rows = useMemo(
-    () => filterDonorRows(allRows, excludedReceiverSet),
-    [allRows, excludedReceiverSet]
-  );
+  const rows = useMemo(() => {
+    const allRows = focusEmployeeId
+      ? getDonorTransferRows(suggestionsByEmployeeAndProject, focusEmployeeId)
+      : [];
+    return filterDonorRows(allRows, excludedReceiverSet);
+  }, [focusEmployeeId, suggestionsByEmployeeAndProject, excludedReceiverSet]);
 
   const preview = summarizeDonorRows(rows);
 

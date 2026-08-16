@@ -36,8 +36,8 @@ import {
   readPlannerSheetViewMode,
   type PlannerSheetViewMode,
 } from '@/components/planner/allocation/plannerSheetViewMode';
-import type { WeekStripItemSummary } from '@/components/planner/allocation/allocationWeekMetrics';
-import { resolveDisplayStatus, weekCardSurfaceClass } from '@/components/planner/allocation/allocationWeekMetrics';
+import type { WeekStripItemSummary } from '@/components/planner/allocation/allocationWeekMetricsUtils';
+import { resolveDisplayStatus, weekCardSurfaceClass } from '@/components/planner/allocation/allocationWeekMetricsUtils';
 import { AllocationMonthWeekCardHeader } from '@/components/planner/allocation/AllocationMonthWeekCardHeader';
 import { AllocationMonthProjectCardHeader } from '@/components/planner/allocation/AllocationMonthProjectCardHeader';
 import { MonthWeekScrollControls } from '@/components/planner/allocation/MonthWeekScrollControls';

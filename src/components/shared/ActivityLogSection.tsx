@@ -10,7 +10,7 @@
  *     └── Grandchild Task (Collapsible)
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useApp } from '@/contexts/AppContext';
 import { useAgency } from '@/contexts/AgencyContext';
@@ -271,26 +271,26 @@ export function ActivityLogSection({ currentMonth, maxItems }: ActivityLogSectio
     const { isActive: isPrivacyDemo, anonymizer: privacyAnonymizer } = usePrivacyDemo();
 
     // --- Helpers ---
-    const getEmployeeName = (id: unknown) => {
+    const getEmployeeName = useCallback((id: unknown) => {
         if (typeof id !== 'string') return t('activityLog.unknownEmployee');
         return employees.find(e => e.id === id)?.name || t('activityLog.deletedEmployee');
-    };
+    }, [employees, t]);
 
-    const getEmployeeAvatar = (id: unknown) => {
+    const getEmployeeAvatar = useCallback((id: unknown) => {
         if (typeof id !== 'string') return undefined;
         return employees.find(e => e.id === id)?.avatarUrl;
-    };
+    }, [employees]);
 
-    const getProjectName = (id: unknown) => {
+    const getProjectName = useCallback((id: unknown) => {
         if (typeof id !== 'string') return t('activityLog.noProject');
         return projects.find(p => p.id === id)?.name || t('activityLog.deletedProject');
-    };
+    }, [projects, t]);
 
-    const getClientName = (projectId: string) => {
+    const getClientName = useCallback((projectId: string) => {
         const project = projects.find(p => p.id === projectId);
         if (!project) return '';
         return clients.find(c => c.id === project.clientId)?.name || '';
-    };
+    }, [projects, clients]);
 
     const getWeekNumber = (dateStr: unknown) => {
         if (!dateStr) return 0;
@@ -820,7 +820,7 @@ export function ActivityLogSection({ currentMonth, maxItems }: ActivityLogSectio
         return roots
             .filter(r => r.modifications.length > 0 || r.children.length > 0)
             .sort((a, b) => getDeepLatest(b) - getDeepLatest(a));
-    }, [logs, allocations, filterEmployee, filterProject, employees, projects, clients, selectedDepartmentId, employeesForView, filteredProjectsForView, t]);
+    }, [logs, allocations, filterEmployee, filterProject, selectedDepartmentId, employeesForView, filteredProjectsForView, t, getClientName, getEmployeeAvatar, getEmployeeName, getProjectName]);
 
     // --- Group roots by project (filtro cierre semanal + búsqueda texto) ---
     const projectGroups = useMemo(() => {

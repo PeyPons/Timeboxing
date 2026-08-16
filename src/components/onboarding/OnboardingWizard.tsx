@@ -561,7 +561,7 @@ export default function OnboardingWizard() {
     const en = { ...(currentAgency.settings?.enabledIntegrations ?? {}) };
     integrationsSnapRef.current = { enabledIntegrations: en };
     setEnabledIntegrations(en);
-  }, [currentStep, currentAgency?.id]);
+  }, [currentStep, currentAgency?.id, currentAgency?.settings?.enabledIntegrations]);
 
   const [deptDrafts, setDeptDrafts] = useState<DeptDraft[]>(() => {
     const parsed = parseDepartmentsFromSettings(currentAgency?.settings?.departments);
@@ -1010,7 +1010,7 @@ export default function OnboardingWizard() {
     }
   };
 
-  const finishOnboarding = async (showQuickChecklist = false) => {
+  const finishOnboarding = useCallback(async (showQuickChecklist = false) => {
     await completeSetup();
     if (showQuickChecklist && currentAgency?.id && typeof window !== 'undefined') {
       localStorage.setItem(quickChecklistStorageKey(currentAgency.id), '1');
@@ -1022,7 +1022,7 @@ export default function OnboardingWizard() {
       sessionStorage.removeItem(ONBOARDING_WIZARD_ALLOWED_KEY);
     }
     navigate('/planner', { replace: true });
-  };
+  }, [completeSetup, currentAgency?.id, t, navigate]);
 
   const handleClientSkip = async () => {
     setIsProcessing(true);
@@ -1065,7 +1065,7 @@ export default function OnboardingWizard() {
     if (autoFinishProjectWithoutClient.current) return;
     autoFinishProjectWithoutClient.current = true;
     void finishOnboarding(true);
-  }, [currentStep, isAgencyLoading, resolveClientIdForProject]);
+  }, [currentStep, isAgencyLoading, resolveClientIdForProject, finishOnboarding]);
 
   const handleProjectSubmit = async (data: z.infer<typeof projectSchema>) => {
     setIsProcessing(true);

@@ -30,8 +30,8 @@ import {
   preservedScheduleScopeAndFilters,
   RECIPIENT_VALUES_SCHEDULED,
   RECIPIENT_VALUES_TRANSFER,
-  RuleScheduledScopeFilters,
-} from '@/components/agency/notificationRulesShared';
+} from '@/components/agency/notificationRulesConstants';
+import { RuleScheduledScopeFilters } from '@/components/agency/notificationRulesShared';
 
 export type NotificationRuleFormFieldsProps = {
   rule: NotificationRule;

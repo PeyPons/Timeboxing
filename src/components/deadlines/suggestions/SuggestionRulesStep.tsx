@@ -18,7 +18,7 @@ import {
   getSharedProjectIdsForFocus,
   type FlowProjectScope,
 } from '@/utils/suggestionRulesUtils';
-import { scopeLabel } from '@/components/deadlines/suggestions/SuggestionActiveRulesChips';
+import { scopeLabel } from '@/utils/suggestionRulesUtils';
 import type { SuggestionDonor } from '@/components/deadlines/suggestions/types';
 
 type RulesMode = 'give' | 'take';

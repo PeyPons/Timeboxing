@@ -269,7 +269,7 @@ export function useTaskTimer(
     } finally {
       setIsSaving(false);
     }
-  }, [employeeId, allocationId, elapsedSeconds, isSaving, callLogTimerHours, onTimeLogged, toast, loadFromDb]);
+  }, [employeeId, allocationId, elapsedSeconds, isRunning, isSaving, callLogTimerHours, onTimeLogged, toast, loadFromDb]);
 
   const totalSeconds = baseSecondsToday + elapsedSeconds;
   const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');

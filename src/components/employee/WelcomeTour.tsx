@@ -388,7 +388,7 @@ export function WelcomeTour({ onComplete, forceShow = false, onTabChange }: Welc
       setTooltipPos({ top, left });
       setIsReady(true);
     }, 200);
-  }, [currentStep]);
+  }, [currentStep, tourSteps]);
 
   // Cambiar de tab si el paso lo requiere
   useEffect(() => {
@@ -403,7 +403,7 @@ export function WelcomeTour({ onComplete, forceShow = false, onTabChange }: Welc
       });
     }
     
-  }, [currentStep, isVisible, onTabChange]);
+  }, [currentStep, isVisible, onTabChange, tourSteps]);
 
   // Actualizar posiciones cuando cambia el paso
   useEffect(() => {
@@ -426,7 +426,7 @@ export function WelcomeTour({ onComplete, forceShow = false, onTabChange }: Welc
     }, delay);
 
     return () => clearTimeout(timeoutId);
-  }, [currentStep, isVisible, calculatePositions]);
+  }, [currentStep, isVisible, calculatePositions, tourSteps]);
 
   // Recalcular en resize/scroll
   useEffect(() => {
@@ -445,21 +445,7 @@ export function WelcomeTour({ onComplete, forceShow = false, onTabChange }: Welc
       window.removeEventListener('resize', handleUpdate);
       window.removeEventListener('scroll', handleUpdate, true);
     };
-  }, [isVisible, isReady, currentStep, calculatePositions]);
-
-  const handleNext = useCallback(() => {
-    if (currentStep < tourSteps.length - 1) {
-      setCurrentStep(prev => prev + 1);
-    } else {
-      handleComplete();
-    }
-  }, [currentStep]);
-
-  const handlePrev = useCallback(() => {
-    if (currentStep > 0) {
-      setCurrentStep(prev => prev - 1);
-    }
-  }, [currentStep]);
+  }, [isVisible, isReady, currentStep, calculatePositions, tourSteps]);
 
   const handleComplete = useCallback(async () => {
     // ✅ PRIMERO: Prevenir múltiples ejecuciones
@@ -510,6 +496,20 @@ export function WelcomeTour({ onComplete, forceShow = false, onTabChange }: Welc
 
     onComplete?.();
   }, [onComplete, currentUser, updateEmployee]);
+
+  const handleNext = useCallback(() => {
+    if (currentStep < tourSteps.length - 1) {
+      setCurrentStep(prev => prev + 1);
+    } else {
+      handleComplete();
+    }
+  }, [currentStep, handleComplete, tourSteps.length]);
+
+  const handlePrev = useCallback(() => {
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1);
+    }
+  }, [currentStep]);
 
   const handleSkip = useCallback(() => {
     handleComplete();

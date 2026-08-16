@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -339,6 +339,17 @@ export default function AgencySettingsPage() {
   const [selectedDeptForConfig, setSelectedDeptForConfig] = useState<string>('');
   const { configs: departmentConfigs, getConfigForDepartment } = useDepartmentConfigs();
 
+  const fetchConnectedAccounts = useCallback(async () => {
+    if (!currentAgency?.id) return;
+    const { data } = await supabase
+      .from('ad_accounts_config')
+      .select('*')
+      .eq('agency_id', currentAgency.id)
+      .eq('platform', 'meta')
+      .eq('is_active', true);
+    setConnectedAccounts(data || []);
+  }, [currentAgency?.id]);
+
   // Sync state when agency loads (no pisar el formulario mientras guarda)
   useEffect(() => {
     if (!currentAgency || saving) return;
@@ -384,18 +395,7 @@ export default function AgencySettingsPage() {
       setRadarLowProgressExcludeKeywords(currentAgency.settings?.radarLowProgressExcludeKeywords ?? []);
       setDependencyUnblockEmailsEnabled(currentAgency.settings?.dependencyUnblockEmailsEnabled !== false);
       fetchConnectedAccounts();
-  }, [currentAgency, saving]);
-
-  const fetchConnectedAccounts = async () => {
-    if (!currentAgency?.id) return;
-    const { data } = await supabase
-      .from('ad_accounts_config')
-      .select('*')
-      .eq('agency_id', currentAgency.id)
-      .eq('platform', 'meta')
-      .eq('is_active', true);
-    setConnectedAccounts(data || []);
-  };
+  }, [currentAgency, saving, fetchConnectedAccounts]);
 
   // Role Management
   const isSystemRole = (roleName: string) => {

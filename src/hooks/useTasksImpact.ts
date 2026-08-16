@@ -95,7 +95,7 @@ export function useTasksImpact({
         }).filter((w): w is NonNullable<typeof w> => w !== null);
 
         return { projects: projectsResult, weeks: weeksResult };
-    }, [newTasks, projects, weeks, employeeId, getEmployeeLoadForWeek, getProjectBudgetStatus, viewMonth, batchPreview]);
+    }, [newTasks, projects, weeks, employeeId, getEmployeeLoadForWeek, getProjectBudgetStatus, batchPreview]);
 
     const getWeekExceedStatus = (weekDate: string) => tasksImpact.weeks.find((w) => w.weekDate === weekDate)?.exceeds || false;
     const getProjectExceedStatus = (projectId: string) => tasksImpact.projects.find((p) => p.id === projectId)?.exceeds || false;

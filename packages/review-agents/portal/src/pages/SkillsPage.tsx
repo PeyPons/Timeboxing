@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiDelete, apiGet, apiPost } from '../lib/api';
 import { useAgency } from '../hooks/useAgency';
@@ -25,7 +25,7 @@ export default function SkillsPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  async function reload() {
+  const reload = useCallback(async () => {
     if (!agencyId) return;
     setLoading(true);
     setError('');
@@ -37,11 +37,11 @@ export default function SkillsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [agencyId]);
 
   useEffect(() => {
-    reload();
-  }, [agencyId]);
+    void reload();
+  }, [reload]);
 
   async function duplicateAndEdit(id: string) {
     if (!agencyId) return;

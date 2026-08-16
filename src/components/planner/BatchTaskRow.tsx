@@ -96,7 +96,6 @@ export function BatchTaskRow({
     }, [
         batchPreview,
         task.projectId,
-        task.hours,
         task.id,
         taskEmployeeId,
         deadlines,

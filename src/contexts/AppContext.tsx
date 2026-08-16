@@ -1461,6 +1461,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshData: fetchData,
     userRoutines, addRoutine, deleteRoutine, toggleRoutine,
     pendingTransfers, outgoingTransfers, fetchTransfers
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- omit fetchTransfers/toggleRoutine/isUserAdmin to limit value churn
   }), [currentUser, employees, clients, projects, allocations, absences, teamEvents, weeklyFeedback, isLoading,
     isSecondaryLoading, fetchArchivedProjects,
     addEmployee, updateEmployee, deleteEmployee, toggleEmployeeActive,
