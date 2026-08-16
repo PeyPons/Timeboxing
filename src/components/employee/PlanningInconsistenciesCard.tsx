@@ -203,9 +203,15 @@ export const PlanningInconsistenciesCard = memo(function PlanningInconsistencies
     }> = [];
 
     deadlines.forEach(deadline => {
+      const project = projects.find(p => p.id === deadline.projectId);
+      // Completados/archivados: no exigir horas de deadline (evita fantasma tras “copiar mes”).
+      // Si hay tareas, el bloque de allocations sin deadline las sigue mostrando.
+      if (project && project.status !== 'active') {
+        return;
+      }
+
       const deadlineHours = deadline.employeeHours[employeeId] || 0;
       const projectAllocs = allocationsByProject[deadline.projectId] || { planned: 0, computed: 0 };
-      const project = projects.find(p => p.id === deadline.projectId);
 
       // FILTRAR: Para empleados no-managers, solo mostrar proyectos donde están asignados
       // (tienen deadline asignado O tienen allocations en ese proyecto)
@@ -350,13 +356,14 @@ export const PlanningInconsistenciesCard = memo(function PlanningInconsistencies
       // Si el proyecto ya está en results, saltarlo (evitar duplicados)
       if (processedProjectIds.has(projectId)) return;
 
-      // Verificar si el usuario tiene deadline asignado en este proyecto
+      // Verificar si el usuario tiene deadline asignado en este proyecto (solo cuenta si el proyecto está activo)
       const userDeadline = deadlines.find(d => d.projectId === projectId);
-      const userDeadlineHours = userDeadline?.employeeHours[employeeId] || 0;
+      const project = projects.find(p => p.id === projectId);
+      const userDeadlineHours =
+        project?.status === 'active' ? (userDeadline?.employeeHours[employeeId] || 0) : 0;
 
       // Si el usuario NO tiene deadline asignado pero tiene horas, mostrar el proyecto
       if (userDeadlineHours === 0 && (projectAllocs.planned > 0 || projectAllocs.computed > 0)) {
-        const project = projects.find(p => p.id === projectId);
         const totalPlanned = projectAllocs.planned + projectAllocs.computed;
 
         // Obtener allocations del proyecto de todos los empleados
@@ -417,8 +424,8 @@ export const PlanningInconsistenciesCard = memo(function PlanningInconsistencies
         });
 
         // Añadir empleados con deadline asignado (aunque no tengan horas todavía)
-        // Esto es crítico: si el proyecto tiene deadline para otros empleados, deben aparecer
-        if (projectDeadline && projectDeadline.employeeHours) {
+        // Solo si el proyecto está activo: en cerrados el deadline no es objetivo del mes.
+        if (project?.status === 'active' && projectDeadline && projectDeadline.employeeHours) {
           Object.keys(projectDeadline.employeeHours).forEach(empId => {
             if (empId !== employeeId) {
               allEmployeeIds.add(empId);
@@ -429,7 +436,8 @@ export const PlanningInconsistenciesCard = memo(function PlanningInconsistencies
         allEmployeeIds.forEach((empId) => {
           const empAllocs = allocationsByEmployeeNoDeadline[empId] || { planned: 0, computed: 0 };
           const empTotal = empAllocs.planned + empAllocs.computed;
-          const empDeadlineHours = projectDeadline?.employeeHours?.[empId] || 0;
+          const empDeadlineHours =
+            project?.status === 'active' ? (projectDeadline?.employeeHours?.[empId] || 0) : 0;
 
           // Mostrar si tiene horas imputadas O si tiene deadline asignado
           // Esto asegura que aparezcan compañeros con deadline aunque no tengan horas todavía

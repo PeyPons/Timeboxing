@@ -1171,10 +1171,12 @@
         "copyError": "Error al copiar deadlines",
         "checkError": "Error al verificar deadlines anteriores",
         "copySuccess": "Se copiaron {{count}} deadlines",
-        "copySuccessWithSkipped": "Se copiaron {{count}} deadlines ({{skipped}} omitidos: ya existían u otro motivo).",
+        "copySuccessWithSkipped": "Se copiaron {{count}} deadlines ({{skipped}} omitidos: ya existían, no activos u otro motivo).",
         "allAlreadyExist": "Todos los deadlines del mes anterior ya existen en este mes (o el proyecto ya no está en la agencia).",
         "noneApplicable": "No hay deadlines aplicables para copiar.",
-        "noneNewToCopy": "No hay deadlines nuevos para copiar (todos los del mes anterior ya están en este mes)."
+        "noneNewToCopy": "No hay deadlines nuevos para copiar (todos los del mes anterior ya están en este mes o no están activos).",
+        "onlyInactive": "Solo había deadlines de proyectos completados o archivados; no se copian al mes nuevo.",
+        "skippedInactive": "Se omitieron {{count}} proyecto(s) completado(s) o archivado(s)."
       },
       "noConfigToDelete": "No hay configuración guardada para eliminar"
     }

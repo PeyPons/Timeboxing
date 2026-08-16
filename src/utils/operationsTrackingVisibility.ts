@@ -66,7 +66,12 @@ export function sumProjectTaskHoursFromAgg(
   );
 }
 
-/** Proyectos completados solo entran en seguimiento operativo si tienen horas este mes (deadline o tareas). */
+/**
+ * Visibilidad en seguimiento operativo / coherencia.
+ * - Activos: siempre.
+ * - Completados / archivados: solo si hay tareas del mes (planificadas o computadas).
+ *   Un deadline copiado sin tareas no debe aparecer como “horas pendientes”.
+ */
 export function shouldIncludeProjectInOperationsTracking(
   project: Pick<Project, 'status'> | undefined,
   params: {
@@ -75,8 +80,9 @@ export function shouldIncludeProjectInOperationsTracking(
     computedHours: number;
   },
 ): boolean {
-  if (!project || project.status !== 'completed') return true;
-  return params.deadlineHours + params.plannedHours + params.computedHours > 0;
+  if (!project) return false;
+  if (project.status === 'active') return true;
+  return params.plannedHours + params.computedHours > 0;
 }
 
 export function shouldIncludeProjectIdInOperationsTracking(params: {
