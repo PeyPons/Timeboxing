@@ -1,6 +1,42 @@
 ﻿
 ## 10. Gotchas y Patrones Problemáticos Conocidos
 
+### 10.0 Tras un deploy: errores de chunk / “hay que Ctrl+R”
+**Síntoma**: tras publicar frontend, usuarios con la app abierta (o `index.html` cacheado) ven fallos al navegar (`Failed to fetch dynamically imported module`, pantalla de error de ruta) hasta vaciar caché o forzar recarga.
+
+**Causa**: Vite genera JS/CSS con hash (`assets/DeadlinesPage-abc123.js`). Un deploy borra los hashes viejos. El navegador sigue con el bundle anterior y pide chunks que ya no existen.
+
+**Mitigación en app (código)**:
+- `src/lib/chunkReload.ts` + listener `vite:preloadError` en `main.tsx` (API Vite 5).
+- `lazyWithRetry` (`src/lib/lazyWithRetry.ts`) recarga **una sola vez** por pestaña (`sessionStorage`) si falla un import dinámico.
+- `RouteErrorBoundary` también dispara esa recarga en errores de chunk.
+
+**Mitigación en servidor (imprescindible)**: `index.html` **no** debe cachearse agresivamente; los `/assets/*` con hash sí (immutable).
+
+En producción (Pi) el frontend se sirve con `npx serve -s` (`mi-planificador` → `Timeboxing/dist`). La config va en [`public/serve.json`](../public/serve.json) (Vite la copia a `dist/` en cada build):
+
+- `/` e `*.html` → `Cache-Control: no-cache, no-store, must-revalidate`
+- `/assets/**` y estáticos hasheados → `public, max-age=31536000, immutable`
+
+Ejemplo nginx (si se sustituye `serve` algún día):
+
+```nginx
+location = /index.html {
+  add_header Cache-Control "no-cache, no-store, must-revalidate";
+}
+
+location /assets/ {
+  add_header Cache-Control "public, max-age=31536000, immutable";
+  try_files $uri =404;
+}
+
+location / {
+  try_files $uri $uri/ /index.html;
+}
+```
+
+Si hay CDN/Cloudflare delante: regla equivalente (HTML/bypass cache para `/` e `index.html`; cache largo solo para `/assets/*`). Cloudflare ya marca HTML como `DYNAMIC` en taimbox.com; igual conviene el header en origen para el navegador.
+
 ### 10.1 Keys duplicadas en listas con datos potencialmente duplicados
 **Archivo afectado**: `GlobalPlanningInconsistencies.tsx`
 
