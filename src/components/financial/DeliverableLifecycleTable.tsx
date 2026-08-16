@@ -108,7 +108,7 @@ export function DeliverableLifecycleTable(props: DeliverableLifecycleTableProps)
             return a.project.name.localeCompare(b.project.name);
         });
         return out;
-    }, [filteredProjects, lifecycleMap, projects]);
+    }, [filteredProjects, lifecycleMap]);
 
     const kpis = useMemo(() => {
         let sumH = 0;

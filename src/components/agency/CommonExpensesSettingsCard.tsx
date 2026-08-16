@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { format, parse, subMonths } from 'date-fns';
 import { Landmark, Plus, Trash2, Copy } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -84,7 +84,7 @@ export function CommonExpensesSettingsCard({
   const [editMonth, setEditMonth] = useState(() => format(new Date(), 'yyyy-MM'));
   const [copyConfirmOpen, setCopyConfirmOpen] = useState(false);
 
-  const entriesForMonth = value[editMonth] ?? [];
+  const entriesForMonth = useMemo(() => value[editMonth] ?? [], [value, editMonth]);
 
   const setEntriesForMonth = (entries: CommonExpenseEntry[]) => {
     const normalized = normalizeCommonExpenseEntriesDepartments(entries, departments);
@@ -159,7 +159,7 @@ export function CommonExpensesSettingsCard({
     return map;
   }, [entriesForMonth, t]);
 
-  const validateMonthLine = (e: CommonExpenseEntry, splitMap: Map<string, string | null>): string | null => {
+  const validateMonthLine = useCallback((e: CommonExpenseEntry, splitMap: Map<string, string | null>): string | null => {
     if (Number.isNaN(e.amount) || e.amount < 0) {
       return t('agency.commonExpenses.errNegativeAmount', 'Cada importe debe ser mayor o igual que 0.');
     }
@@ -184,7 +184,7 @@ export function CommonExpensesSettingsCard({
       }
     }
     return null;
-  };
+  }, [departments, t]);
 
   const blockingReason = useMemo((): string | null => {
     for (const e of recurringValue) {
@@ -219,9 +219,9 @@ export function CommonExpensesSettingsCard({
   }, [
     entriesForMonth,
     recurringValue,
-    departments,
     splitValidationByEntry,
     splitValidationRecurring,
+    validateMonthLine,
     t,
   ]);
 

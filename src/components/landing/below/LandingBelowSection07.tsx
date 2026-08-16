@@ -77,7 +77,7 @@ export const LandingBelowSection07: FC = () => {
       };
     }
     return map;
-  }, [tPricing, i18n.language]);
+  }, [tPricing]);
 
   const enterpriseMail = `mailto:hello@taimbox.com?subject=${encodeURIComponent(
     tPricing("pricing.enterpriseMailSubject"),

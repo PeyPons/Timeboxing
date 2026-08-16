@@ -483,7 +483,7 @@ export const PlanningInconsistenciesCard = memo(function PlanningInconsistencies
     });
 
     return results.sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference));
-  }, [deadlines, allocations, projects, employees, employeeId, viewDate, isLoading]);
+  }, [deadlines, allocations, projects, employees, employeeId, viewDate, isLoading, isManager, preference, t]);
 
   const visibleInconsistencies = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
