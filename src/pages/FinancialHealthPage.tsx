@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useMemo, useState, useEffect, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '@/contexts/AppContext';
@@ -41,27 +41,15 @@ import { format, startOfMonth, subMonths, addMonths, endOfMonth, subDays } from 
 import { useDateLocale } from '@/hooks/useDateLocale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { normalizeDepartments } from '@/utils/departmentUtils';
-import {
-    formatEhrTargetForDisplay,
-    numberToPositiveDecimalInputString,
-    parsePositiveDecimalInput,
-    sanitizePositiveDecimalInput,
-} from '@/utils/positiveDecimalInput';
-import type { Project, CommonExpenseEntry, Deadline, GlobalAssignment } from '@/types';
+import { formatEhrTargetForDisplay } from '@/utils/positiveDecimalInput';
+import type { Project, Deadline, GlobalAssignment } from '@/types';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { SensitiveText } from '@/components/privacy/SensitiveText';
 import { usePrivacyDemo } from '@/contexts/PrivacyDemoContext';
-import {
-    normalizeCommonExpenseEntriesDepartments,
-} from '@/utils/commonExpensesAllocation';
-import { CommonExpensesSettingsCard } from '@/components/agency/CommonExpensesSettingsCard';
-import { validateCommonExpensesDraft } from '@/utils/commonExpensesDraftValidation';
-import { toast } from '@/lib/notify';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
     filterEmployeeProfitabilityRowsForDisplay,
@@ -74,6 +62,7 @@ import { getMarginSemaphore } from '@/utils/marginSemaphore';
 import { DeliverableLifecycleTable } from '@/components/financial/DeliverableLifecycleTable';
 import { ProfitabilityAttributionMobileList } from '@/components/financial/ProfitabilityAttributionMobileList';
 import { ProfitabilityMobileMetrics } from '@/components/financial/ProfitabilityMobileMetrics';
+import { FinancialHealthProfitSettingsDialog } from '@/components/financial/FinancialHealthProfitSettingsDialog';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { usePlanMonthNavigation } from '@/hooks/usePlanMonthNavigation';
 import { useEnsureMonthWithLoading } from '@/hooks/useEnsureMonthWithLoading';
@@ -93,15 +82,10 @@ export default function FinancialHealthPage() {
     const [commonExpensesMobileOpen, setCommonExpensesMobileOpen] = useState(false);
     const [costHelpOpen, setCostHelpOpen] = useState(false);
     const [profitSettingsOpen, setProfitSettingsOpen] = useState(false);
-    const [profitSettingsSaving, setProfitSettingsSaving] = useState(false);
-    const [ehrTargetInput, setEhrTargetInput] = useState('');
-    const [commonExpensesDraft, setCommonExpensesDraft] = useState<Record<string, CommonExpenseEntry[]>>({});
-    const [commonExpensesRecurringDraft, setCommonExpensesRecurringDraft] = useState<CommonExpenseEntry[]>([]);
-    const profitSettingsHydratedRef = useRef(false);
     const [deadlinesRows, setDeadlinesRows] = useState<Deadline[]>([]);
     const [globalAssignmentsForMonth, setGlobalAssignmentsForMonth] = useState<GlobalAssignment[]>([]);
     const { projects, clients, employees, allocations, isLoading: isGlobalLoading } = useApp();
-    const { currentAgency, updateSettings } = useAgency();
+    const { currentAgency } = useAgency();
     const { formatMoney, formatPerHour, currencySymbol, inCurrencyParens, perHourSuffix } = useFormatMoney();
     const defaultPerHour = useMemo(() => formatPerHour(75, 0), [formatPerHour]);
     const currencyLabels = useMemo(
@@ -170,87 +154,6 @@ export default function FinancialHealthPage() {
         () => normalizeDepartments(currentAgency?.settings?.departments),
         [currentAgency?.settings?.departments]
     );
-
-    useEffect(() => {
-        if (!profitSettingsOpen) {
-            profitSettingsHydratedRef.current = false;
-            return;
-        }
-        if (!currentAgency || profitSettingsHydratedRef.current) return;
-        profitSettingsHydratedRef.current = true;
-        const deptsNorm = normalizeDepartments(currentAgency.settings?.departments);
-        setEhrTargetInput(
-            numberToPositiveDecimalInputString(currentAgency.settings?.ehrTarget ?? 75, 75)
-        );
-        const rawCommon = currentAgency.settings?.commonExpensesByMonth;
-        if (rawCommon && typeof rawCommon === 'object' && !Array.isArray(rawCommon)) {
-            const next: Record<string, CommonExpenseEntry[]> = {};
-            for (const [k, arr] of Object.entries(rawCommon)) {
-                if (!Array.isArray(arr)) continue;
-                next[k] = normalizeCommonExpenseEntriesDepartments(arr as CommonExpenseEntry[], deptsNorm);
-            }
-            setCommonExpensesDraft(next);
-        } else {
-            setCommonExpensesDraft({});
-        }
-        const rawRec = currentAgency.settings?.commonExpensesRecurring;
-        if (Array.isArray(rawRec)) {
-            setCommonExpensesRecurringDraft(
-                normalizeCommonExpenseEntriesDepartments(rawRec as CommonExpenseEntry[], deptsNorm)
-            );
-        } else {
-            setCommonExpensesRecurringDraft([]);
-        }
-    }, [profitSettingsOpen, currentAgency]);
-
-    const handleSaveProfitSettings = useCallback(async () => {
-        if (!currentAgency?.id) return;
-        const commonErr = validateCommonExpensesDraft(
-            commonExpensesDraft,
-            commonExpensesRecurringDraft,
-            departments,
-            (k, d) => t(k, d)
-        );
-        if (commonErr) {
-            toast.error(commonErr);
-            return;
-        }
-        setProfitSettingsSaving(true);
-        try {
-            const normalizedCommon: Record<string, CommonExpenseEntry[]> = {};
-            for (const [k, arr] of Object.entries(commonExpensesDraft)) {
-                normalizedCommon[k] = normalizeCommonExpenseEntriesDepartments(
-                    arr.map(({ recurringFromMonth: _rf, recurringUntilMonth: _ru, ...rest }) => rest),
-                    departments
-                );
-            }
-            const normalizedRecurring = normalizeCommonExpenseEntriesDepartments(
-                commonExpensesRecurringDraft,
-                departments
-            );
-            const ehrTarget = parsePositiveDecimalInput(ehrTargetInput, 75, 1);
-            await updateSettings({
-                ehrTarget,
-                commonExpensesByMonth: normalizedCommon,
-                commonExpensesRecurring: normalizedRecurring,
-            });
-            toast.success(t('financialHealth.settings.saved', 'Cambios guardados'));
-            setProfitSettingsOpen(false);
-        } catch (err) {
-            console.error(err);
-            toast.error(t('financialHealth.settings.saveError', 'No se pudo guardar la configuración'));
-        } finally {
-            setProfitSettingsSaving(false);
-        }
-    }, [
-        commonExpensesDraft,
-        commonExpensesRecurringDraft,
-        currentAgency?.id,
-        departments,
-        ehrTargetInput,
-        t,
-        updateSettings,
-    ]);
 
     const {
         projectMetrics,
@@ -425,13 +328,6 @@ export default function FinancialHealthPage() {
         });
         return map;
     }, [projectEmployeesMap]);
-
-    // Horas totales por empleado (computed) en la vista: para repartir el coste mensual entre proyectos
-    const employeeTotalHoursMap = useMemo(() => {
-        const map = new Map<string, number>();
-        employeeMetricsForView.forEach(em => map.set(em.employeeId, em.totalComputed));
-        return map;
-    }, [employeeMetricsForView]);
 
     // Coste por proyecto: reparto del coste mensual (nómina) por horas en el modo actual (reales/computadas). Contabilidad pura.
     const projectCostAndMarginMap = useMemo(() => {
@@ -1175,65 +1071,12 @@ export default function FinancialHealthPage() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={profitSettingsOpen} onOpenChange={setProfitSettingsOpen}>
-                <DialogContent className="max-w-3xl w-[calc(100vw-2rem)] max-h-[min(90vh,880px)] overflow-y-auto rounded-2xl border-slate-200">
-                    <DialogHeader>
-                        <DialogTitle>
-                            {t('financialHealth.settings.dialogTitle', 'Objetivo EHR y gastos comunes')}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {t(
-                                'financialHealth.settings.dialogDescription',
-                                'Define el precio hora objetivo y los gastos que se prorratean en esta página (fijos por mes o puntuales).'
-                            )}
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-2">
-                        <div className="max-w-xs space-y-2">
-                            <Label htmlFor="fh-ehr-target">
-                                {t('agency.general.ehrTarget', currencyLabels)}
-                            </Label>
-                            <Input
-                                id="fh-ehr-target"
-                                type="text"
-                                inputMode="decimal"
-                                autoComplete="off"
-                                value={ehrTargetInput}
-                                onChange={e => setEhrTargetInput(sanitizePositiveDecimalInput(e.target.value))}
-                                onBlur={() => {
-                                    const v = parsePositiveDecimalInput(ehrTargetInput, 75, 1);
-                                    setEhrTargetInput(numberToPositiveDecimalInputString(v, 75));
-                                }}
-                            />
-                            <p className="text-xs text-slate-500">
-                                {t('financialHealth.settings.ehrNote', currencyLabels)}
-                            </p>
-                        </div>
-                        <CommonExpensesSettingsCard
-                            departments={departments}
-                            value={commonExpensesDraft}
-                            onChange={setCommonExpensesDraft}
-                            recurringValue={commonExpensesRecurringDraft}
-                            onRecurringChange={setCommonExpensesRecurringDraft}
-                        />
-                    </div>
-                    <DialogFooter className="gap-2 sm:gap-0">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setProfitSettingsOpen(false)}
-                            disabled={profitSettingsSaving}
-                        >
-                            {t('financialHealth.settings.cancel', 'Cancelar')}
-                        </Button>
-                        <Button type="button" onClick={handleSaveProfitSettings} disabled={profitSettingsSaving}>
-                            {profitSettingsSaving
-                                ? t('financialHealth.settings.saving', 'Guardando…')
-                                : t('financialHealth.settings.save', 'Guardar')}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <FinancialHealthProfitSettingsDialog
+                open={profitSettingsOpen}
+                onOpenChange={setProfitSettingsOpen}
+                departments={departments}
+                currencyLabels={currencyLabels}
+            />
 
             <TooltipProvider delayDuration={300}>
                 <Tabs defaultValue="resumen" className="space-y-3 sm:space-y-6 min-w-0">
