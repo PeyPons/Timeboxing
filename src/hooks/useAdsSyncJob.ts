@@ -104,10 +104,8 @@ export function useAdsSyncJob({
     if (!currentJobId || !isSyncing || !agencyId) return;
 
     const channel = supabase.channel(`${config.channelPrefix}-${currentJobId}`);
-    let intervalId: number | undefined;
-
     const cleanup = () => {
-      if (intervalId !== undefined) window.clearInterval(intervalId);
+      window.clearInterval(intervalId);
       void supabase.removeChannel(channel);
     };
 
@@ -158,7 +156,7 @@ export function useAdsSyncJob({
       )
       .subscribe();
 
-    intervalId = window.setInterval(() => {
+    const intervalId = window.setInterval(() => {
       void checkStatus();
     }, 2000);
 
