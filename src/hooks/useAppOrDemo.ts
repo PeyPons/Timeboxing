@@ -1,13 +1,15 @@
-import { useContext } from 'react';
+import { useContext, type Context, type ContextType } from 'react';
 import { AppContext } from '@/contexts/AppContext';
 
+type AppContextValue = NonNullable<ContextType<typeof AppContext>>;
+
 // Importar DemoContext de forma condicional
-let DemoContext: React.Context<unknown> | null = null;
+let DemoContext: Context<Partial<AppContextValue> | undefined> | null = null;
 try {
   // Intentar importar DemoContext solo si está disponible
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const demoModule = require('@/contexts/DemoContext');
-  DemoContext = demoModule.DemoContext;
+  DemoContext = demoModule.DemoContext as Context<Partial<AppContextValue> | undefined>;
 } catch {
   // DemoContext no disponible, usar solo AppContext
 }
@@ -17,13 +19,13 @@ try {
  * si no, usa AppContext. Permite que los componentes funcionen
  * tanto en modo demo como en modo real.
  */
-export function useAppOrDemo() {
+export function useAppOrDemo(): AppContextValue {
   // Intentar usar DemoContext primero si está disponible
   if (DemoContext) {
     try {
       // eslint-disable-next-line react-hooks/rules-of-hooks
       const demoContext = useContext(DemoContext);
-      if (demoContext) {
+      if (demoContext && typeof demoContext === 'object') {
         // Convertir DemoContext a formato compatible con AppContext
         return {
           ...demoContext,
@@ -58,7 +60,7 @@ export function useAppOrDemo() {
           getEmployeeGoals: () => [],
           loadDataForMonth: () => Promise.resolve(true),
           addWeeklyFeedback: () => Promise.resolve(null),
-        };
+        } as unknown as AppContextValue;
       }
     } catch {
       // DemoContext no está disponible en este árbol, continuar con AppContext

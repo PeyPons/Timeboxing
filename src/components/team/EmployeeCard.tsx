@@ -35,7 +35,10 @@ export const EmployeeCard = memo(function EmployeeCard({ employee }: EmployeeCar
   // Obtener roles y departamentos disponibles
   const availableRoles = currentAgency?.settings?.roles || [];
   const availableDepartments = normalizeDepartments(currentAgency?.settings?.departments);
-  const displayRole = translateRoleLabel(getValidRole(employee, availableRoles), t);
+  const displayRole = translateRoleLabel(
+    getValidRole(employee, availableRoles),
+    (key, fallback) => t(key, { defaultValue: fallback ?? key }),
+  );
   const displayDepartment = getValidDepartment(employee, availableDepartments.length ? availableDepartments : undefined);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);

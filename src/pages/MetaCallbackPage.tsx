@@ -72,7 +72,11 @@ export default function MetaCallbackPage() {
                 });
 
                 if (fnError) throw fnError;
-                if (data?.error) throw new Error(data.error);
+                const metaError =
+                    data && typeof data === 'object' && 'error' in data
+                        ? data.error
+                        : null;
+                if (metaError) throw new Error(String(metaError));
 
                 try {
                     const { error: listErr } = await invokeEdgeFunctionWithRetry(

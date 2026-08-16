@@ -28,7 +28,7 @@ export interface InlineFormData {
 export interface ProjectItem {
   id: string;
   name: string;
-  budgetHours?: number;
+  budgetHours: number;
   minimumHours?: number;
   clientId?: string;
   projectType?: string;

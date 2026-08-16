@@ -950,7 +950,7 @@ export default function FinancialHealthPage() {
 
     const agencyTotalOverheadApplied = commonExpensesAlloc.ok ? commonExpensesAlloc.totalOverheadApplied : 0;
     const commonExpensesAllocError: AllocateCommonExpensesFailure | null =
-        commonExpensesAlloc.ok === false ? commonExpensesAlloc : null;
+        'code' in commonExpensesAlloc ? commonExpensesAlloc : null;
     const commonExpensesBreakdown = useMemo(() => {
         const recurring = currentAgency?.settings?.commonExpensesRecurring ?? [];
         const recurringInMonth = recurring.filter(e => {

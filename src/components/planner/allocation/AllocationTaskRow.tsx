@@ -90,7 +90,9 @@ export function AllocationTaskRow({
     const weeklyCloseDay = useWeeklyCloseDay();
     const { t } = useAppTranslation();
     const { currentAgency } = useAgency();
-    const preference = currentAgency?.settings?.hoursTrackingPreference;
+    const preference: 'actual' | 'computed' | undefined =
+        currentAgency?.settings?.hoursTrackingPreference;
+    const isActualHoursPreference = preference === 'actual';
     const todayIso = format(new Date(), 'yyyy-MM-dd');
     const isFocusToday = alloc.focusDate === todayIso;
 
@@ -354,7 +356,7 @@ export function AllocationTaskRow({
                                     />
                                     h
                                 </span>
-                                {preference !== 'actual' && (
+                                {!isActualHoursPreference && (
                                     <>
                                         <span className="text-slate-300" aria-hidden>·</span>
                                         <span className="inline-flex items-center gap-0.5">
@@ -363,7 +365,7 @@ export function AllocationTaskRow({
                                                 type="number"
                                                 step="0.5"
                                                 min="0"
-                                                disabled={preference === 'actual' || transferReadOnly}
+                                                disabled={isActualHoursPreference || transferReadOnly}
                                                 defaultValue={alloc.hoursComputed || 0}
                                                 onBlur={(e) => onUpdateInlineHours('hoursComputed', e.target.value)}
                                                 className={cn(
@@ -423,7 +425,7 @@ export function AllocationTaskRow({
                                 />
                             </div>
 
-                            {preference !== 'actual' && (
+                            {!isActualHoursPreference && (
                                 <div className={cn(
                                     "inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 rounded-md border border-emerald-200 tabular-nums",
                                     isCardLayout ? "text-[11px] px-1.5 py-0.5" : "text-[10px] px-1.5 py-0.5"
@@ -433,13 +435,13 @@ export function AllocationTaskRow({
                                         type="number"
                                         step="0.5"
                                         min="0"
-                                        disabled={preference === 'actual' || transferReadOnly}
+                                        disabled={isActualHoursPreference || transferReadOnly}
                                         defaultValue={alloc.hoursComputed || 0}
                                         onBlur={(e) => onUpdateInlineHours('hoursComputed', e.target.value)}
                                         className={cn(
                                             "w-9 text-center bg-transparent border-0 focus:outline-none focus:bg-white rounded font-bold font-mono",
                                             isCardLayout ? "text-xs" : "text-[11px]",
-                                            preference === 'actual' || transferReadOnly
+                                            isActualHoursPreference || transferReadOnly
                                                 ? "cursor-not-allowed opacity-50"
                                                 : "focus:ring-1 focus:ring-emerald-400"
                                         )}

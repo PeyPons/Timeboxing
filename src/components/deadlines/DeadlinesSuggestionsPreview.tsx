@@ -11,17 +11,10 @@ import { Sparkles, HelpCircle, ChevronRight, Maximize2, RotateCcw } from 'lucide
 import { CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { countProjectsWithTransfers, totalSuggestedHoursForGroup } from '@/utils/deadlinesSuggestionsPrefs';
-
-export interface SuggestionGroupPreview {
-  employeeId: string;
-  employeeName: string;
-  employeeAvatar?: string;
-  deficitHours: number;
-  projects: { projectId: string; projectName: string; transfers: unknown[] }[];
-}
+import type { EmployeeRecommendation } from '@/hooks/useDeadlinesRedistribution';
 
 export interface DeadlinesSuggestionsPreviewProps {
-  groups: SuggestionGroupPreview[];
+  groups: EmployeeRecommendation[];
   emptyMessage?: string | null;
   hasRestrictiveFilters?: boolean;
   onOpenFull: () => void;

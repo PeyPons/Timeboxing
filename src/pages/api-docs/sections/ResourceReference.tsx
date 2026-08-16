@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ComponentType } from 'react';
 import { ChevronsUpDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SectionHeading } from '../components/SectionHeading';
@@ -22,7 +22,12 @@ export function ResourceReference() {
         return (
           <div key={anchorId} className="mb-12">
             <div className="flex items-center justify-between mb-6">
-              <SectionHeading id={anchorId} level="h3" icon={GroupIcon} className="mb-0">
+              <SectionHeading
+                id={anchorId}
+                level="h3"
+                icon={GroupIcon as ComponentType<{ className?: string }>}
+                className="mb-0"
+              >
                 {group}
               </SectionHeading>
               {anchorId === TABLE_GROUPS[0].anchorId && (

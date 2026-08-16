@@ -14,7 +14,10 @@ interface SupabaseAllocationNoteRow {
   source: AllocationNoteSource;
   created_at: string;
   deleted_at: string | null;
-  author?: { id: string; name: string; avatar_url: string | null } | null;
+  author?:
+    | { id: string; name: string; avatar_url: string | null }
+    | { id: string; name: string; avatar_url: string | null }[]
+    | null;
 }
 
 interface AllocationNoteCountRow {
@@ -36,6 +39,7 @@ interface AllocationNoteListRpcRow {
 }
 
 function mapNote(row: SupabaseAllocationNoteRow): AllocationNote {
+  const author = Array.isArray(row.author) ? row.author[0] : row.author;
   return {
     id: row.id,
     allocationId: row.allocation_id,
@@ -45,8 +49,8 @@ function mapNote(row: SupabaseAllocationNoteRow): AllocationNote {
     source: row.source,
     createdAt: row.created_at,
     deletedAt: row.deleted_at,
-    authorName: row.author?.name,
-    authorAvatarUrl: row.author?.avatar_url ?? null,
+    authorName: author?.name,
+    authorAvatarUrl: author?.avatar_url ?? null,
   };
 }
 

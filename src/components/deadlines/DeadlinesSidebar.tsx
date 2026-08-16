@@ -4,24 +4,20 @@
 
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { DeadlinesAvailabilityCard } from '@/components/deadlines/DeadlinesAvailabilityCard';
+import {
+  DeadlinesAvailabilityCard,
+  type CapacityData,
+} from '@/components/deadlines/DeadlinesAvailabilityCard';
 import { DeadlinesCapacityShortcuts } from '@/components/deadlines/DeadlinesCapacityShortcuts';
 import { DeadlinesSuggestionsPreview } from '@/components/deadlines/DeadlinesSuggestionsPreview';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
+import type { EmployeeRecommendation } from '@/hooks/useDeadlinesRedistribution';
 
 export interface GlobalAssignmentItem {
   id: string;
   name: string;
   hours: number;
   employeeId?: string;
-}
-
-export interface SuggestionGroupPreview {
-  employeeId: string;
-  employeeName: string;
-  employeeAvatar?: string;
-  deficitHours: number;
-  projects: { projectId: string; projectName: string; transfers: unknown[] }[];
 }
 
 export interface EmployeeOption {
@@ -31,20 +27,11 @@ export interface EmployeeOption {
   avatarUrl?: string;
 }
 
-export interface CapacityData {
-  available: number;
-  total?: number;
-  absenceHours?: number;
-  eventHours?: number;
-  absenceDetails?: { type: string; hours: number }[];
-  eventDetails?: { name: string; hours: number }[];
-}
-
 export interface DeadlinesSidebarProps {
   employees: EmployeeOption[];
   getMonthlyCapacity: (employeeId: string) => CapacityData;
   getEmployeeAssignedHours: (employeeId: string) => number;
-  suggestionsPreview: SuggestionGroupPreview[];
+  suggestionsPreview: EmployeeRecommendation[];
   suggestionsEmptyMessage?: string | null;
   hasRestrictiveFilters?: boolean;
   onOpenSuggestionsFull: () => void;

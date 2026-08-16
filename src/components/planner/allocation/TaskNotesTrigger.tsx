@@ -24,10 +24,17 @@ export function TaskNotesTrigger({ allocationId, noteCount = 0, className, inlin
   const isMobile = useIsMobile();
   const hasNotes = noteCount > 0;
   const label = hasNotes ? t('taskNotes.open', 'Ver anotaciones') : t('taskNotes.addQuick', 'Añadir anotación');
+  const translateCount = t as unknown as (
+    key: string,
+    defaultValue: string,
+    options: { count: string | number },
+  ) => string;
   const countLabel =
     noteCount === 1
       ? t('taskNotes.countOne', '1 anotación')
-      : t('taskNotes.countMany', '{{count}} anotaciones', { count: noteCount > 9 ? '9+' : noteCount });
+      : translateCount('taskNotes.countMany', '{{count}} anotaciones', {
+          count: noteCount > 9 ? '9+' : noteCount,
+        });
   const tooltipTitle = hasNotes ? countLabel : t('taskNotes.addQuick', 'Añadir anotación');
   const tooltipAction = hasNotes
     ? t('taskNotes.clickToView', 'Clic para ver')

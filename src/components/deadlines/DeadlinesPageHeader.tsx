@@ -10,22 +10,16 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { useDateLocale } from '@/hooks/useDateLocale';
-import { DeadlinesAvailabilityCard } from '@/components/deadlines/DeadlinesAvailabilityCard';
+import {
+  DeadlinesAvailabilityCard,
+  type CapacityData,
+} from '@/components/deadlines/DeadlinesAvailabilityCard';
 
 export interface EmployeeOption {
   id: string;
   name: string;
   first_name?: string;
   avatarUrl?: string;
-}
-
-export interface CapacityData {
-  available: number;
-  total?: number;
-  absenceHours?: number;
-  eventHours?: number;
-  absenceDetails?: { type: string; hours: number }[];
-  eventDetails?: { name: string; hours: number }[];
 }
 
 export interface DeadlinesPageHeaderProps {
@@ -53,7 +47,14 @@ export function DeadlinesPageHeader({
   onDeleteMonth,
   isMobile,
   employees = [],
-  getMonthlyCapacity = () => ({ available: 0 }),
+  getMonthlyCapacity = () => ({
+    total: 0,
+    absenceHours: 0,
+    eventHours: 0,
+    available: 0,
+    absenceDetails: [],
+    eventDetails: [],
+  }),
   getEmployeeAssignedHours = () => 0,
 }: DeadlinesPageHeaderProps) {
   const { t } = useTranslation('app');
