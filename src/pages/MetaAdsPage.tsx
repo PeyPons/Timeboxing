@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import { useAgency } from '@/contexts/AgencyContext';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -87,12 +87,14 @@ export default function MetaAdsPage() {
   const [newRuleName, setNewRuleName] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const currentDay = now.getDate();
-  const daysRemaining = daysInMonth - currentDay;
+  const { currentDay, daysInMonth, daysRemaining } = useMemo(() => {
+    const now = new Date();
+    const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const day = now.getDate();
+    return { currentDay: day, daysInMonth: dim, daysRemaining: dim - day };
+  }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!currentAgency?.id) return;
     try {
       const [adsRes, settingsRes, accountsRes, rulesRes] = await Promise.all([
@@ -108,9 +110,9 @@ export default function MetaAdsPage() {
       setRegisteredAccounts(accountsRes.data || []);
       setSegmentationRules(rulesRes.data || []);
     } catch (error) { console.error('Error fetching data', error); } finally { setLoading(false); }
-  };
+  }, [currentAgency?.id]);
 
-  useEffect(() => { fetchData(); }, [currentAgency?.id]);
+  useEffect(() => { void fetchData(); }, [fetchData]);
 
   useRefreshMissingAdCurrencies(
     currentAgency?.id,
@@ -190,7 +192,7 @@ export default function MetaAdsPage() {
     };
 
     return () => cleanup();
-  }, [currentJobId, isSyncing]);
+  }, [currentJobId, isSyncing, fetchData, refreshLastSync, t]);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [syncLogs, isSyncing]);
 
@@ -289,7 +291,7 @@ export default function MetaAdsPage() {
     }
     if (searchTerm) { const lower = searchTerm.toLowerCase(); filtered = filtered.filter(c => c.client_name.toLowerCase().includes(lower) || c.campaigns.some(camp => camp.campaign_name.toLowerCase().includes(lower))); }
     return filtered.sort((a, b) => b.spent - a.spent);
-  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden, showZeroSpend, segmentationRules, now, currentDay, daysInMonth, daysRemaining]);
+  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden, showZeroSpend, segmentationRules, currentDay, daysInMonth, daysRemaining]);
 
   const globalStats = useMemo(() => {
     const totalBudget = reportData.reduce((acc, r) => acc + r.budget, 0), totalSpent = reportData.reduce((acc, r) => acc + r.spent, 0);

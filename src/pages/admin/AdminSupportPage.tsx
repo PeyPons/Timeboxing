@@ -109,7 +109,7 @@ export default function AdminSupportPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, agencyFilter]);
+  }, [statusFilter, agencyFilter, t]);
 
   const fetchAgencies = useCallback(async () => {
     try {
@@ -124,7 +124,7 @@ export default function AdminSupportPage() {
     } catch (e) {
       console.warn("[AdminSupportPage] Error loading agencies:", e);
     }
-  }, []);
+  }, [createAgencyId]);
 
   useEffect(() => {
     fetchTickets();
@@ -164,7 +164,7 @@ export default function AdminSupportPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedTicketId]);
+  }, [selectedTicketId, t]);
 
   const updateStatus = async (ticketId: string, newStatus: string) => {
     setUpdatingId(ticketId);

@@ -48,7 +48,7 @@ export function SearchBar() {
       }
     }
     return results;
-  }, [t, i18n.language, tableGroups]);
+  }, [t, tableGroups]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return [];

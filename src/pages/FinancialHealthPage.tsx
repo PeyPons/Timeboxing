@@ -387,12 +387,7 @@ export default function FinancialHealthPage() {
 
     const mergedCommonExpenseEntries = useMemo(
         () => collectCommonExpenseEntriesForMonth(currentAgency?.settings, commonExpensesMonthKey, departments),
-        [
-            currentAgency?.settings?.commonExpensesByMonth,
-            currentAgency?.settings?.commonExpensesRecurring,
-            commonExpensesMonthKey,
-            departments,
-        ]
+        [currentAgency?.settings, commonExpensesMonthKey, departments]
     );
 
     const employeePayrollById = useMemo(() => {
@@ -639,7 +634,7 @@ export default function FinancialHealthPage() {
             map.set(p.projectId, { cost, payrollCost, overheadCost, margin: fee - cost });
         });
         return map;
-    }, [projectMetricsForView, projectEmployeesMap, employees, projectByIdForAttr, projectTotalHoursFromBreakdown, hoursMode, effectiveCostMode, employeeMetricsForView, employeeHoursGlobalById, overheadByEmployee]);
+    }, [projectMetricsForView, projectEmployeesMap, employees, hoursMode, effectiveCostMode, employeeMetricsForView, employeeHoursGlobalById, overheadByEmployee]);
 
     // === KPI 2: Margen Neto Global === Coste = solo el coste atribuido a los proyectos visibles (filtro búsqueda).
     const totalInternalCost = useMemo(() => {

@@ -103,7 +103,7 @@ export default function AdminAgenciesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, t]);
 
   const filteredAgencies = planFilter === "all"
     ? agencies

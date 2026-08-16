@@ -137,7 +137,7 @@ export default function AgencyManagementPage() {
     };
 
     loadMembers();
-  }, [agencyId, hasAccess, hasAgencyAccess, getAgencyMembers]);
+  }, [agencyId, hasAccess, hasAgencyAccess, getAgencyMembers, t]);
 
   const handleDelete = (member: AgencyMember) => {
     setMemberToDelete(member);

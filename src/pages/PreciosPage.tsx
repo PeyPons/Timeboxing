@@ -120,7 +120,7 @@ export default function PreciosPage() {
       };
     }
     return map;
-  }, [t, i18n.language]);
+  }, [t]);
 
   const universalItems = i18nAsArray<{ title: string; desc: string }>(
     t('pricing.universal', { returnObjects: true }),

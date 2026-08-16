@@ -104,7 +104,7 @@ export default function OkrsPage() {
         if (currentUser && !adminSelectedEmployeeId) {
             setAdminSelectedEmployeeId(currentUser.id);
         }
-    }, [currentUser]);
+    }, [currentUser, adminSelectedEmployeeId]);
 
     const isAdminOrManager = hasPermission('can_access_agency_settings') || hasPermission('can_access_team');
 

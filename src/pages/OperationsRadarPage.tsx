@@ -173,7 +173,7 @@ export default function OperationsRadarPage() {
             });
         });
         return map;
-    }, [allocations, viewDate, projectMetrics]);
+    }, [allocations, viewDate, projectMetrics, currentAgency?.settings?.hoursTrackingPreference]);
 
     /** Estado único por proyecto (prioridad: exceso > retrasados > falta planificar > sin actividad > en regla).
      * Exceso de horas: (1) horas reales (actual) por encima del presupuesto (riesgo del radar) y además
@@ -300,7 +300,7 @@ export default function OperationsRadarPage() {
                 blockedTaskDetails
             };
         });
-    }, [allocations, viewDate, employeesForView, projects, employees, clients]);
+    }, [allocations, viewDate, employeesForView, projects, employees, clients, t]);
 
     type BlockingTaskRow = (typeof blockingTasksForView)[number];
 
