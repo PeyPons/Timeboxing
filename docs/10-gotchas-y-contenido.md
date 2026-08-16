@@ -40,8 +40,9 @@ Si hay CDN/Cloudflare delante: regla equivalente (HTML/bypass cache para `/` e `
 ### 10.0b Mes “anterior” al abrir o cambiar de página
 El mes del planificador/dashboard/rentabilidad/etc. se compartía en **`localStorage.planner_date`**: si alguien miraba un mes pasado, al volver otro día seguía ahí. Ahora es **`sessionStorage`** + formato `yyyy-MM` (`src/utils/plannerMonthStorage.ts`): misma pestaña = mes compartido entre vistas; nueva visita = mes actual. Deadlines no usa esta clave (estado local propio). Al escribir el mes se emite `taimbox:planner-month-change` para sincronizar banner y hooks en la misma pestaña.
 
-### 10.0c Tests contra BD real (solo lectura)
-No pegues contraseñas de admin en el chat ni en git. Usa el rol **`taimbox_ci_readonly`** (`scripts/create-ci-readonly-role.sh`) y el secreto **`TAIMBOX_READONLY_DATABASE_URL`**. Los smoke tests en `src/__tests__/integration/readonlyDb.smoke.test.ts` se saltan si el secreto falta. Detalle: [docs/05](05-integraciones-automatizacion.md) (§ Acceso solo lectura).
+### 10.0c Tests y datos de lectura
+- **Fixtures en el repo** (`src/test/fixtures/`): datos sintéticos; los tests unitarios siempre corren.
+- **Contraseñas / URLs de BD**: nunca en git. Opcional: env local o secreto `TAIMBOX_READONLY_DATABASE_URL` + rol `taimbox_ci_readonly` (`scripts/create-ci-readonly-role.sh`). Sin eso, los smoke live se saltan. Detalle: [docs/05](05-integraciones-automatizacion.md) (§ Acceso solo lectura).
 
 ### 10.1 Keys duplicadas en listas con datos potencialmente duplicados
 **Archivo afectado**: `GlobalPlanningInconsistencies.tsx`
