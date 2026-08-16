@@ -198,7 +198,7 @@ export function useWeeklyCloseMutations(viewDate: Date): UseWeeklyCloseMutations
       if (mvSlot) await loadDataForMonth(mvSlot.viewMonth);
       return weeklyCloseOk();
     },
-    [addAllocation, addWeeklyFeedback, allocations, getSlotsForTaskWeek, loadDataForMonth, updateAllocation]
+    [addAllocation, addWeeklyFeedback, allocations, getSlotsForTaskWeek, loadDataForMonth, updateAllocation, t]
   );
 
   const applyMoveToEmployee = useCallback(
@@ -284,6 +284,7 @@ export function useWeeklyCloseMutations(viewDate: Date): UseWeeklyCloseMutations
       loadDataForMonth,
       updateAllocation,
       viewDate,
+      t,
     ]
   );
 
@@ -306,7 +307,7 @@ export function useWeeklyCloseMutations(viewDate: Date): UseWeeklyCloseMutations
       });
       return fbOk ? weeklyCloseOk() : weeklyCloseFail(t('weeklyReport.mutations.justifyRegisterFailed'));
     },
-    [addWeeklyFeedback]
+    [addWeeklyFeedback, t]
   );
 
   const applyCancel = useCallback(
@@ -345,7 +346,7 @@ export function useWeeklyCloseMutations(viewDate: Date): UseWeeklyCloseMutations
       });
       return fbOk ? weeklyCloseOk() : weeklyCloseFail(t('weeklyReport.mutations.cancelRegisterFailed'));
     },
-    [addWeeklyFeedback, updateAllocation]
+    [addWeeklyFeedback, updateAllocation, t]
   );
 
   const applyKeep = useCallback(
@@ -371,7 +372,7 @@ export function useWeeklyCloseMutations(viewDate: Date): UseWeeklyCloseMutations
       });
       return fbOk ? weeklyCloseOk() : weeklyCloseFail(t('weeklyReport.mutations.taskCloseFailed'));
     },
-    [addWeeklyFeedback, updateAllocation]
+    [addWeeklyFeedback, updateAllocation, t]
   );
 
   const applyRollover = useCallback(
@@ -447,7 +448,7 @@ export function useWeeklyCloseMutations(viewDate: Date): UseWeeklyCloseMutations
       await loadDataForMonth(destSlot.viewMonth);
       return weeklyCloseOk();
     },
-    [currentAgency?.id, getSlotsForTaskWeek, loadDataForMonth]
+    [currentAgency?.id, getSlotsForTaskWeek, loadDataForMonth, t, dateLocale]
   );
 
   const applyDistribute = useCallback(
@@ -582,6 +583,8 @@ export function useWeeklyCloseMutations(viewDate: Date): UseWeeklyCloseMutations
       projects,
       updateAllocation,
       viewDate,
+      t,
+      dateLocale,
     ]
   );
 

@@ -475,7 +475,7 @@ export function AgencyProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     }
-  }, [user, mapSupabaseAgency]);
+  }, [user]);
 
   // Cargar agencia cuando el usuario esté autenticado. Guarda con prevUserIdRef evita recargas
   // masivas cuando Supabase refresca el token o re-emite sesión al cambiar de pestaña.

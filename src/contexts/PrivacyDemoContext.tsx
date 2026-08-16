@@ -15,10 +15,7 @@ export function PrivacyDemoProvider({ children }: { children: React.ReactNode })
   const { currentAgency } = useAgency();
   const isActive = Boolean(currentAgency?.settings?.enabledIntegrations?.anonymize_ads_for_video);
 
-  const anonymizer = useMemo(
-    () => createPrivacyAnonymizer(),
-    [currentAgency?.id]
-  );
+  const anonymizer = useMemo(() => createPrivacyAnonymizer(), []);
 
   const value = useMemo(() => ({ isActive, anonymizer }), [isActive, anonymizer]);
 

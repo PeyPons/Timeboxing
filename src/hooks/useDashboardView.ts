@@ -84,7 +84,7 @@ export function useDashboardView() {
         if (currentUser?.preferredView && !localViewOverride) {
             setLocalViewOverride(currentUser.preferredView);
         }
-    }, [currentUser?.preferredView]);
+    }, [currentUser?.preferredView, localViewOverride]);
 
     const isStrict = departmentConfig?.isViewStrict ?? false;
     const deptView: ViewMode = departmentConfig?.defaultView ?? 'weekly';

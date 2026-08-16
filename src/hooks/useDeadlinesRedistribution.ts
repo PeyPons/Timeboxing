@@ -413,6 +413,7 @@ export function useDeadlinesRedistribution(params: UseDeadlinesRedistributionPar
     suggestionsByEmployeeAndProject,
     includedProjectIds,
     onlySharedProjects,
+    minSuggestedTransferHours,
   ]);
 
   const suggestionsByEmployee = useMemo(() => {

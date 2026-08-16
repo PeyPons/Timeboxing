@@ -120,8 +120,6 @@ export function usePlannerData(options: UsePlannerDataOptions = {}) {
     currentUser,
     selectedDepartmentId,
     departments,
-    isPlatformAdmin,
-    workloadEmployeeIds,
   ]);
 
   const sortedProjects = useMemo(
