@@ -96,8 +96,9 @@ function shouldIncludeProjectInOperationsTracking(
   plannedHours: number,
   computedHours: number,
 ): boolean {
-  if (status !== "completed") return true;
-  return deadlineHours + plannedHours + computedHours > 0;
+  if (status === "active") return true;
+  // Completados/archivados: solo con tareas del mes (no deadline fantasma sin planner).
+  return plannedHours + computedHours > 0;
 }
 
 export function computePlanningCoherenceInconsistencies(params: {
@@ -145,6 +146,7 @@ export function computePlanningCoherenceInconsistencies(params: {
     const projectId = deadline.projectId;
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
+    if (project.status !== "active") return;
 
     const employeeMap = new Map<string, InconsistencyEmployeeItem>();
     let totalDeadline = 0;

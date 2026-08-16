@@ -299,6 +299,27 @@ VITE_META_APP_ID=<identificador_de_la_aplicacion_meta>
 
 **Dónde van en Docker:** las variables del bloque “contenedor `supabase-edge-functions`” se definen donde ya tienes `GOOGLE_CLIENT_ID` (por ejemplo `.env` junto al `docker-compose` de Supabase, o `environment:` del servicio `functions`). Ahí añade `META_APP_ID`, `META_APP_SECRET` y reinicia ese contenedor. `VITE_META_APP_ID` no se pone en Docker de funciones: va en el `.env` local/CI del **proyecto Vite** y se inyecta al hacer `npm run build`.
 
+#### Acceso solo lectura para tests / agentes (`taimbox_ci_readonly`)
+
+**Por defecto los tests no necesitan BD:** usan fixtures en `src/test/fixtures/` (datos sintéticos en el repo, sin contraseñas ni PII real).
+
+**Opcional — BD live solo lectura** (nunca commits de passwords):
+
+1. En el servidor, crea el rol:
+
+```bash
+cd /home/alex/Timeboxing && git pull
+export READONLY_PASSWORD="$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)"
+READONLY_HOST=127.0.0.1 READONLY_PORT=54322 ./scripts/create-ci-readonly-role.sh
+```
+
+2. Pon la URL solo en env local gitignored (`.cursor/mcp.env`) o en un secreto de Cursor/CI: **`TAIMBOX_READONLY_DATABASE_URL`**. No la subas al repo ni hace falta API pública.
+
+3. Smoke opcional: `TAIMBOX_READONLY_DATABASE_URL='…' npm run test:integration`  
+   Sin la variable, esos tests se **saltan**. SQL: [`scripts/sql/create_taimbox_ci_readonly_role.sql`](../scripts/sql/create_taimbox_ci_readonly_role.sql).
+
+El rol es `SELECT` (+ `BYPASSRLS`) en `public`, sin escritura. No es un endpoint público.
+
 #### Acceso a la base de datos desde Cursor (MCP)
 
 El workspace incluye un servidor MCP para **consultar y auditar** la instancia Supabase self-hosted sin abrir el SQL Editor a mano en cada revisión.

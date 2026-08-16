@@ -103,7 +103,7 @@ export function formatProjectName(
     const parts = name.split('-');
     if (parts.length > 1) {
       const lastPart = parts[parts.length - 1].trim();
-      const clientName = lastPart.replace(/^[\[({]|[\])}]$/g, '').trim();
+      const clientName = lastPart.replace(/^[[({]|[\])}]$/g, '').trim();
       if (clientName) {
         return `${prefix} ${clientName}`;
       }
@@ -128,6 +128,6 @@ export function formatProjectName(
   }
 
   // Fallback: use original name without patterns
-  return `${prefix} ${name.replace(/[\[\]()]/g, '').trim()}`;
+  return `${prefix} ${name.replace(/[[\]()]/g, '').trim()}`;
 }
 

@@ -142,7 +142,7 @@ serve(async (req) => {
         console.log(`Usuario Auth creado: ${userId}`)
 
         // 7. Crear agencia
-        let slug = generateSlug(cleanAgencyName)
+        const slug = generateSlug(cleanAgencyName)
         let finalSlug = slug
         let attempt = 0
         const maxAttempts = 5

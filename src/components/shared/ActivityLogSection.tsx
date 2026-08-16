@@ -363,7 +363,7 @@ export function ActivityLogSection({ currentMonth, maxItems }: ActivityLogSectio
 
                 if (hitCap) setLogsTruncated(true);
 
-                let lineageLogs: AuditLog[] = [];
+                const lineageLogs: AuditLog[] = [];
                 if (currentMonth && monthAllocationIds.length > 0) {
                     for (const chunk of chunkArray(monthAllocationIds, ALLOCATION_LOG_CHUNK)) {
                         const { data, error: lineageError } = await supabase
@@ -857,7 +857,8 @@ export function ActivityLogSection({ currentMonth, maxItems }: ActivityLogSectio
     const toggleNode = (id: string) => {
         setExpandedNodes(prev => {
             const next = new Set(prev);
-            next.has(id) ? next.delete(id) : next.add(id);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
             return next;
         });
     };

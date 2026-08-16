@@ -539,8 +539,12 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
       totals.set(employeeId, (totals.get(employeeId) ?? 0) + hours);
     };
 
+    const projectStatusById = new Map(projects.map((p) => [p.id, p.status]));
+
     deadlines.forEach((deadline) => {
       if (hiddenProjects.has(deadline.projectId) || deadline.isHidden) return;
+      // Proyectos cerrados/archivados no deben cargar capacidad aunque quede deadline huérfano.
+      if (projectStatusById.get(deadline.projectId) !== 'active') return;
       Object.entries(deadline.employeeHours ?? {}).forEach(([employeeId, raw]) => {
         add(employeeId, Number(raw) || 0);
       });
@@ -558,7 +562,7 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
     });
 
     return totals;
-  }, [deadlines, hiddenProjects, globalAssignments, employeesForView]);
+  }, [deadlines, hiddenProjects, globalAssignments, employeesForView, projects]);
 
   const getMonthlyCapacity = useCallback(
     (employeeId: string): MonthlyCapacityResult => monthlyCapacityByEmployee.get(employeeId) ?? emptyCapacity,
@@ -573,7 +577,13 @@ export function useDeadlinesPageData(params: UseDeadlinesPageDataParams) {
   const filteredProjects = useMemo(() => {
     const { searchTerm, filterId, showHidden, showUnassignedOnly, filterByEmployee, sortBy } =
       filterSnapshot;
-    let filtered = projects.filter((p) => p.status === 'active');
+    const deadlineProjectIds = new Set(
+      deadlines.filter((d) => d.month === selectedMonth).map((d) => d.projectId)
+    );
+    // Activos + no activos que ya tienen deadline este mes (huérfanos editables / borrables).
+    let filtered = projects.filter(
+      (p) => p.status === 'active' || deadlineProjectIds.has(p.id)
+    );
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();

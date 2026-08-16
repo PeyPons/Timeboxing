@@ -35,6 +35,8 @@ export interface ProjectItem {
   monthlyFee?: number;
   deliverableStartDate?: string | null;
   deliverableDueDate?: string | null;
+  /** Si no es active, la fila existe para poder editar/borrar un deadline huérfano. */
+  status?: 'active' | 'archived' | 'completed';
 }
 
 export interface ClientItem {
@@ -227,6 +229,16 @@ export function DeadlinesProjectList({
                             </span>
                             {isHidden && (
                               <EyeOff className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                            )}
+                            {project.status && project.status !== 'active' && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 bg-slate-50 border-slate-200 text-slate-600"
+                              >
+                                {project.status === 'completed'
+                                  ? t('deadlines.projectList.statusCompleted', 'Completado')
+                                  : t('deadlines.projectList.statusArchived', 'Archivado')}
+                              </Badge>
                             )}
                             {!isEditing &&
                               editingLocks[project.id] &&

@@ -263,8 +263,7 @@ export default function AdsPage() {
   useEffect(() => {
     if (!currentJobId || !isSyncing) return;
 
-    let intervalId: NodeJS.Timeout;
-    let channel = supabase.channel(`google-sync-${currentJobId}`);
+    const channel = supabase.channel(`google-sync-${currentJobId}`);
 
     const checkStatus = async () => {
       const { data } = await supabase.from('ads_sync_logs').select('*').eq('id', currentJobId).single();
@@ -289,18 +288,18 @@ export default function AdsPage() {
       }
     };
 
-    const cleanup = () => {
-      clearInterval(intervalId);
-      supabase.removeChannel(channel);
-    };
-
     // 1. Suscripción Realtime
     channel
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ads_sync_logs', filter: `id=eq.${currentJobId}` }, (payload) => handleUpdate(payload.new))
       .subscribe();
 
     // 2. Polling Loop (cada 2s)
-    intervalId = setInterval(checkStatus, 2000);
+    const intervalId = setInterval(checkStatus, 2000);
+
+    const cleanup = () => {
+      clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
 
     return () => cleanup();
   }, [currentJobId, isSyncing]);

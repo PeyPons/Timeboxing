@@ -224,7 +224,7 @@ export function WeeklyReportDialog({ open, onOpenChange, employeeId, viewDate, f
         : '';
       const projectLabel = formatProjectName(rawProjectName).toLowerCase();
       const rawTaskName = typeof (task as any).taskName === 'string' ? (task as any).taskName : '';
-      const taskLabel = rawTaskName.toLowerCase().replace(/\(transferida de[^\)]*\)/gi, '').trim();
+      const taskLabel = rawTaskName.toLowerCase().replace(/\(transferida de[^)]*\)/gi, '').trim();
       return projectLabel.includes(q) || taskLabel.includes(q);
     },
     [modalSearch, projects, formatProjectName]
