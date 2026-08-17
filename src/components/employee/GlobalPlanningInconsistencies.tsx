@@ -1,4 +1,5 @@
 import { useMemo, memo, useState, useEffect, useRef } from 'react';
+import { usePreserveListScrollAnchor } from '@/hooks/usePreserveListScrollAnchor';
 import { useAppAllocations, useAppEmployees, useAppProjects } from '@/contexts/AppContext';
 import { useAgency } from '@/contexts/AgencyContext';
 import { useDepartmentView } from '@/contexts/DepartmentViewContext';
@@ -348,14 +349,21 @@ export const GlobalPlanningInconsistencies = memo(function GlobalPlanningInconsi
       .sort((a, b) => b.effectiveH - a.effectiveH);
   }, [tasksModalProjectId, deliverableModalPhase, mergedPhaseAllocationsForModal, preference, employees]);
 
-  // Expandir todos solo si hay pocos; con muchos (ej. 100+) mantener colapsados para rendimiento
+  // Auto-expandir solo al cambiar el contexto de vista (mes, filtros, depto), no en cada
+  // evento Realtime: `inconsistencies` es un array nuevo en cada upsert y con 100+ proyectos
+  // reseteaba expandedProjects y saltaba el scroll.
+  const listContextKey = `${monthKey}|${selectedEmployeeId}|${selectedProjectId}|${selectedDepartmentId ?? ''}|${currentAgency?.id ?? ''}`;
+  const appliedAutoExpandKeyRef = useRef<string | null>(null);
   useEffect(() => {
+    if (isLoading) return;
+    if (appliedAutoExpandKeyRef.current === listContextKey) return;
+    appliedAutoExpandKeyRef.current = listContextKey;
     if (inconsistencies.length > 0 && inconsistencies.length <= coherenceAutoExpandMax) {
       setExpandedProjects(new Set(inconsistencies.map(inc => inc.projectId)));
-    } else if (inconsistencies.length > coherenceAutoExpandMax) {
+    } else {
       setExpandedProjects(new Set());
     }
-  }, [inconsistencies, coherenceAutoExpandMax]);
+  }, [listContextKey, isLoading, inconsistencies, coherenceAutoExpandMax]);
 
   const toggleProject = (projectId: string) => {
     setExpandedProjects(prev => {
@@ -399,6 +407,21 @@ export const GlobalPlanningInconsistencies = memo(function GlobalPlanningInconsi
   const collapseAll = () => setExpandedProjects(new Set());
   const allExpanded = filteredCoherence.length > 0 && filteredCoherence.every(inc => expandedProjects.has(inc.projectId));
   const noneExpanded = expandedProjects.size === 0;
+
+  const searchForScrollReset = hideProjectSearch ? (searchQueryProp ?? '') : coherenceSearchQuery;
+  const statusFilterForScrollReset = operationsRadar?.statusFilter ?? 'all';
+  const listScrollResetKey = `${listContextKey}|${statusFilterForScrollReset}|${searchForScrollReset}`;
+  const listScrollLayoutKey = filteredCoherence
+    .map((inc) => `${inc.projectId}:${inc.employees.length}:${inc.totalDifference}`)
+    .join('|');
+  const listScrollRecaptureKey = Array.from(expandedProjects).sort().join(',');
+  usePreserveListScrollAnchor({
+    containerRef: listTopRef,
+    resetKey: listScrollResetKey,
+    layoutKey: listScrollLayoutKey,
+    recaptureKey: listScrollRecaptureKey,
+    disabled: isLoading,
+  });
 
   if (isLoading) {
     return (
@@ -847,6 +870,7 @@ export const GlobalPlanningInconsistencies = memo(function GlobalPlanningInconsi
               return (
                 <div
                   key={`proj-${inc.projectId}`}
+                  data-scroll-anchor-id={inc.projectId}
                   className={cn(
                     "border rounded-lg p-3 transition-colors min-w-0 overflow-hidden",
                     isPositive ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200"
