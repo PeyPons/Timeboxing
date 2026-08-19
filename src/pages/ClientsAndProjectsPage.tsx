@@ -28,11 +28,11 @@ import {
   Minus, Eye, X, ChevronsUpDown, User, Target, Filter, LayoutGrid,
   AlertOctagon, CircleDashed, Ban, CheckCircle2, XCircle, Zap, EyeOff, Link as LinkIcon, Check
 } from 'lucide-react';
-import { cn, matchesAliasingRule } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { useProjectAliasing } from '@/hooks/useProjectAliasing';
 import { toast } from '@/lib/notify';
 import { INPUT_LIMITS } from '@/constants/inputLimits';
-import { format, subMonths, addMonths, isSameMonth, parseISO, getDaysInMonth, getDate, startOfMonth } from 'date-fns';
+import { format, addMonths, parseISO, startOfMonth } from 'date-fns';
 import { isAllocationInEffectiveMonth, getWeeksForMonth } from '@/utils/dateUtils';
 import { usePlanMonthNavigation } from '@/hooks/usePlanMonthNavigation';
 import { useSubscriptionLimits } from '@/hooks/useSubscriptionLimits';
@@ -63,6 +63,7 @@ import { ProjectPicker } from '@/components/planner/allocation/ProjectPicker';
 import { WeekPicker } from '@/components/planner/allocation/WeekPicker';
 import { EmployeePicker } from '@/components/planner/allocation/EmployeePicker';
 import { useTasksImpact } from '@/hooks/useTasksImpact';
+import { useClientsProjectsMonthData } from '@/hooks/useClientsProjectsMonthData';
 import type { ProjectBudgetStatus } from '@/hooks/useAllocationSheet';
 import { buildAllocationEditPreview, createPlannerBatchPreviewContext } from '@/utils/plannerBatchPreview';
 
@@ -361,275 +362,17 @@ export default function ClientsAndProjectsPage() {
     batchPreview: clientsEditPreview?.batchPreview ?? emptyBatchPreview,
   });
 
-  // Mes anterior para comparación
-  const prevMonth = subMonths(currentMonth, 1);
-
-  // Calcular el progreso del mes
-  const monthProgress = useMemo(() => {
-    const today = new Date();
-    if (!isSameMonth(today, currentMonth)) {
-      return today > currentMonth ? 100 : 0;
-    }
-    const daysInMonth = getDaysInMonth(currentMonth);
-    const currentDay = getDate(today);
-    return Math.round((currentDay / daysInMonth) * 100);
-  }, [currentMonth]);
-
-  // Análisis de proyectos con métricas detalladas
-  const projectsAnalysis = useMemo(() => {
-    return projects.map(project => {
-      const client = clients.find(c => c.id === project.clientId);
-      const monthTasks = allocations.filter(a =>
-        a.projectId === project.id &&
-        isAllocationInEffectiveMonth(a.weekStartDate, currentMonth)
-      );
-
-      const totalAssigned = monthTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
-      const completedTasks = monthTasks.filter(t => t.status === 'completed');
-      const pendingTasks = monthTasks.filter(t => t.status !== 'completed');
-
-      const hoursReal = completedTasks.reduce((sum, t) => sum + (t.hoursActual || 0), 0);
-      const hoursComputed = completedTasks.reduce((sum, t) => sum + getEffectiveCompletedHours(t, currentAgency?.settings?.hoursTrackingPreference), 0);
-      const gain = hoursComputed - hoursReal;
-
-      // Calcular uso efectivo: Computadas (de completadas) + Planificadas (de pendientes)
-      // Esta es la métrica real de consumo del presupuesto que usa el reporte de coherencia
-      const effectiveUsage = hoursComputed + pendingTasks.reduce((sum, t) => sum + t.hoursAssigned, 0);
-
-      const deadline = monthDeadlines.find(d => d.projectId === project.id);
-      const budget = getEffectiveBudget(project, deadline);
-      const minimum = project.minimumHours || 0;
-
-      // Lógica de horas objetivo según el usuario:
-      // - Si tiene budgetHours (horas asignadas): DEBE planificar TODAS
-      // - Si solo tiene minimumHours: DEBE planificar al menos esas
-      // - Si tiene ambas: DEBE planificar todas las budgetHours (las asignadas son obligatorias)
-      const targetHours = budget > 0 ? budget : minimum;
-
-      // Cálculos de estado
-      // Cálculos de estado
-      // Planning % se basa en effectiveUsage para reflejar cuánto "hueco" hemos llenado
-      const planningPct = targetHours > 0 ? (effectiveUsage / targetHours) * 100 : 0;
-      const executionPct = totalAssigned > 0 ? (hoursComputed / totalAssigned) * 100 : 0;
-
-      // Detección de problemas usando effectiveUsage para mayor precisión
-      // Falta planificar: si el uso efectivo (computado + pendiente) es menor al objetivo
-      const needsPlanning = minimum > 0
-        ? effectiveUsage < minimum
-        : (budget > 0 && effectiveUsage < budget);
-
-      const behindSchedule = monthProgress > 30 && executionPct < (monthProgress - 20);
-
-      // Over budget: si el uso efectivo supera el presupuesto
-      // Usamos effectiveUsage para detectar si la proyección ya se pasa
-      const overBudget = budget > 0 && effectiveUsage > budget;
-
-      const noActivity = targetHours > 0 && totalAssigned === 0;
-      const hasIssue = needsPlanning || behindSchedule || overBudget || noActivity;
-
-      // Empleados involucrados
-      const involvedEmployees = [...new Set(monthTasks.map(t => t.employeeId))];
-
-      return {
-        project,
-        client,
-        monthTasks,
-        totalAssigned,
-        completedTasks,
-        pendingTasks,
-        hoursReal,
-        hoursComputed,
-        gain,
-        budget,
-        minimum,
-        planningPct,
-        executionPct,
-        needsPlanning,
-        behindSchedule,
-        overBudget,
-        noActivity,
-        hasIssue,
-        involvedEmployees,
-        effectiveUsage
-      };
-    });
-  }, [projects, clients, allocations, currentMonth, monthProgress, monthDeadlines, currentAgency?.settings?.hoursTrackingPreference]);
-
-  // Agrupar proyectos por cliente
-  const clientsWithProjects = useMemo(() => {
-    // Identificar proyectos que coinciden con reglas de aliasing
-    const aliasingRules = currentAgency?.settings?.projectAliasingRules || [];
-
-    // Agrupar proyectos por regla de aliasing
-    const projectsByAliasRule = new Map<string, typeof projects>();
-
-    projects.forEach(project => {
-      const matchedRule = matchesAliasingRule(project.name, aliasingRules);
-      if (matchedRule && matchedRule.groupAsVirtualClient) {
-        const existing = projectsByAliasRule.get(matchedRule.id) || [];
-        existing.push(project);
-        projectsByAliasRule.set(matchedRule.id, existing);
-      }
-    });
-
-    const aliasedProjectIds = new Set(
-      [...projectsByAliasRule.values()].flat().map(p => p.id)
-    );
-
-    // Clientes regulares
-    const regularClients = clients.map(client => {
-      // Calcular horas a nivel cliente: planificadas (estimadas), computadas y ganancia
-      const clientProjectsForStats = projects.filter(p => p.clientId === client.id && !aliasedProjectIds.has(p.id));
-
-      // Horas planificadas (estimadas) - suma de todas las horas asignadas
-      const plannedHours = clientProjectsForStats.reduce((sum, project) => {
-        const analysis = projectsAnalysis.find(a => a.project.id === project.id);
-        return sum + (analysis?.totalAssigned || 0);
-      }, 0);
-
-      // Horas computadas - suma de horas computadas de tareas completadas
-      const computedHours = clientProjectsForStats.reduce((sum, project) => {
-        const analysis = projectsAnalysis.find(a => a.project.id === project.id);
-        return sum + (analysis?.hoursComputed || 0);
-      }, 0);
-
-      // Horas reales - suma de horas reales de tareas completadas
-      const realHours = clientProjectsForStats.reduce((sum, project) => {
-        const analysis = projectsAnalysis.find(a => a.project.id === project.id);
-        return sum + (analysis?.hoursReal || 0);
-      }, 0);
-
-      // Ganancia = computadas - reales
-      const gain = computedHours - realHours;
-
-      // Horas contratadas totales del cliente
-      const totalBudget = clientProjectsForStats.reduce((sum, p) => sum + (p.budgetHours || 0), 0);
-
-      // Por computar = asignadas - computadas (horas que faltan por facturar)
-      const pendingToCompute = totalBudget - computedHours;
-
-      // Contar proyectos con problemas de planificación
-      const projectsNeedingPlanning = clientProjectsForStats.filter(project => {
-        const analysis = projectsAnalysis.find(a => a.project.id === project.id);
-        return analysis?.needsPlanning || analysis?.noActivity;
-      }).length;
-
-      // Porcentaje basado en horas planificadas (no computadas)
-      const percentage = totalBudget > 0 ? round2((plannedHours / totalBudget) * 100) : 0;
-
-      // Calcular prevStats (mes anterior)
-      const prevMonthProjects = projects.filter(p => p.clientId === client.id && !aliasedProjectIds.has(p.id));
-      const prevPlannedHours = prevMonthProjects.reduce((sum, project) => {
-        const monthTasks = allocations.filter(a =>
-          a.projectId === project.id &&
-          isAllocationInEffectiveMonth(a.weekStartDate, prevMonth)
-        );
-        return sum + monthTasks.reduce((s, t) => s + t.hoursAssigned, 0);
-      }, 0);
-
-      const clientProjects = projects
-        .filter(p => p.clientId === client.id && !aliasedProjectIds.has(p.id) && p.status !== 'completed')
-        .map(p => {
-          const analysis = projectsAnalysis.find(a => a.project.id === p.id);
-          return {
-            project: p,
-            analysis,
-            hours: getProjectHoursForMonth(p.id, currentMonth)
-          };
-        });
-
-      // Empleados asignados este mes (con objetos completos para avatares)
-      const monthAllocations = allocations.filter(a =>
-        isAllocationInEffectiveMonth(a.weekStartDate, currentMonth) &&
-        clientProjects.some(p => p.project.id === a.projectId)
-      );
-      const assignedEmployeeIds = [...new Set(monthAllocations.map(a => a.employeeId))];
-      const assignedEmployees = assignedEmployeeIds
-        .map(id => employees.find(e => e.id === id))
-        .filter(Boolean) as typeof employees;
-
-      return {
-        client,
-        stats: {
-          used: plannedHours,  // Horas planificadas (estimadas)
-          computed: computedHours,  // Horas computadas
-          real: realHours,  // Horas reales
-          gain: gain,  // Ganancia (computadas - reales)
-          budget: totalBudget,  // Horas asignadas
-          pendingToCompute: pendingToCompute,  // Por computar (asignadas - computadas)
-          projectsNeedingPlanning: projectsNeedingPlanning,  // Proyectos sin planificar completa
-          percentage,
-          projects: clientProjects
-        },
-        prevStats: { used: prevPlannedHours, budget: totalBudget },
-        employees: assignedEmployees
-      };
-    });
-
-    // Agregar clientes virtuales para cada regla de aliasing con proyectos
-    projectsByAliasRule.forEach((aliasProjects, ruleId) => {
-      // Excluir completados por defecto
-      const visibleAliasProjects = aliasProjects.filter(p => p.status !== 'completed');
-      if (visibleAliasProjects.length > 0) {
-        const rule = aliasingRules.find(r => r.id === ruleId);
-        const aliasProjectsWithAnalysis = visibleAliasProjects.map(p => {
-          const analysis = projectsAnalysis.find(a => a.project.id === p.id);
-          return {
-            project: p,
-            analysis,
-            hours: getProjectHoursForMonth(p.id, currentMonth)
-          };
-        });
-
-        const totalUsed = aliasProjectsWithAnalysis.reduce((sum, p) => sum + p.hours.used, 0);
-        const totalBudget = aliasProjectsWithAnalysis.reduce((sum, p) => sum + p.hours.budget, 0);
-        const percentage = totalBudget > 0 ? (totalUsed / totalBudget) * 100 : 0;
-
-        const monthAllocations = allocations.filter(a =>
-          isAllocationInEffectiveMonth(a.weekStartDate, currentMonth) &&
-          visibleAliasProjects.some(p => p.id === a.projectId)
-        );
-        const assignedEmployeeIds = [...new Set(monthAllocations.map(a => a.employeeId))];
-        const assignedEmployees = assignedEmployeeIds
-          .map(id => employees.find(e => e.id === id))
-          .filter(Boolean) as typeof employees;
-
-        // Calcular horas planificadas, computadas y ganancia
-        const aliasPlannedHours = aliasProjectsWithAnalysis.reduce((sum, p) => sum + (p.analysis?.totalAssigned || 0), 0);
-        const aliasComputedHours = aliasProjectsWithAnalysis.reduce((sum, p) => sum + (p.analysis?.hoursComputed || 0), 0);
-        const aliasRealHours = aliasProjectsWithAnalysis.reduce((sum, p) => sum + (p.analysis?.hoursReal || 0), 0);
-        const aliasGain = aliasComputedHours - aliasRealHours;
-        const aliasPendingToCompute = totalBudget - aliasComputedHours;
-        const aliasPercentage = totalBudget > 0 ? round2((aliasPlannedHours / totalBudget) * 100) : 0;
-        const aliasProjectsNeedingPlanning = aliasProjectsWithAnalysis.filter(p =>
-          p.analysis?.needsPlanning || p.analysis?.noActivity
-        ).length;
-
-        regularClients.push({
-          client: {
-            id: ruleId,
-            name: rule?.virtualClientName || ruleId,
-            color: rule?.virtualClientColor || '#10b981'
-          } as Client,
-          stats: {
-            used: aliasPlannedHours,  // Horas planificadas
-            computed: aliasComputedHours,  // Horas computadas
-            real: aliasRealHours,  // Horas reales
-            gain: aliasGain,  // Ganancia
-            budget: totalBudget,  // Horas asignadas
-            pendingToCompute: aliasPendingToCompute,  // Por computar
-            projectsNeedingPlanning: aliasProjectsNeedingPlanning,  // Proyectos sin planificar
-            percentage: aliasPercentage,
-            projects: aliasProjectsWithAnalysis
-          },
-          prevStats: { used: 0, budget: 0 },
-          employees: assignedEmployees
-        });
-      }
-    });
-
-    return regularClients;
-  }, [clients, projects, projectsAnalysis, allocations, employees, currentMonth, prevMonth, getProjectHoursForMonth, currentAgency?.settings?.projectAliasingRules]);
+  const { monthProgress, projectsAnalysis, clientsWithProjects } = useClientsProjectsMonthData({
+    projects,
+    clients,
+    allocations,
+    employees,
+    currentMonth,
+    monthDeadlines,
+    hoursTrackingPreference: currentAgency?.settings?.hoursTrackingPreference,
+    projectAliasingRules: currentAgency?.settings?.projectAliasingRules,
+    getProjectHoursForMonth,
+  });
 
   /** Cliente virtual o real bajo el que se lista el proyecto (aliasing agrupa en otro id que `project.clientId`). */
   const focusSectionClientId = useMemo(() => {

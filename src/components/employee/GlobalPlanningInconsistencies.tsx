@@ -25,7 +25,7 @@ import type { Allocation, Deadline, GlobalAssignment } from '@/types';
 import { fetchDeadlinesForMonth } from '@/utils/deadlineUtils';
 import { fetchGlobalAssignmentsForMonth } from '@/utils/globalAssignmentsUtils';
 import { filterEmployeesForOperationalMonth } from '@/utils/employeeAssignmentVisibility';
-import { format, parseISO, endOfWeek, isSameMonth, startOfMonth, isBefore, isAfter, subDays, type Locale } from 'date-fns';
+import { format, parseISO, startOfMonth, isBefore, isAfter, subDays } from 'date-fns';
 import { normalizeDepartments, employeeBelongsToDepartment } from '@/utils/departmentUtils';
 import { SensitiveText } from '@/components/privacy/SensitiveText';
 import { usePrivacyDemo } from '@/contexts/PrivacyDemoContext';
@@ -37,24 +37,13 @@ import { DeliverableLifecycleBadge } from '@/components/projects/DeliverableLife
 import { PROJECT_TYPE_ENTREGABLE } from '@/config/projectTypePresets';
 import { getEffectiveCompletedHours } from '@/utils/hoursTracking';
 import { fetchAllocationsForDeliverablePhase } from '@/hooks/useDeliverableLifecycleCore';
-
-export type OperationsRadarStatusFilter = 'all' | ProjectStatusType | 'lifecycle-risk';
 import { AppTrans, useAppTranslation } from '@/hooks/useAppTranslation';
 import { useDateLocale } from '@/hooks/useDateLocale';
 import { usePermissions } from '@/hooks/usePermissions';
 import { CoherenceAllocationEditDialog } from '@/components/employee/CoherenceAllocationEditDialog';
+import { formatTaskWeekCalendarSpan } from '@/utils/planningCoherenceDisplay';
 
-const WEEK_START_MONDAY = { weekStartsOn: 1 as const };
-
-/** Rango calendario de la semana de la tarea (lun–dom), p. ej. "7–13 abr" o "31 mar – 6 abr". */
-function formatTaskWeekCalendarSpan(weekStartIso: string, locale: Locale): string {
-  const start = parseISO(weekStartIso);
-  const end = endOfWeek(start, WEEK_START_MONDAY);
-  if (isSameMonth(start, end)) {
-    return `${format(start, 'd', { locale })}–${format(end, 'd MMM', { locale })}`;
-  }
-  return `${format(start, 'd MMM', { locale })} – ${format(end, 'd MMM', { locale })}`;
-}
+export type OperationsRadarStatusFilter = 'all' | ProjectStatusType | 'lifecycle-risk';
 
 export interface GlobalPlanningOperationsRadarBridge {
   rowsWithStatus: ProjectRowItem[];

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAgency } from '@/contexts/AgencyContext';
 import { useForm } from 'react-hook-form';
@@ -35,6 +35,17 @@ import { AnonymizedContent } from '@/components/ads/AnonymizedContent';
 import { AdsStatCard } from '@/components/ads/AdsStatCard';
 import { AdsSyncStatusLine } from '@/components/ads/AdsSyncStatusLine';
 import { useAdsLastSync } from '@/hooks/useAdsLastSync';
+import { useAdsSyncJob } from '@/hooks/useAdsSyncJob';
+import { useClientSettingsMutations } from '@/hooks/useClientSettingsMutations';
+import {
+  computePacingMetrics,
+  formatAdsProjectName,
+  getAdsMonthBounds,
+  getRoasColor,
+  mapClientSettingsRows,
+  normalizeAdsAccountId,
+  type AdsClientSettingsMap,
+} from '@/utils/adsPacingUtils';
 
 const GoogleIcon = () => (
   <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
@@ -108,16 +119,6 @@ interface ClientPacing {
   cpa: number;
 }
 
-const formatProjectName = (name: string) => (name || '').replace(/^(Cliente|Client)\s*[-:]?\s*/i, '');
-const normalizeId = (id: string) => id ? id.trim() : '';
-
-const getRoasColor = (roas: number) => {
-  if (roas >= 4) return "text-emerald-600 bg-emerald-50 border-emerald-200";
-  if (roas >= 2) return "text-blue-600 bg-blue-50 border-blue-200";
-  if (roas >= 1) return "text-amber-600 bg-amber-50 border-amber-200";
-  return "text-red-600 bg-red-50 border-red-200";
-};
-
 const getStatusConfig = (status: string, t: any) => {
   switch (status) {
     case 'over': return { color: 'bg-red-500', text: t('ads.status.exceeded', 'Excedido'), icon: AlertTriangle, badgeClass: 'bg-red-100 text-red-700 border-red-200' };
@@ -132,7 +133,7 @@ export default function AdsPage() {
   const { currentAgency } = useAgency();
   const { isActive: isAnonymized, anonymizer } = useAnonymizeAds();
   const [rawData, setRawData] = useState<CampaignData[]>([]);
-  const [clientSettings, setClientSettings] = useState<Record<string, { budget: number; group_name: string; is_hidden: boolean; is_sales_account: boolean }>>({});
+  const [clientSettings, setClientSettings] = useState<AdsClientSettingsMap>({});
   const [registeredAccounts, setRegisteredAccounts] = useState<RegisteredAccount[]>([]);
   const { formatMoney, formatGlobalMoney, currencySymbolForClient } = useAdsFormatMoney(registeredAccounts);
   const [loading, setLoading] = useState(true);
@@ -146,10 +147,6 @@ export default function AdsPage() {
   const [expandedSubAccounts, setExpandedSubAccounts] = useState<Record<string, boolean>>({});
 
   // Modales
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncLogs, setSyncLogs] = useState<string[]>([]);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
-  const [syncProgress, setSyncProgress] = useState(0);
   const [editingClient, setEditingClient] = useState<{ id: string, name: string, group: string, hidden: boolean, isSales: boolean } | null>(null);
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [openRuleAccount, setOpenRuleAccount] = useState(false);
@@ -172,15 +169,9 @@ export default function AdsPage() {
     },
   });
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-
   // Datos del mes actual
-  const { currentDay, daysInMonth, daysRemaining } = useMemo(() => {
-    const now = new Date();
-    const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const day = now.getDate();
-    return { currentDay: day, daysInMonth: dim, daysRemaining: Math.max(1, dim - day + 1) };
-  }, []);
+  const monthBounds = useMemo(() => getAdsMonthBounds(), []);
+  const { currentDay, daysInMonth, daysRemaining } = monthBounds;
 
   const fetchData = useCallback(async () => {
     if (!currentAgency?.id) return;
@@ -193,18 +184,8 @@ export default function AdsPage() {
         supabase.from('segmentation_rules').select('*').eq('platform', 'google').eq('agency_id', currentAgency.id)
       ]);
 
-      const settingsMap: Record<string, { budget: number; group_name: string; is_hidden: boolean; is_sales_account: boolean }> = {};
-      settingsRes.data?.forEach((s: { client_id: string; budget_limit?: number; group_name?: string; is_hidden?: boolean; is_sales_account?: boolean }) => {
-        settingsMap[s.client_id] = {
-          budget: Number(s.budget_limit) || 0,
-          group_name: s.group_name || '',
-          is_hidden: s.is_hidden || false,
-          is_sales_account: s.is_sales_account !== false
-        };
-      });
-
       setRawData(adsRes.data || []);
-      setClientSettings(settingsMap);
+      setClientSettings(mapClientSettingsRows(settingsRes.data));
       setRegisteredAccounts(accountsRes.data || []);
       setSegmentationRules(rulesRes.data || []);
 
@@ -228,90 +209,31 @@ export default function AdsPage() {
     !loading,
   );
 
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const {
+    isSyncing,
+    setIsSyncing,
+    syncLogs,
+    syncStatus,
+    syncProgress,
+    scrollRef,
+    startSync: handleStartSync,
+  } = useAdsSyncJob({
+    platform: 'google',
+    agencyId: currentAgency?.id,
+    onCompleted: fetchData,
+    refreshLastSync,
+  });
 
-  const handleStartSync = async () => {
-    if (!currentAgency) {
-      toast.error(t('common.errorIdentifyingAgency', 'Error: No se ha identificado la agencia actual.'));
-      return;
-    }
-    setIsSyncing(true);
-    setSyncStatus('running');
-    setSyncLogs([t('ads.dialogs.sync.initGoogle', '🚀 Iniciando conexión con Google Ads...')]);
-    setSyncProgress(0);
-
-    try {
-      const { data, error } = await supabase.from('ads_sync_logs').insert({
-        status: 'pending',
-        logs: ['Esperando worker...'],
-        agency_id: currentAgency?.id
-      }).select().single();
-
-      if (error) throw error;
-      setCurrentJobId(data.id);
-
-      // Trigger Edge Function (Serverless)
-      const { error: funcError } = await supabase.functions.invoke('sync-google-ads', {
-        body: { job_id: data.id, agency_id: currentAgency?.id }
-      });
-
-      if (funcError) throw funcError;
-
-    } catch (err: any) {
-      setSyncStatus('error');
-      setSyncLogs(prev => [...prev, `❌ Error al iniciar sincronización: ${err.message}`]);
-      setIsSyncing(false);
-    }
-  };
-
-  // Efecto para manejar la sincronización (Realtime + Polling fallback)
-  useEffect(() => {
-    if (!currentJobId || !isSyncing) return;
-
-    const channel = supabase.channel(`google-sync-${currentJobId}`);
-
-    const checkStatus = async () => {
-      const { data } = await supabase.from('ads_sync_logs').select('*').eq('id', currentJobId).single();
-      if (data) handleUpdate(data);
-    };
-
-    const handleUpdate = (row: any) => {
-      if (row.logs) setSyncLogs(row.logs);
-
-      if (row.status === 'completed') {
-        setSyncStatus('completed');
-        setSyncProgress(100);
-        toast.success(t('ads.dialogs.sync.completed', 'Sincronización completada'));
-        fetchData();
-        void refreshLastSync();
-        cleanup();
-        setTimeout(() => { setIsSyncing(false); setCurrentJobId(null); }, 2000);
-      } else if (row.status === 'error') {
-        setSyncStatus('error');
-        toast.error(t('ads.dialogs.sync.error', 'Error en el proceso'));
-        cleanup();
-      }
-    };
-
-    // 1. Suscripción Realtime
-    channel
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ads_sync_logs', filter: `id=eq.${currentJobId}` }, (payload) => handleUpdate(payload.new))
-      .subscribe();
-
-    // 2. Polling Loop (cada 2s)
-    const intervalId = setInterval(checkStatus, 2000);
-
-    const cleanup = () => {
-      clearInterval(intervalId);
-      supabase.removeChannel(channel);
-    };
-
-    return () => cleanup();
-  }, [currentJobId, isSyncing, fetchData, refreshLastSync, t]);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [syncLogs, isSyncing]);
+  const {
+    saveBudget: handleSaveBudget,
+    saveClientConfig,
+  } = useClientSettingsMutations({
+    agencyId: currentAgency?.id,
+    setClientSettings,
+    refresh: fetchData,
+    budgetErrorMessage: 'Error guardando presupuesto',
+    configSuccessMessage: t('ads.toasts.configSaved'),
+  });
 
   const onAddRule = async (data: RuleFormValues) => {
     if (!currentAgency?.id) return;
@@ -346,37 +268,10 @@ export default function AdsPage() {
     }
   };
 
-  const handleSaveBudget = async (clientId: string, amount: string) => {
-    if (!currentAgency?.id) return;
-    const numAmount = parseFloat(amount);
-
-    setClientSettings(prev => ({
-      ...prev,
-      [clientId]: { ...prev[clientId], budget: isNaN(numAmount) ? 0 : numAmount }
-    }));
-
-    const { error } = await supabase.from('client_settings').upsert({
-      client_id: clientId,
-      budget_limit: isNaN(numAmount) ? 0 : numAmount,
-      agency_id: currentAgency.id
-    }, { onConflict: 'client_id' });
-
-    if (error) toast.error("Error guardando presupuesto");
-    else fetchData();
-  };
-
   const handleSaveClientSettings = async () => {
-    if (!editingClient || !currentAgency?.id) return;
-    await supabase.from('client_settings').upsert({
-      client_id: editingClient.id,
-      group_name: editingClient.group,
-      is_hidden: editingClient.hidden,
-      is_sales_account: editingClient.isSales,
-      agency_id: currentAgency.id
-    }, { onConflict: 'client_id' });
+    if (!editingClient) return;
+    await saveClientConfig(editingClient);
     setEditingClient(null);
-    fetchData();
-    toast.success(t('ads.toasts.configSaved'));
   };
 
   // Lógica principal de cálculo
@@ -403,7 +298,7 @@ export default function AdsPage() {
 
     // Ensure we init stats for registered accounts too (even if no current data)
     registeredAccounts.forEach(acc => {
-      if (!uniqueAccounts.find(u => normalizeId(u.id) === normalizeId(acc.account_id))) {
+      if (!uniqueAccounts.find(u => normalizeAdsAccountId(u.id, 'google') === normalizeAdsAccountId(acc.account_id, 'google'))) {
         uniqueAccounts.push({ id: acc.account_id, name: acc.account_name });
       }
     });
@@ -446,7 +341,7 @@ export default function AdsPage() {
       // ya que los IDs de google_ads_campaigns no coincidían con ad_accounts_config
 
       // Aplicar reglas de segmentación
-      const rulesForAccount = segmentationRules.filter(r => normalizeId(r.account_id) === normalizeId(row.client_id));
+      const rulesForAccount = segmentationRules.filter(r => normalizeAdsAccountId(r.account_id, 'google') === normalizeAdsAccountId(row.client_id, 'google'));
       if (rulesForAccount.length > 0) {
         const match = rulesForAccount.find(r => row.campaign_name.toLowerCase().includes(r.keyword.toLowerCase()));
         if (match) {
@@ -519,32 +414,28 @@ export default function AdsPage() {
         else finalBudget = value.autoDailyBudgetSum * 30.4;
       }
 
-      const spent = value.spent;
-      const avgDailySpend = currentDay > 0 ? spent / currentDay : 0;
       const currentDailyBudget = value.autoDailyBudgetSum;
-      // Proyección: si hay suma de presupuestos diarios en campañas activas, proyectamos
-      // gasto futuro con ese tope (coherente con "Diario actual" y con el diario recomendado).
-      // Si no, mantenemos el ritmo medio del mes (puede desalinearse si acabas de cambiar límites en Google).
-      const forecast =
-        currentDailyBudget > 0
-          ? spent + currentDailyBudget * daysRemaining
-          : avgDailySpend * daysInMonth;
-      const progress = finalBudget > 0 ? (spent / finalBudget) * 100 : 0;
-      const remainingBudget = Math.max(0, finalBudget - spent);
-      const recommendedDaily = daysRemaining > 0 ? remainingBudget / daysRemaining : 0;
+      const spent = value.spent;
+      const {
+        avgDailySpend,
+        forecast,
+        progress,
+        remainingBudget,
+        recommendedDaily,
+        status,
+      } = computePacingMetrics({
+        spent,
+        budget: finalBudget,
+        month: monthBounds,
+        // Preserve Google's campaign daily-budget forecast path.
+        currentDailyBudget,
+      });
       const globalRoas = spent > 0 ? value.total_conversions_val / spent : 0;
 
       // Nuevas métricas calculadas
       const ctr = value.total_impressions > 0 ? (value.total_clicks / value.total_impressions) * 100 : 0;
       const cpc = value.total_clicks > 0 ? spent / value.total_clicks : 0;
       const cpa = value.total_conversions > 0 ? spent / value.total_conversions : 0;
-
-      let status: 'ok' | 'risk' | 'over' | 'under' = 'ok';
-      if (finalBudget > 0) {
-        if (spent > finalBudget) status = 'over';
-        else if (forecast > finalBudget) status = 'risk';
-        else if (progress < 50 && currentDay > 20) status = 'under';
-      }
 
       report.push({
         client_id: key, client_name: value.name, is_group: value.is_group,
@@ -572,7 +463,7 @@ export default function AdsPage() {
     }
 
     return filtered.sort((a, b) => b.spent - a.spent);
-  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden, showZeroSpend, segmentationRules, currentDay, daysInMonth, daysRemaining]);
+  }, [rawData, clientSettings, registeredAccounts, searchTerm, showHidden, showZeroSpend, segmentationRules, daysInMonth, monthBounds]);
 
   // Estadísticas globales
   const globalStats = useMemo(() => {
@@ -777,7 +668,7 @@ export default function AdsPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <div>
                             <AnonymizedContent isActive={isAnonymized} className="font-bold text-lg text-slate-900" asBlock placeholder={anonymizer.account(client.client_id)}>
-                              {formatProjectName(client.client_name)}
+                              {formatAdsProjectName(client.client_name)}
                             </AnonymizedContent>
                             {isAnonymized && (client.realIdsList[0]?.id || client.client_id) && (
                               <div className="text-[10px] font-mono text-slate-400 mt-0.5">
@@ -1024,7 +915,7 @@ export default function AdsPage() {
                                           </span>
                                           {client.is_group && (camp.original_client_name || camp.original_client_id) && (
                                             <AnonymizedContent isActive={isAnonymized} className="truncate max-w-[100px]" placeholder={anonymizer.account(camp.original_client_id || camp.client_id)}>
-                                              | {formatProjectName(camp.original_client_name || '')}
+                                              | {formatAdsProjectName(camp.original_client_name || '')}
                                             </AnonymizedContent>
                                           )}
                                         </div>
@@ -1117,7 +1008,7 @@ export default function AdsPage() {
                                       <td className="px-3 py-2.5 font-medium text-slate-700">
                                         <div>
                                           <AnonymizedContent isActive={isAnonymized} placeholder={anonymizer.account(sub.id)}>
-                                            {formatProjectName(sub.name)}
+                                            {formatAdsProjectName(sub.name)}
                                           </AnonymizedContent>
                                           {isAnonymized && (
                                             <div className="text-[10px] font-mono text-slate-400 mt-0.5">ID: {sub.id}</div>
@@ -1385,7 +1276,7 @@ export default function AdsPage() {
                     <div key={rule.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
                       <div className="flex items-center gap-3 flex-wrap">
                         <Badge variant="outline" className="font-mono text-xs">
-                          {normalizeId(rule.account_id).slice(0, 10)}...
+                          {normalizeAdsAccountId(rule.account_id, 'google').slice(0, 10)}...
                         </Badge>
                         <span className="text-sm text-slate-500">
                           {t('ads.dialogs.splitAccounts.ifContainsLabel', { keyword: rule.keyword, defaultValue: `Si contiene "${rule.keyword}"` })}

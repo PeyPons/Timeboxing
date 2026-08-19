@@ -8,12 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAppAllocationActions, useAppAllocations, useAppEmployees, useAppProjects, useAppWeeklyFeedback } from '@/contexts/AppContext';
 import { useAgency } from '@/contexts/AgencyContext';
 import { Allocation, Project } from '@/types';
-import { CalendarDays, X, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, TrendingUp, TrendingDown, CheckCircle2, Users, ChevronDown, Palmtree, Zap, Clock, LayoutGrid, Calendar, FoldVertical, UnfoldVertical, ArrowUpDown, SortAsc, SortDesc, Filter, SlidersHorizontal, ArrowRightLeft, Lock, Check, Plus, Link as LinkIcon, AlertTriangle, AlertOctagon } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, MoreHorizontal, ArrowRightCircle, Search, TrendingUp, TrendingDown, CheckCircle2, Users, ChevronDown, Palmtree, Zap, Clock, LayoutGrid, Calendar, FoldVertical, UnfoldVertical, ArrowUpDown, SortAsc, SortDesc, Filter, SlidersHorizontal, ArrowRightLeft, Lock, Check, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWeeksForMonth, getStorageKey, isAllocationInEffectiveMonth, getWeekEndDate } from '@/utils/dateUtils';
 import { useWeeklyCloseDay } from '@/hooks/useWeeklyCloseDay';
@@ -28,7 +26,6 @@ import { useAllocationActions } from '@/hooks/useAllocationActions';
 import { useAllocationNoteCountsForEmployeeMonth } from '@/hooks/useAllocationNotes';
 import { TaskNotesTrigger } from '@/components/planner/allocation/TaskNotesTrigger';
 import { AllocationProjectHeader } from '@/components/planner/allocation/AllocationProjectHeader';
-import { AllocationTaskRow } from '@/components/planner/allocation/AllocationTaskRow';
 import { PlannerTaskContextMenu } from '@/components/planner/allocation/PlannerTaskContextMenu';
 import { AllocationSheetHeader } from '@/components/planner/allocation/AllocationSheetHeader';
 import {
@@ -37,11 +34,9 @@ import {
   type PlannerSheetViewMode,
 } from '@/components/planner/allocation/plannerSheetViewMode';
 import type { WeekStripItemSummary } from '@/components/planner/allocation/allocationWeekMetricsUtils';
-import { resolveDisplayStatus, weekCardSurfaceClass } from '@/components/planner/allocation/allocationWeekMetricsUtils';
-import { AllocationMonthWeekCardHeader } from '@/components/planner/allocation/AllocationMonthWeekCardHeader';
-import { AllocationMonthProjectCardHeader } from '@/components/planner/allocation/AllocationMonthProjectCardHeader';
+import { resolveDisplayStatus } from '@/components/planner/allocation/allocationWeekMetricsUtils';
+import { AllocationMonthWeekColumn } from '@/components/planner/allocation/AllocationMonthWeekColumn';
 import { MonthWeekScrollControls } from '@/components/planner/allocation/MonthWeekScrollControls';
-import { ScrollWheelArea } from '@/components/ui/scroll-wheel-area';
 import { scrollChildIntoHorizontalView, useHorizontalPanScroll } from '@/hooks/useHorizontalPanScroll';
 import { TaskTimer } from '@/components/employee/TaskTimer';
 import { BatchTaskRow } from '@/components/planner/BatchTaskRow';
@@ -61,6 +56,7 @@ import { SensitiveText } from '@/components/privacy/SensitiveText';
 import { useAllocationSheetMonthData } from '@/hooks/useAllocationSheetMonthData';
 import { round2 } from '@/utils/numbers';
 import { AllocationTransferBadge } from '@/components/planner/allocation/AllocationTransferBadge';
+import { AllocationProjectDetailPanel } from '@/components/planner/allocation/AllocationProjectDetailPanel';
 import {
   cleanTransferredTaskName,
   filterAllocationsForPlannerDisplay,
@@ -77,10 +73,6 @@ interface AllocationSheetProps {
 }
 
 type SortOption = 'budget_desc' | 'budget_asc' | 'my_hours_desc' | 'my_hours_asc' | 'name_asc' | 'name_desc';
-
-/** Ancho fijo por columna en vista mes con scroll horizontal (evita que semanas vacías queden más estrechas). */
-const MONTH_SCROLL_WEEK_COL_CLASS =
-  'flex-none w-[280px] sm:w-[300px] snap-center';
 
 export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, viewDateContext }: AllocationSheetProps) {
   const { t } = useAppTranslation();
@@ -557,155 +549,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
       if (!aCompleted && bCompleted) return -1;
       return 0;
     });
-  };
-
-  // Contenido reutilizable: desglose del proyecto (panel lateral y Sheet móvil)
-  const renderProjectDetail = (projectId: string, onClose: () => void) => {
-    const project = getProjectById(projectId);
-    const budgetStatus = getProjectBudgetStatus(projectId);
-    const { totalComputed, totalPlanned, budgetMax, budgetMin, percentage, status, breakdown = [] } = budgetStatus || {};
-    const myData = (breakdown || []).find(b => b.employeeId === employeeId);
-    const exceededBy = totalComputed > budgetMax ? totalComputed - budgetMax : 0;
-    const isExact100 = budgetMax > 0 && Math.abs(totalComputed - budgetMax) < 0.1;
-    const isAtMinimum = budgetMin > 0 && totalComputed >= budgetMin && (budgetMax === 0 || totalComputed <= budgetMax);
-    const statusConfig = {
-      healthy: { color: 'bg-emerald-500', textColor: 'text-emerald-700', label: t('planner.allocationSheet.budgetStatus.healthy', 'Saludable') },
-      warning: { color: 'bg-amber-500', textColor: 'text-amber-700', label: t('planner.allocationSheet.budgetStatus.warning', 'Cerca del límite') },
-      overload: { color: 'bg-red-500', textColor: 'text-red-700', label: t('planner.allocationSheet.budgetStatus.overload', 'Excedido') },
-      under: { color: 'bg-blue-500', textColor: 'text-blue-700', label: t('planner.allocationSheet.budgetStatus.under', 'Por debajo') }
-    };
-    const config = statusConfig[status];
-    return (
-      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
-        <div className="bg-primary/10 border-b px-4 py-3 flex items-center justify-between">
-          <h3 className="font-bold text-sm text-slate-800 truncate flex-1" title={project?.name}>
-            <SensitiveText kind="project" id={projectId}>
-              {formatProjectName(project?.name || 'Proyecto')}
-            </SensitiveText>
-          </h3>
-          <Button variant="ghost" size="sm" className="h-9 w-9 min-h-[44px] min-w-[44px] p-0 hover:bg-indigo-100 shrink-0" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="p-4 space-y-4 overflow-y-auto max-h-[70vh]">
-          {budgetMax > 0 && (
-            <div className="space-y-2">
-              <div className="text-[10px] font-semibold text-slate-500 uppercase">{t('planner.allocationSheet.projectDetail.clientTotal')}</div>
-              <div className="space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">{t('planner.allocationSheet.projectDetail.assigned')}</span>
-                  <span className="font-medium">{budgetMin > 0 ? `${budgetMin}-` : ''}{budgetMax}h</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">{t('planner.allocationSheet.projectDetail.planned')}</span>
-                  <span className="text-blue-600">{totalPlanned.toFixed(1)}h</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">{t('planner.allocationSheet.projectDetail.computed')}</span>
-                  <span className={cn("font-bold", status === 'overload' ? 'text-red-600' : 'text-emerald-600')}>
-                    {totalComputed.toFixed(1)}h
-                  </span>
-                </div>
-              </div>
-              <div className="mt-3">
-                <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className={cn("h-full", isExact100 || isAtMinimum ? "bg-emerald-500" : config.color)}
-                    style={{ width: `${Math.min(percentage, 100)}%` }}
-                  />
-                </div>
-                <div className="flex justify-between items-center mt-1">
-                  <span className={cn("text-[10px] font-medium", isExact100 || isAtMinimum ? "text-emerald-700" : config.textColor)}>
-                    {t('planner.allocationSheet.projectDetail.usedPct', { percent: Math.round(percentage) })}
-                  </span>
-                  {exceededBy > 0 && (
-                    <span className="text-[10px] font-bold text-red-600">
-                      {t('planner.allocationSheet.projectDetail.excess', { hours: exceededBy.toFixed(1) })}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {(() => {
-                const projection = totalPlanned + totalComputed;
-                return (
-                  <>
-                    {status === 'overload' && (
-                      <div className="bg-red-50 text-red-700 text-[11px] p-2 rounded border border-red-200 flex items-center gap-2">
-                        <AlertOctagon className="w-4 h-4 flex-shrink-0" />
-                        <span>{t('planner.allocationSheet.projectDetail.overloadWarning')}</span>
-                      </div>
-                    )}
-                    {status === 'warning' && (
-                      <div className="bg-amber-50 text-amber-700 text-[11px] p-2 rounded border border-amber-200 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                        {projection > budgetMax ? (
-                          <span>
-                            {t('planner.allocationSheet.projectDetail.projectionOverLimit', {
-                              projection: projection.toFixed(1),
-                            })}
-                          </span>
-                        ) : (
-                          <span>
-                            {t('planner.allocationSheet.projectDetail.hoursRemaining', {
-                              hours: (budgetMax - totalComputed).toFixed(1),
-                            })}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {projection > budgetMax && status !== 'overload' && status !== 'warning' && (
-                      <div className="bg-orange-50 text-orange-700 text-[11px] p-2 rounded border border-orange-200 flex items-center gap-2 mt-2">
-                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                        <span>
-                          {t('planner.allocationSheet.projectDetail.projectionOverBudget', {
-                            projection: projection.toFixed(1),
-                          })}
-                        </span>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-              {breakdown.length > 1 && (
-                <div className="border-t pt-3">
-                  <div className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 uppercase mb-2">
-                    <Users className="w-3 h-3" /> {t('planner.allocationSheet.projectDetail.team', { count: breakdown.length })}
-                  </div>
-                  <div className="space-y-1.5">
-                    {breakdown.map(({ employeeId: empId, employeeName, computed, planned }) => {
-                      const isMe = empId === employeeId;
-                      const emp = (employees || []).find(e => e.id === empId);
-                      return (
-                        <div key={empId} className={cn(
-                          "text-xs px-2 py-1.5 rounded flex items-center gap-2",
-                          isMe ? "bg-primary/10 border border-indigo-100" : "bg-slate-50"
-                        )}>
-                          <Avatar className="h-6 w-6 border border-slate-200">
-                            <AvatarImage src={emp?.avatarUrl} />
-                            <AvatarFallback className="text-[10px] bg-slate-100">
-                              {employeeName.substring(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <div className={cn("font-medium truncate", isMe ? "text-indigo-700" : "text-slate-600")}>
-                              <SensitiveText kind="employee" id={empId}>{employeeName}</SensitiveText> {isMe && t('planner.allocationSheet.you', '(you)')}
-                            </div>
-                            <div className="flex gap-3 text-[10px] mt-0.5">
-                              <span className="text-blue-600">{t('planner.allocationSheet.projectDetail.planShort')} {planned.toFixed(1)}h</span>
-                              <span className="text-emerald-600">{t('planner.allocationSheet.projectDetail.compShort')} {computed.toFixed(1)}h</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -1460,26 +1303,6 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                       }
 
                       // VISTA COMPACTA para vista mensual (múltiples semanas)
-                      // Mostrar loading si está cargando
-                      if (isGlobalLoading || isLoadingTasks) {
-                        return (
-                          <div
-                            key={weekStr}
-                            data-week-index={index}
-                            className={cn(
-                              'flex flex-col gap-2 p-3 rounded-xl border bg-white min-h-[280px] animate-pulse',
-                              isMonthView && 'h-full min-h-0',
-                              isMonthScrollLayout
-                                ? MONTH_SCROLL_WEEK_COL_CLASS
-                                : 'min-w-0 w-full'
-                            )}
-                          >
-                            <div className="h-16 bg-slate-100 rounded-lg" />
-                            <div className="flex-1 bg-slate-50 rounded-lg min-h-[180px]" />
-                          </div>
-                        );
-                      }
-
                       const weekSummary: WeekStripItemSummary = weekStripSummaries[index] ?? {
                         planHours: weekEst,
                         loadHours: round2(load.hours),
@@ -1492,160 +1315,59 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                       const cardStatus = resolveDisplayStatus(weekSummary);
 
                       return (
-                        <div
+                        <AllocationMonthWeekColumn
                           key={weekStr}
-                          data-week-index={index}
-                          className={cn(
-                            'flex flex-col gap-2 p-2.5 sm:p-3 rounded-xl border min-h-[280px]',
-                            isMonthView && 'h-full min-h-0',
-                            weekCardSurfaceClass(cardStatus),
-                            isMonthScrollLayout &&
-                              cn(MONTH_SCROLL_WEEK_COL_CLASS, 'shadow-sm'),
-                            isMonthGridLayout &&
-                              'min-w-0 w-full shadow-sm hover:shadow-md transition-shadow'
-                          )}
-                        >
-                          <AllocationMonthWeekCardHeader
-                            weekIndex={index}
-                            weekDateLabel={weekDateLabel}
-                            summary={weekSummary}
-                            loadPercentage={load.percentage}
-                            breakdown={load.breakdown}
-                            compactMetrics={false}
-                          />
-
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="w-full shrink-0 gap-1.5 border-dashed border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 hover:border-indigo-300"
-                            onClick={() => startAdd(week.weekStart)}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            {t('planner.allocationSheet.addTask', 'Añadir tarea')}
-                          </Button>
-
-                          {/* LISTA TAREAS */}
-                          <ScrollWheelArea className={cn('flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0', isMobile ? 'pr-2' : 'pr-0.5')}>
-                            {sortedGroups.length === 0 ? (
-                              <p className="text-center py-4 text-xs text-slate-400">{t('planner.allocationSheet.noTasks', 'Sin tareas')}</p>
-                            ) : sortedGroups.map(([projId, projAllocations]) => {
-                              const project = getProjectById(projId);
-                              const allCompleted = projAllocations.every(a => a.status === 'completed') && !projAllocations.some(a => recentlyToggled.has(a.id));
-                              const isCollapsed = autoExpand ? collapsedProjects.has(projId) : !collapsedProjects.has(projId);
-                              const sortedTasks = sortTasks(projAllocations);
-
-                              // Calcular horas del empleado actual en este proyecto
-                              const completedCount = projAllocations.filter(a => a.status === 'completed').length;
-                              const totalCount = projAllocations.length;
-                              const myHoursInProject = {
-                                estimated: round2(projAllocations.reduce((sum, a) => sum + (a.hoursAssigned || 0), 0)),
-                                completed: completedCount,
-                                computed: round2(projAllocations.filter(a => a.status === 'completed').reduce((sum, a) => sum + getEffectiveCompletedHours(a, preference), 0))
-                              };
-
-                              const isSelected = selectedProjectId === projId;
-
-                              return (
-                                <Collapsible key={projId} open={!isCollapsed} onOpenChange={() => toggleProjectCollapse(projId)}>
-                                  <div className={cn(
-                                    "bg-white border rounded-lg overflow-hidden transition-all duration-200",
-                                    allCompleted && "opacity-75 hover:opacity-100",
-                                    isSelected && "ring-2 ring-indigo-400 border-indigo-300",
-                                    !isCollapsed && "shadow-sm"
-                                  )}>
-                                    <div className="relative group flex items-stretch">
-                                      <CollapsibleTrigger asChild>
-                                        <button
-                                          type="button"
-                                          className={cn(
-                                            'flex-1 min-w-0 text-left cursor-pointer',
-                                            allCompleted ? 'bg-emerald-50/60' : 'hover:bg-slate-50'
-                                          )}
-                                        >
-                                          <AllocationMonthProjectCardHeader
-                                            projectId={projId}
-                                            projectName={formatProjectName(project?.name || 'Proyecto')}
-                                            allCompleted={allCompleted}
-                                            completedCount={completedCount}
-                                            totalCount={totalCount}
-                                            estimatedHours={myHoursInProject.estimated}
-                                            isCollapsed={isCollapsed}
-                                          />
-                                        </button>
-                                      </CollapsibleTrigger>
-                                      {isMonthView && (
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="sm"
-                                              className={cn(
-                                                'h-auto self-stretch rounded-none border-l px-2.5 shrink-0 hover:bg-indigo-50 hover:text-indigo-700',
-                                                isSelected && 'bg-indigo-50 text-indigo-700'
-                                              )}
-                                              aria-label={t('planner.allocationSheet.teamAndBudgetAria')}
-                                              onClick={() => setSelectedProjectId(isSelected ? null : projId)}
-                                            >
-                                              <Users className="w-3.5 h-3.5" />
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent side="left" className="text-xs">
-                                            {t('planner.allocationSheet.teamAndBudget')}
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      )}
-                                    </div>
-                                    <CollapsibleContent>
-                                      <div className="divide-y divide-slate-100 border-t">
-                                        {sortedTasks.map(alloc => (
-                                          <AllocationTaskRow
-                                            key={alloc.id}
-                                            alloc={alloc}
-                                            weekIndex={index}
-                                            isInlineEditing={inlineEditingId === alloc.id}
-                                            inlineNameValue={inlineNameValue}
-                                            onInlineNameChange={setInlineNameValue}
-                                            onSaveInline={() => saveInlineEdit(alloc)}
-                                            onStartInlineEdit={() => startInlineEdit(alloc)}
-                                            onToggleCompletion={() => toggleTaskCompletionWithSums(alloc)}
-                                            onUpdateInlineHours={(field, value) => updateInlineHours(alloc, field, value)}
-                                            onStartEditFull={() => startEditFull(alloc)}
-                                            onMoveTask={(targetWeekStart) => moveTaskToWeek(alloc, targetWeekStart)}
-                                            nextWeekStart={weeks[(index + 1) % weeks.length].weekStart}
-                                            employees={employees}
-                                            allocations={allocations}
-                                            outgoingTransfers={outgoingTransfers}
-                                            weeklyFeedback={weeklyFeedback}
-                                            showAllWeeks={isMonthView}
-                                            setTransferTask={setTransferTask}
-                                            setTransferDialogOpen={setTransferDialogOpen}
-                                            isWeeklyEnabled={isWeeklyEnabled}
-                                            isMobile={isMobile}
-                                            showTaskTimer={isTimeTrackerEnabled}
-                                            onTimeLogged={handleTimeLogged}
-                                            timeEntriesSum={timeEntrySumsByAllocationId[alloc.id]}
-                                            noteCount={noteCounts[alloc.id] ?? 0}
-                                            ownerEmployeeId={employeeId}
-                                            onOpenWeeklyForTask={
-                                              isWeeklyEnabled
-                                                ? (a) => {
-                                                    setWeeklyFocusAllocationId(a.id);
-                                                    setWeeklyOpen(true);
-                                                  }
-                                                : undefined
-                                            }
-                                          />
-                                        ))}
-                                      </div>
-                                    </CollapsibleContent>
-                                  </div>
-                                </Collapsible>
-                              );
-                            })}
-                          </ScrollWheelArea>
-                        </div>
+                          weekStr={weekStr}
+                          weekIndex={index}
+                          isLoading={isGlobalLoading || isLoadingTasks}
+                          isMonthView={isMonthView}
+                          isMonthScrollLayout={isMonthScrollLayout}
+                          isMonthGridLayout={isMonthGridLayout}
+                          weekDateLabel={weekDateLabel}
+                          weekSummary={weekSummary}
+                          cardStatus={cardStatus}
+                          load={load}
+                          sortedGroups={sortedGroups}
+                          week={week}
+                          weeks={weeks}
+                          getProjectById={getProjectById}
+                          formatProjectName={formatProjectName}
+                          recentlyToggled={recentlyToggled}
+                          autoExpand={autoExpand}
+                          collapsedProjects={collapsedProjects}
+                          toggleProjectCollapse={toggleProjectCollapse}
+                          sortTasks={sortTasks}
+                          selectedProjectId={selectedProjectId}
+                          setSelectedProjectId={setSelectedProjectId}
+                          onStartAdd={startAdd}
+                          inlineEditingId={inlineEditingId}
+                          inlineNameValue={inlineNameValue}
+                          setInlineNameValue={setInlineNameValue}
+                          saveInlineEdit={saveInlineEdit}
+                          startInlineEdit={startInlineEdit}
+                          toggleTaskCompletionWithSums={toggleTaskCompletionWithSums}
+                          updateInlineHours={updateInlineHours}
+                          startEditFull={startEditFull}
+                          moveTaskToWeek={moveTaskToWeek}
+                          employees={employees}
+                          allocations={allocations}
+                          outgoingTransfers={outgoingTransfers}
+                          weeklyFeedback={weeklyFeedback}
+                          setTransferTask={setTransferTask}
+                          setTransferDialogOpen={setTransferDialogOpen}
+                          isWeeklyEnabled={isWeeklyEnabled}
+                          isMobile={isMobile}
+                          isTimeTrackerEnabled={isTimeTrackerEnabled}
+                          onTimeLogged={handleTimeLogged}
+                          timeEntrySumsByAllocationId={timeEntrySumsByAllocationId}
+                          noteCounts={noteCounts}
+                          employeeId={employeeId}
+                          onOpenWeeklyForTask={(a) => {
+                            setWeeklyFocusAllocationId(a.id);
+                            setWeeklyOpen(true);
+                          }}
+                          hoursTrackingPreference={preference}
+                        />
                       );
                     })}
                 </div>
@@ -1655,7 +1377,14 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
                       <div className="sticky top-4 space-y-3">
                         {/* Contenido dinámico: proyecto seleccionado o resumen */}
                         {selectedProjectId ? (
-                          renderProjectDetail(selectedProjectId, () => setSelectedProjectId(null))
+                          <AllocationProjectDetailPanel
+                            projectId={selectedProjectId}
+                            projectName={formatProjectName(getProjectById(selectedProjectId)?.name || 'Proyecto')}
+                            budgetStatus={getProjectBudgetStatus(selectedProjectId)}
+                            viewerEmployeeId={employeeId}
+                            employees={employees || []}
+                            onClose={() => setSelectedProjectId(null)}
+                          />
                         ) : (
                           // RESUMEN DE LA SEMANA (por defecto)
                           <div className="bg-white border rounded-xl shadow-sm p-4">
@@ -1758,7 +1487,14 @@ export function AllocationSheet({ open, onOpenChange, employeeId, weekStart, vie
               isMobile ? 'h-[85vh] rounded-t-2xl pt-6 pb-8 px-4' : 'w-full sm:max-w-md pt-10'
             )}
           >
-            {renderProjectDetail(selectedProjectId, () => setSelectedProjectId(null))}
+            <AllocationProjectDetailPanel
+              projectId={selectedProjectId}
+              projectName={formatProjectName(getProjectById(selectedProjectId)?.name || 'Proyecto')}
+              budgetStatus={getProjectBudgetStatus(selectedProjectId)}
+              viewerEmployeeId={employeeId}
+              employees={employees || []}
+              onClose={() => setSelectedProjectId(null)}
+            />
           </SheetContent>
         </Sheet>
       )}

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useMemo, useState, useEffect, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '@/contexts/AppContext';
@@ -6,16 +6,20 @@ import { useAgency } from '@/contexts/AgencyContext';
 import { useDepartmentView } from '@/contexts/DepartmentViewContext';
 import { useSubscriptionLimits } from '@/hooks/useSubscriptionLimits';
 import { useProjectMetrics, type ProjectMetricsDeadline } from '@/hooks/useProjectMetrics';
+import { useFinancialCommonExpenses } from '@/hooks/useFinancialCommonExpenses';
+import { useFinancialMonthPacing } from '@/hooks/useFinancialMonthPacing';
+import { useFinancialDepartmentView } from '@/hooks/useFinancialDepartmentView';
+import { useFinancialCostAttribution } from '@/hooks/useFinancialCostAttribution';
+import { useFinancialGlobalKpis } from '@/hooks/useFinancialGlobalKpis';
+import { useEmployeeProfitability } from '@/hooks/useEmployeeProfitability';
 import { fetchDeadlinesForMonth } from '@/utils/deadlineUtils';
 import { fetchGlobalAssignmentsForMonth } from '@/utils/globalAssignmentsUtils';
-import { filterEmployeesForOperationalMonthDate } from '@/utils/employeeAssignmentVisibility';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
     DollarSign,
     TrendingUp,
-    TrendingDown,
     AlertTriangle,
     ArrowDownRight,
     Users,
@@ -35,49 +39,26 @@ import {
     Layers,
     Loader2,
 } from 'lucide-react';
-import { format, startOfMonth, subMonths, addMonths, endOfMonth, isSameMonth, subDays } from 'date-fns';
+import { format, startOfMonth, subMonths, addMonths, endOfMonth, subDays } from 'date-fns';
 import { useDateLocale } from '@/hooks/useDateLocale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { normalizeDepartments, employeeBelongsToDepartment } from '@/utils/departmentUtils';
-import {
-    formatEhrTargetForDisplay,
-    numberToPositiveDecimalInputString,
-    parsePositiveDecimalInput,
-    sanitizePositiveDecimalInput,
-} from '@/utils/positiveDecimalInput';
-import { isAllocationInEffectiveMonth, getWorkingDaysInMonth, getWorkingDaysElapsedInMonth } from '@/utils/dateUtils';
-import type { Project, Employee, CommonExpenseEntry, Deadline, GlobalAssignment } from '@/types';
+import { normalizeDepartments } from '@/utils/departmentUtils';
+import type { Deadline, GlobalAssignment } from '@/types';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { SensitiveText } from '@/components/privacy/SensitiveText';
 import { usePrivacyDemo } from '@/contexts/PrivacyDemoContext';
-import {
-    allocateCommonExpenses,
-    collectCommonExpenseEntriesForMonth,
-    normalizeCommonExpenseEntriesDepartments,
-    type AllocateCommonExpensesFailure,
-} from '@/utils/commonExpensesAllocation';
-import { CommonExpensesSettingsCard } from '@/components/agency/CommonExpensesSettingsCard';
-import { validateCommonExpensesDraft } from '@/utils/commonExpensesDraftValidation';
-import { toast } from '@/lib/notify';
 import { usePermissions } from '@/hooks/usePermissions';
-import {
-    filterEmployeeProfitabilityRowsForDisplay,
-    getRowCost,
-    getStandardHourlyCost,
-    getStandardMonthlyCapacity,
-    overheadShareForRow,
-} from '@/utils/profitabilityCost';
+import { getStandardMonthlyCapacity } from '@/utils/profitabilityCost';
 import { getMarginSemaphore } from '@/utils/marginSemaphore';
 import { DeliverableLifecycleTable } from '@/components/financial/DeliverableLifecycleTable';
 import { ProfitabilityAttributionMobileList } from '@/components/financial/ProfitabilityAttributionMobileList';
 import { ProfitabilityMobileMetrics } from '@/components/financial/ProfitabilityMobileMetrics';
-import { deliverablePhaseOverlapsMonth, getDeliverablePhase } from '@/utils/deliverableLifecycle';
-import { PROJECT_TYPE_ENTREGABLE } from '@/config/projectTypePresets';
+import { FinancialHealthProfitSettingsDialog } from '@/components/financial/FinancialHealthProfitSettingsDialog';
+import { FinancialHealthKpiStrip } from '@/components/financial/FinancialHealthKpiStrip';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { usePlanMonthNavigation } from '@/hooks/usePlanMonthNavigation';
 import { useEnsureMonthWithLoading } from '@/hooks/useEnsureMonthWithLoading';
@@ -97,15 +78,10 @@ export default function FinancialHealthPage() {
     const [commonExpensesMobileOpen, setCommonExpensesMobileOpen] = useState(false);
     const [costHelpOpen, setCostHelpOpen] = useState(false);
     const [profitSettingsOpen, setProfitSettingsOpen] = useState(false);
-    const [profitSettingsSaving, setProfitSettingsSaving] = useState(false);
-    const [ehrTargetInput, setEhrTargetInput] = useState('');
-    const [commonExpensesDraft, setCommonExpensesDraft] = useState<Record<string, CommonExpenseEntry[]>>({});
-    const [commonExpensesRecurringDraft, setCommonExpensesRecurringDraft] = useState<CommonExpenseEntry[]>([]);
-    const profitSettingsHydratedRef = useRef(false);
     const [deadlinesRows, setDeadlinesRows] = useState<Deadline[]>([]);
     const [globalAssignmentsForMonth, setGlobalAssignmentsForMonth] = useState<GlobalAssignment[]>([]);
     const { projects, clients, employees, allocations, isLoading: isGlobalLoading } = useApp();
-    const { currentAgency, updateSettings } = useAgency();
+    const { currentAgency } = useAgency();
     const { formatMoney, formatPerHour, currencySymbol, inCurrencyParens, perHourSuffix } = useFormatMoney();
     const defaultPerHour = useMemo(() => formatPerHour(75, 0), [formatPerHour]);
     const currencyLabels = useMemo(
@@ -175,111 +151,9 @@ export default function FinancialHealthPage() {
         [currentAgency?.settings?.departments]
     );
 
-    useEffect(() => {
-        if (!profitSettingsOpen) {
-            profitSettingsHydratedRef.current = false;
-            return;
-        }
-        if (!currentAgency || profitSettingsHydratedRef.current) return;
-        profitSettingsHydratedRef.current = true;
-        const deptsNorm = normalizeDepartments(currentAgency.settings?.departments);
-        setEhrTargetInput(
-            numberToPositiveDecimalInputString(currentAgency.settings?.ehrTarget ?? 75, 75)
-        );
-        const rawCommon = currentAgency.settings?.commonExpensesByMonth;
-        if (rawCommon && typeof rawCommon === 'object' && !Array.isArray(rawCommon)) {
-            const next: Record<string, CommonExpenseEntry[]> = {};
-            for (const [k, arr] of Object.entries(rawCommon)) {
-                if (!Array.isArray(arr)) continue;
-                next[k] = normalizeCommonExpenseEntriesDepartments(arr as CommonExpenseEntry[], deptsNorm);
-            }
-            setCommonExpensesDraft(next);
-        } else {
-            setCommonExpensesDraft({});
-        }
-        const rawRec = currentAgency.settings?.commonExpensesRecurring;
-        if (Array.isArray(rawRec)) {
-            setCommonExpensesRecurringDraft(
-                normalizeCommonExpenseEntriesDepartments(rawRec as CommonExpenseEntry[], deptsNorm)
-            );
-        } else {
-            setCommonExpensesRecurringDraft([]);
-        }
-    }, [profitSettingsOpen, currentAgency]);
-
-    const handleSaveProfitSettings = useCallback(async () => {
-        if (!currentAgency?.id) return;
-        const commonErr = validateCommonExpensesDraft(
-            commonExpensesDraft,
-            commonExpensesRecurringDraft,
-            departments,
-            (k, d) => t(k, d)
-        );
-        if (commonErr) {
-            toast.error(commonErr);
-            return;
-        }
-        setProfitSettingsSaving(true);
-        try {
-            const normalizedCommon: Record<string, CommonExpenseEntry[]> = {};
-            for (const [k, arr] of Object.entries(commonExpensesDraft)) {
-                normalizedCommon[k] = normalizeCommonExpenseEntriesDepartments(
-                    arr.map(({ recurringFromMonth: _rf, recurringUntilMonth: _ru, ...rest }) => rest),
-                    departments
-                );
-            }
-            const normalizedRecurring = normalizeCommonExpenseEntriesDepartments(
-                commonExpensesRecurringDraft,
-                departments
-            );
-            const ehrTarget = parsePositiveDecimalInput(ehrTargetInput, 75, 1);
-            await updateSettings({
-                ehrTarget,
-                commonExpensesByMonth: normalizedCommon,
-                commonExpensesRecurring: normalizedRecurring,
-            });
-            toast.success(t('financialHealth.settings.saved', 'Cambios guardados'));
-            setProfitSettingsOpen(false);
-        } catch (err) {
-            console.error(err);
-            toast.error(t('financialHealth.settings.saveError', 'No se pudo guardar la configuración'));
-        } finally {
-            setProfitSettingsSaving(false);
-        }
-    }, [
-        commonExpensesDraft,
-        commonExpensesRecurringDraft,
-        currentAgency?.id,
-        departments,
-        ehrTargetInput,
-        t,
-        updateSettings,
-    ]);
-
-    const employeesForView = useMemo(() => {
-        if (!selectedDepartmentId || !departments.length) return employees ?? [];
-        const dept = departments.find(d => d.id === selectedDepartmentId || d.name === selectedDepartmentId);
-        if (!dept) return employees ?? [];
-        return (employees ?? []).filter(e => employeeBelongsToDepartment(e.department, dept.id, dept.name));
-    }, [employees, selectedDepartmentId, departments]);
-
-    const projectIdsForDepartment = useMemo(() => {
-        if (!selectedDepartmentId) return undefined as Set<string> | undefined;
-        if (!employeesForView.length) return new Set<string>();
-        const allowedEmployeeIds = new Set(employeesForView.map(e => e.id));
-        const ids = new Set<string>();
-        (allocations ?? []).forEach(a => {
-            if (!allowedEmployeeIds.has(a.employeeId)) return;
-            if (!isAllocationInEffectiveMonth(a.weekStartDate, currentMonth)) return;
-            ids.add(a.projectId);
-        });
-        return ids;
-    }, [allocations, employeesForView, selectedDepartmentId, currentMonth]);
-
     const {
         projectMetrics,
         employeeMetrics,
-        totals
     } = useProjectMetrics({
         month: currentMonth,
         deadlines: deadlinesForMonth,
@@ -287,392 +161,127 @@ export default function FinancialHealthPage() {
         globalAssignmentsEmployeeVisibility: globalAssignmentsForMonth,
     });
 
-    const selectedDept = useMemo(() => {
-        if (!selectedDepartmentId || !departments.length) return null;
-        return departments.find(d => d.id === selectedDepartmentId || d.name === selectedDepartmentId) ?? null;
-    }, [selectedDepartmentId, departments]);
-
-    const projectMetricsForView = useMemo(() => {
-        if (!projectIdsForDepartment || !selectedDept) return projectMetrics;
-        return projectMetrics.filter((p) => {
-            // Proyectos internos (ingreso 0 €) siempre en vista: ver "Inversión interna" / pérdida
-            if ((p.monthlyFee ?? 0) === 0) return true;
-            if (projectIdsForDepartment.has(p.projectId)) {
-                const proj = projects?.find((pr) => pr.id === p.projectId);
-                if (!proj?.responsibleDepartmentId) return true;
-                return proj.responsibleDepartmentId === selectedDept.id || proj.responsibleDepartmentId === selectedDept.name;
-            }
-            // Entregable activo en fase (solapa el mes) con área responsable = vista: aunque no haya imputaciones del equipo este mes
-            const proj = projects?.find((pr) => pr.id === p.projectId);
-            if (
-                proj &&
-                proj.status === 'active' &&
-                proj.projectType === PROJECT_TYPE_ENTREGABLE &&
-                getDeliverablePhase(proj) &&
-                deliverablePhaseOverlapsMonth(proj, currentMonth)
-            ) {
-                const rd = proj.responsibleDepartmentId;
-                if (rd && (rd === selectedDept.id || rd === selectedDept.name)) return true;
-                // Sin área responsable: el bloque anterior solo entraba si había imputaciones del dept; aquí mostramos el entregable en cualquier vista de dept (ingreso ya > 0).
-                if (!rd) return true;
-            }
-            return false;
-        });
-    }, [projectMetrics, projectIdsForDepartment, selectedDept, projects, currentMonth]);
-
-    const lifecycleDepartmentProjectIds = useMemo(() => {
-        if (!selectedDepartmentId) return undefined;
-        return new Set(projectMetricsForView.map((p) => p.projectId));
-    }, [selectedDepartmentId, projectMetricsForView]);
-
-    const clientById = useMemo(() => {
-        const map = new Map<string, string>();
-        clients.forEach(c => map.set(c.id, c.name));
-        return map;
-    }, [clients]);
-
-    const projectMetricsFilteredBySearch = useMemo(() => {
-        if (!searchQuery.trim()) return projectMetricsForView;
-        const q = searchQuery.trim().toLowerCase();
-        return projectMetricsForView.filter(p => {
-            const clientName = clientById.get(p.clientId) || p.clientName || '';
-            return p.projectName.toLowerCase().includes(q) || clientName.toLowerCase().includes(q);
-        });
-    }, [projectMetricsForView, searchQuery, clientById]);
-
-    const projectMetricsBillable = useMemo(
-        () => projectMetricsFilteredBySearch.filter(p => (p.monthlyFee ?? 0) > 0),
-        [projectMetricsFilteredBySearch]
-    );
-    const projectMetricsInternal = useMemo(
-        () => projectMetricsFilteredBySearch.filter(p => (p.monthlyFee ?? 0) === 0),
-        [projectMetricsFilteredBySearch]
-    );
-
-    const projectMetricsBillableWithActivity = useMemo(() => {
-        const entregableOverlapIds = new Set(
-            (projects ?? [])
-                .filter(
-                    (p) =>
-                        p.status === 'active' &&
-                        p.projectType === PROJECT_TYPE_ENTREGABLE &&
-                        deliverablePhaseOverlapsMonth(p, currentMonth)
-                )
-                .map((p) => p.id)
-        );
-        return projectMetricsBillable.filter((p) => {
-            if ((hoursMode === 'computed' ? p.computed : p.actual) > 0) return true;
-            return entregableOverlapIds.has(p.projectId);
-        });
-    }, [projectMetricsBillable, hoursMode, projects, currentMonth]);
-
-    const employeeMetricsForView = useMemo(() => {
-        if (!selectedDepartmentId) return employeeMetrics;
-        const allowedIds = new Set(employeesForView.map(e => e.id));
-        return employeeMetrics.filter(em => allowedIds.has(em.employeeId));
-    }, [employeeMetrics, selectedDepartmentId, employeesForView]);
-
-    const commonExpensesMonthKey = useMemo(() => format(currentMonth, 'yyyy-MM'), [currentMonth]);
-
-    const employeeHoursGlobalById = useMemo(() => {
-        const m = new Map<string, number>();
-        employeeMetrics.forEach(em => {
-            const h = hoursMode === 'computed' ? em.totalComputed : em.totalActual;
-            m.set(em.employeeId, h);
-        });
-        return m;
-    }, [employeeMetrics, hoursMode]);
-
-    const mergedCommonExpenseEntries = useMemo(
-        () => collectCommonExpenseEntriesForMonth(currentAgency?.settings, commonExpensesMonthKey, departments),
-        [currentAgency?.settings, commonExpensesMonthKey, departments]
-    );
-
-    const employeePayrollById = useMemo(() => {
-        const map = new Map<string, number>();
-        (employees ?? []).forEach(e => {
-            map.set(e.id, e.monthlyCost ?? e.hourlyRate ?? 0);
-        });
-        return map;
-    }, [employees]);
-
-    const commonExpensesAlloc = useMemo(() => {
-        const empRows = filterEmployeesForOperationalMonthDate(employees ?? [], currentMonth, {
-            deadlines: deadlinesRows,
-            globalAssignments: globalAssignmentsForMonth,
-            allocations: allocations ?? [],
-        }).map((e) => ({
-            id: e.id,
-            department: e.department,
-            departmentId: e.departmentId,
-        }));
-        return allocateCommonExpenses({
-            entries: mergedCommonExpenseEntries,
-            employees: empRows,
-            departments,
-            getEmployeeHours: id => employeeHoursGlobalById.get(id) ?? 0,
-            getEmployeePayroll: id => employeePayrollById.get(id) ?? 0,
-        });
-    }, [
-        mergedCommonExpenseEntries,
-        employees,
+    const {
+        projectMetricsForView,
+        lifecycleDepartmentProjectIds,
+        clientById,
+        projectMetricsBillableWithActivity,
+        employeeMetricsForView,
+        departmentNameForView,
+        internalWithActivity,
+    } = useFinancialDepartmentView({
+        selectedDepartmentId,
         departments,
-        employeeHoursGlobalById,
-        employeePayrollById,
-        currentMonth,
-        deadlinesRows,
-        globalAssignmentsForMonth,
+        employees,
         allocations,
-    ]);
+        currentMonth,
+        projectMetrics,
+        employeeMetrics,
+        projects,
+        clients,
+        searchQuery,
+        hoursMode,
+    });
 
-    const overheadByEmployee = useMemo((): ReadonlyMap<string, number> => {
-        if (commonExpensesAlloc.ok) return commonExpensesAlloc.overheadByEmployee;
-        return new Map<string, number>();
-    }, [commonExpensesAlloc]);
+    const {
+        employeeHoursGlobalById,
+        commonExpensesAlloc,
+        overheadByEmployee,
+        totalOverheadInView,
+        agencyTotalOverheadApplied,
+        commonExpensesAllocError,
+        commonExpensesBreakdown,
+        commonExpensesZeroHourWarningNames,
+        overheadVisibleFromRows,
+    } = useFinancialCommonExpenses({
+        currentMonth,
+        settings: currentAgency?.settings,
+        departments,
+        employees,
+        employeeMetrics,
+        employeeMetricsForView,
+        allocations,
+        deadlines: deadlinesRows,
+        globalAssignments: globalAssignmentsForMonth,
+        projectMetricsForView,
+        hoursMode,
+    });
 
-    const totalOverheadInView = useMemo(() => {
-        if (!commonExpensesAlloc.ok) return 0;
-        return employeeMetricsForView.reduce(
-            (s, em) => s + (commonExpensesAlloc.overheadByEmployee.get(em.employeeId) ?? 0),
-            0
-        );
-    }, [commonExpensesAlloc, employeeMetricsForView]);
+    const {
+        isViewingCurrentMonth,
+        dynamicCostFallbackActive,
+        effectiveCostMode,
+        projectDisplayFeeMap,
+        totalDisplayRevenue,
+        projectPacingMap,
+    } = useFinancialMonthPacing({
+        currentMonth,
+        hoursMode,
+        costMode,
+        projectMetricsForView,
+        projectMetricsBillableWithActivity,
+    });
 
-    const totalsForView = useMemo(() => {
-        const totalFee = projectMetricsBillableWithActivity.reduce((s, p) => s + p.monthlyFee, 0);
-        const totalActual = projectMetricsBillableWithActivity.reduce((s, p) => s + p.actual, 0);
-        const totalComputed = projectMetricsBillableWithActivity.reduce((s, p) => s + p.computed, 0);
-        const totalBudget = projectMetricsBillableWithActivity.reduce((s, p) => s + p.budget, 0);
-        const avgProgress = projectMetricsBillableWithActivity.length > 0
-            ? projectMetricsBillableWithActivity.reduce((s, p) => s + p.progressOperational, 0) / projectMetricsBillableWithActivity.length
-            : 0;
-        return { totalFee, totalActual, totalComputed, totalBudget, avgProgress };
-    }, [projectMetricsBillableWithActivity]);
+    const {
+        projectByIdForAttr,
+        projectTotalHoursFromBreakdown,
+        projectCostAndMarginMap,
+        projectEmployeeAttributionMap,
+        projectById,
+        departmentProfitability,
+    } = useFinancialCostAttribution({
+        employeeMetricsForView,
+        projectMetricsForView,
+        projectMetricsBillableWithActivity,
+        employees,
+        projects,
+        departments,
+        hoursMode,
+        effectiveCostMode,
+        employeeHoursGlobalById,
+        overheadByEmployee,
+        projectDisplayFeeMap,
+        noDepartmentLabel: t('financialHealth.departmentProfitability.noDepartment'),
+    });
 
-    // === Mes en curso vs cerrado (pacing e ingreso devengado) — definido pronto para totalRevenue y effectiveCostMode ===
-    const isViewingCurrentMonth = useMemo(
-        () => isSameMonth(currentMonth, new Date()),
-        [currentMonth]
-    );
-    const workingDaysInMonth = useMemo(() => getWorkingDaysInMonth(currentMonth), [currentMonth]);
-    const workingDaysElapsed = useMemo(() => getWorkingDaysElapsedInMonth(currentMonth), [currentMonth]);
-    const pctMonthElapsed = useMemo(() => {
-        if (!isViewingCurrentMonth) return 100;
-        return workingDaysInMonth > 0 ? (workingDaysElapsed / workingDaysInMonth) * 100 : 0;
-    }, [isViewingCurrentMonth, workingDaysInMonth, workingDaysElapsed]);
-    const dynamicCostFallbackActive = useMemo(
-        () => costMode === 'dynamic' && isViewingCurrentMonth && pctMonthElapsed < 25,
-        [costMode, isViewingCurrentMonth, pctMonthElapsed]
-    );
-    const effectiveCostMode = dynamicCostFallbackActive ? 'standard' : costMode;
-    const accruedRatio = useMemo(() => {
-        if (!isViewingCurrentMonth) return 1;
-        return workingDaysInMonth > 0 ? workingDaysElapsed / workingDaysInMonth : 0;
-    }, [isViewingCurrentMonth, workingDaysInMonth, workingDaysElapsed]);
-    const projectDisplayFeeMap = useMemo(() => {
-        const map = new Map<string, number>();
-        projectMetricsForView.forEach(p => {
-            const fee = p.monthlyFee ?? 0;
-            if (!isViewingCurrentMonth) {
-                map.set(p.projectId, fee);
-                return;
-            }
-            // Si ya ha cumplido o superado el 100 % de las horas del presupuesto, el ingreso devengado es el total (ya se ha “ganado” el fee).
-            const hoursDisplay = hoursMode === 'computed' ? p.computed : p.actual;
-            const budget = p.budget > 0 ? p.budget : 0;
-            const hasReachedOrExceededBudget = budget > 0 && hoursDisplay >= budget;
-            map.set(p.projectId, hasReachedOrExceededBudget ? fee : fee * accruedRatio);
-        });
-        return map;
-    }, [projectMetricsForView, isViewingCurrentMonth, accruedRatio, hoursMode]);
-    const totalDisplayRevenue = useMemo(() => {
-        return projectMetricsBillableWithActivity.reduce(
-            (sum, p) => sum + (projectDisplayFeeMap.get(p.projectId) ?? p.monthlyFee ?? 0),
-            0
-        );
-    }, [projectMetricsBillableWithActivity, projectDisplayFeeMap]);
-    const projectPacingMap = useMemo(() => {
-        const map = new Map<string, { pctConsumed: number; pctElapsed: number; isOverPacing: boolean }>();
-        projectMetricsForView.forEach(p => {
-            const budget = p.budget > 0 ? p.budget : 0;
-            const hoursDisplay = hoursMode === 'computed' ? p.computed : p.actual;
-            const pctConsumed = budget > 0 ? (hoursDisplay / budget) * 100 : 0;
-            const pctElapsed = isViewingCurrentMonth ? pctMonthElapsed : 100;
-            const isOverPacing = pctConsumed > pctElapsed;
-            map.set(p.projectId, { pctConsumed, pctElapsed, isOverPacing });
-        });
-        return map;
-    }, [projectMetricsForView, hoursMode, isViewingCurrentMonth, pctMonthElapsed]);
-
-    // === KPI 1: Precio Hora Efectivo global (según vista) === Horas según filtro Reales/Computadas. Ingreso devengado si mes en curso.
-    const totalRevenue = isViewingCurrentMonth ? totalDisplayRevenue : totalsForView.totalFee;
-    const totalHoursForView = hoursMode === 'computed' ? totalsForView.totalComputed : totalsForView.totalActual;
-    const effectiveHourlyRate = totalHoursForView > 0 ? totalRevenue / totalHoursForView : 0;
-
-    // Coste mensual total de la vista (nóminas): contabilidad pura. Cada empleado tiene un coste mensual; se reparte a proyectos por proporción de horas.
-    const totalMonthlyCostView = useMemo(() => {
-        return employeeMetricsForView.reduce((sum, em) => {
-            const emp = employees.find(e => e.id === em.employeeId);
-            return sum + (emp?.monthlyCost ?? emp?.hourlyRate ?? 0);
-        }, 0);
-    }, [employeeMetricsForView, employees]);
-
-    const totalHoursForCostDenominator =
-        hoursMode === 'computed' ? totalsForView.totalComputed : totalsForView.totalActual;
-    const avgHourlyCost =
-        totalHoursForCostDenominator > 0 ? totalMonthlyCostView / totalHoursForCostDenominator : 0;
-
-    const usesLoadedCostForTarget =
-        commonExpensesAlloc.ok && commonExpensesAlloc.totalConfiguredAmount > 0;
-    const avgLoadedHourlyCost =
-        totalHoursForCostDenominator > 0
-            ? (totalMonthlyCostView + totalOverheadInView) / totalHoursForCostDenominator
-            : 0;
-    const avgForTarget =
-        usesLoadedCostForTarget && avgLoadedHourlyCost > 0 ? avgLoadedHourlyCost : avgHourlyCost;
-
-    // Objetivo de EHR: configurable en agencia o por defecto 75 €/h (coste cargado si hay gastos comunes en el mes)
-    const defaultEhrTarget = avgForTarget > 0 ? Math.max(avgForTarget, 75) : 75;
-    const ehrTarget = (currentAgency?.settings?.ehrTarget != null && currentAgency.settings.ehrTarget > 0)
-        ? currentAgency.settings.ehrTarget
-        : defaultEhrTarget;
-    const ehrIsHealthy = effectiveHourlyRate >= ehrTarget && totalHoursForView > 0;
-
-    // === Ranking de hemorragias: solo proyectos facturables (con actividad por defecto) ===
-    type EnrichedProject = {
-        metric: typeof projectMetrics[number];
-        clientName: string;
-        ehr: number;          // € / h real
-        ehrLabel: string;     // texto para UI (incluye "Sin iniciar" si procede)
-    };
-
-    const enrichedProjects: EnrichedProject[] = useMemo(() => {
-        return projectMetricsBillableWithActivity.map(p => {
-            const clientName = clientById.get(p.clientId) || p.clientName || t('financialHealth.unknownClient');
-            const projectHours = hoursMode === 'computed' ? p.computed : p.actual;
-            const ehr = projectHours > 0 ? (p.monthlyFee || 0) / projectHours : Number.POSITIVE_INFINITY;
-            const ehrLabel = projectHours > 0
-                ? `${formatPerHour((ehr || 0), 0)}`
-                : t('financialHealth.kpis.ehr.notStarted');
-            return { metric: p, clientName, ehr, ehrLabel };
-        });
-    }, [projectMetricsBillableWithActivity, clientById, hoursMode, formatPerHour, t]);
-
-    const sortedProjects = useMemo(() => {
-        return [...enrichedProjects].sort((a, b) => {
-            const ehrA = a.ehr;
-            const ehrB = b.ehr;
-            if (!isFinite(ehrA) && !isFinite(ehrB)) return 0;
-            if (!isFinite(ehrA)) return 1;
-            if (!isFinite(ehrB)) return -1;
-            return ehrA - ehrB; // de peor (más bajo) a mejor
-        });
-    }, [enrichedProjects]);
+    const {
+        totalsForView,
+        totalRevenue,
+        totalHoursForView,
+        effectiveHourlyRate,
+        totalMonthlyCostView,
+        avgHourlyCost,
+        usesLoadedCostForTarget,
+        avgLoadedHourlyCost,
+        ehrTarget,
+        ehrIsHealthy,
+        enrichedProjects,
+        sortedProjects,
+        totalInternalCost,
+        netMargin,
+        marginIsPositive,
+        marginPercent,
+    } = useFinancialGlobalKpis({
+        projectMetricsBillableWithActivity,
+        employeeMetricsForView,
+        employees,
+        hoursMode,
+        isViewingCurrentMonth,
+        totalDisplayRevenue,
+        totalOverheadInView,
+        commonExpensesTotalConfigured: commonExpensesAlloc.ok
+            ? commonExpensesAlloc.totalConfiguredAmount
+            : 0,
+        projectCostAndMarginMap,
+        clientById,
+        ehrTargetSetting: currentAgency?.settings?.ehrTarget,
+        formatPerHour,
+        unknownClientLabel: t('financialHealth.unknownClient'),
+        ehrNotStartedLabel: t('financialHealth.kpis.ehr.notStarted'),
+    });
 
     const [showAllProjects, setShowAllProjects] = useState(false);
     const projectsToShow = showAllProjects ? sortedProjects : sortedProjects.slice(0, 10);
-
-    // Mapa proyecto -> desglose por empleado (hours = computadas, actual = reales)
-    const projectEmployeesMap = useMemo(() => {
-        const map = new Map<string, { employeeId: string; hours: number; actual: number }[]>();
-        employeeMetricsForView.forEach(em => {
-            em.projectBreakdown.forEach(pb => {
-                const list = map.get(pb.projectId) || [];
-                list.push({ employeeId: em.employeeId, hours: pb.hours, actual: pb.actual ?? 0 });
-                map.set(pb.projectId, list);
-            });
-        });
-        return map;
-    }, [employeeMetricsForView]);
-
-    const projectByIdForAttr = useMemo(() => {
-        const map = new Map<string, { actual: number; monthlyFee: number }>();
-        projectMetricsForView.forEach(p => map.set(p.projectId, { actual: p.actual, monthlyFee: p.monthlyFee || 0 }));
-        return map;
-    }, [projectMetricsForView]);
-
-    // Total de horas por proyecto según el mismo breakdown que los empleados (computed), para repartir el fee sin distorsión
-    const projectTotalHoursFromBreakdown = useMemo(() => {
-        const map = new Map<string, number>();
-        projectEmployeesMap.forEach((rows, projectId) => {
-            map.set(projectId, rows.reduce((s, r) => s + r.hours, 0));
-        });
-        return map;
-    }, [projectEmployeesMap]);
-
-    // Horas totales por empleado (computed) en la vista: para repartir el coste mensual entre proyectos
-    const employeeTotalHoursMap = useMemo(() => {
-        const map = new Map<string, number>();
-        employeeMetricsForView.forEach(em => map.set(em.employeeId, em.totalComputed));
-        return map;
-    }, [employeeMetricsForView]);
-
-    // Coste por proyecto: reparto del coste mensual (nómina) por horas en el modo actual (reales/computadas). Contabilidad pura.
-    const projectCostAndMarginMap = useMemo(() => {
-        const map = new Map<string, { cost: number; payrollCost: number; overheadCost: number; margin: number }>();
-        const employeeTotalsByMode = new Map<string, number>();
-        employeeMetricsForView.forEach(em => {
-            const totalInMode = hoursMode === 'computed' ? em.totalComputed : em.totalActual;
-            employeeTotalsByMode.set(em.employeeId, totalInMode);
-        });
-        projectMetricsForView.forEach(p => {
-            const breakdown = projectEmployeesMap.get(p.projectId) || [];
-            let payrollCost = 0;
-            let overheadCost = 0;
-            breakdown.forEach(row => {
-                const emp = employees.find(e => e.id === row.employeeId);
-                const totalHEmployeeInMode = employeeTotalsByMode.get(row.employeeId) ?? 0;
-                const hoursDisplay = hoursMode === 'computed' ? row.hours : (row.actual ?? 0);
-                const totalHGlobal = employeeHoursGlobalById.get(row.employeeId) ?? totalHEmployeeInMode;
-                payrollCost += getRowCost(emp, hoursDisplay, totalHEmployeeInMode, effectiveCostMode);
-                overheadCost += overheadShareForRow(row.employeeId, hoursDisplay, totalHGlobal, overheadByEmployee);
-            });
-            const cost = payrollCost + overheadCost;
-            const fee = p.monthlyFee || 0;
-            map.set(p.projectId, { cost, payrollCost, overheadCost, margin: fee - cost });
-        });
-        return map;
-    }, [projectMetricsForView, projectEmployeesMap, employees, hoursMode, effectiveCostMode, employeeMetricsForView, employeeHoursGlobalById, overheadByEmployee]);
-
-    // === KPI 2: Margen Neto Global === Coste = solo el coste atribuido a los proyectos visibles (filtro búsqueda).
-    const totalInternalCost = useMemo(() => {
-        return projectMetricsBillableWithActivity.reduce(
-            (sum, p) => sum + (projectCostAndMarginMap.get(p.projectId)?.cost ?? 0),
-            0
-        );
-    }, [projectMetricsBillableWithActivity, projectCostAndMarginMap]);
-
-    const netMargin = totalRevenue - totalInternalCost;
-    const marginIsPositive = netMargin >= 0;
-    const marginPercent: number | null = totalRevenue > 0 ? (netMargin / totalRevenue) * 100 : null;
-
-    // Desglose por empleado en proyecto. hoursDisplay = horas a mostrar según modo (reales/computadas); en modo reales se escalan para que la suma = horas reales del proyecto.
-    const projectEmployeeAttributionMap = useMemo(() => {
-        const map = new Map<string, { employeeId: string; hours: number; hoursDisplay: number; cost: number; attributedRevenue: number; margin: number }[]>();
-        employeeMetricsForView.forEach(em => {
-            const emp = employees.find(e => e.id === em.employeeId);
-            const totalHEmployeeInMode = hoursMode === 'computed' ? em.totalComputed : em.totalActual;
-            em.projectBreakdown.forEach(pb => {
-                const hours = pb.hours;
-                const actualHours = pb.actual ?? 0;
-                const projectActual = projectByIdForAttr.get(pb.projectId)?.actual ?? 0;
-                const totalHours = projectTotalHoursFromBreakdown.get(pb.projectId) ?? 0;
-                const hoursDisplay = hoursMode === 'computed' ? hours : actualHours;
-                const totalHGlobal = employeeHoursGlobalById.get(em.employeeId) ?? totalHEmployeeInMode;
-                const payrollCost = getRowCost(emp, hoursDisplay, totalHEmployeeInMode, effectiveCostMode);
-                const overheadCost = overheadShareForRow(em.employeeId, hoursDisplay, totalHGlobal, overheadByEmployee);
-                const cost = payrollCost + overheadCost;
-                const monthlyFee = projectByIdForAttr.get(pb.projectId)?.monthlyFee ?? 0;
-                const totalHoursInMode = hoursMode === 'computed' ? totalHours : projectActual;
-                const attributedRevenue = totalHoursInMode > 0 ? (hoursDisplay / totalHoursInMode) * monthlyFee : 0;
-                const margin = attributedRevenue - cost;
-                const list = map.get(pb.projectId) || [];
-                list.push({ employeeId: em.employeeId, hours, hoursDisplay, cost, attributedRevenue, margin });
-                map.set(pb.projectId, list);
-            });
-        });
-        return map;
-    }, [employeeMetricsForView, employees, projectTotalHoursFromBreakdown, projectByIdForAttr, hoursMode, effectiveCostMode, employeeHoursGlobalById, overheadByEmployee]);
 
     const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
     const toggleProject = (projectId: string) => {
@@ -684,361 +293,22 @@ export default function FinancialHealthPage() {
         });
     };
 
-    // === Rentabilidad por departamento (área) ===
-    const projectById = useMemo(() => {
-        const map = new Map<string, Project>();
-        projects.forEach(p => map.set(p.id, p));
-        return map;
-    }, [projects]);
-
-    const departmentProfitability = useMemo(() => {
-        const records: {
-            id: string;
-            name: string;
-            ehr: number;
-            revenue: number;
-            hours: number;
-            payrollCost: number;
-            overheadCost: number;
-            cost: number;
-            margin: number;
-        }[] = [];
-        departments.forEach(dept => {
-            let revenue = 0;
-            let hours = 0;
-            let payrollCost = 0;
-            let overheadCost = 0;
-            projectMetricsBillableWithActivity.forEach(pm => {
-                const proj = projectById.get(pm.projectId);
-                if (!proj) return;
-                if (!proj.responsibleDepartmentId) return;
-                if (proj.responsibleDepartmentId !== dept.id && proj.responsibleDepartmentId !== dept.name) return;
-                const fee = projectDisplayFeeMap.get(pm.projectId) ?? pm.monthlyFee ?? 0;
-                revenue += fee;
-                hours += hoursMode === 'computed' ? pm.computed : pm.actual;
-                const cm = projectCostAndMarginMap.get(pm.projectId);
-                payrollCost += cm?.payrollCost ?? 0;
-                overheadCost += cm?.overheadCost ?? 0;
-            });
-            const cost = payrollCost + overheadCost;
-            const margin = revenue - cost;
-            if (hours > 0 && revenue > 0) {
-                const ehr = revenue / hours;
-                records.push({
-                    id: dept.id,
-                    name: dept.name,
-                    ehr,
-                    revenue,
-                    hours,
-                    payrollCost,
-                    overheadCost,
-                    cost,
-                    margin,
-                });
-            }
-        });
-
-        const NO_DEPT_ID = '__none__';
-        let revenueNone = 0;
-        let hoursNone = 0;
-        let payrollCostNone = 0;
-        let overheadCostNone = 0;
-        projectMetricsBillableWithActivity.forEach(pm => {
-            const proj = projectById.get(pm.projectId);
-            if (!proj || proj.responsibleDepartmentId) return;
-            const fee = projectDisplayFeeMap.get(pm.projectId) ?? pm.monthlyFee ?? 0;
-            revenueNone += fee;
-            hoursNone += hoursMode === 'computed' ? pm.computed : pm.actual;
-            const cm = projectCostAndMarginMap.get(pm.projectId);
-            payrollCostNone += cm?.payrollCost ?? 0;
-            overheadCostNone += cm?.overheadCost ?? 0;
-        });
-        const costNone = payrollCostNone + overheadCostNone;
-        const marginNone = revenueNone - costNone;
-        if (hoursNone > 0 && revenueNone > 0) {
-            records.push({
-                id: NO_DEPT_ID,
-                name: t('financialHealth.departmentProfitability.noDepartment'),
-                ehr: revenueNone / hoursNone,
-                revenue: revenueNone,
-                hours: hoursNone,
-                payrollCost: payrollCostNone,
-                overheadCost: overheadCostNone,
-                cost: costNone,
-                margin: marginNone,
-            });
-        }
-
-        return {
-            items: records.sort((a, b) => b.ehr - a.ehr),
-        };
-    }, [
-        departments,
-        projectMetricsBillableWithActivity,
-        projectById,
+    const {
+        employeeProfitabilityList,
+        employeeProfitabilityFilteredBySearch,
+        employeeDisplayTotalsWhenSearch,
+    } = useEmployeeProfitability({
+        employeeMetricsForView,
+        employees,
         hoursMode,
-        projectCostAndMarginMap,
-        projectDisplayFeeMap,
-        t,
-    ]);
-
-    // === Por empleado: coste = coste mensual (nómina); ingreso atribuido = reparto del fee de proyectos por horas. Contabilidad pura. ===
-    type EmployeeProfitability = {
-        employeeId: string;
-        employeeName: string;
-        totalActual: number;
-        totalComputed: number;
-        /** Horas (según modo) solo de proyectos con actividad en la vista actual */
-        totalHoursDisplay: number;
-        /** Horas (según modo) totales del mes del empleado */
-        totalHoursGlobal: number;
-        /** Horas del mes no imputadas a ningún proyecto visible/interno (tareas fuera de vista) */
-        hoursNotAttributed: number;
-        /** Nómina mensual del empleado (€/mes) — tal como está configurada en su ficha */
-        payrollMonthly: number;
-        /** Overhead del mes total del empleado (gastos comunes que le tocan) */
-        overheadTotalEmployee: number;
-        /** Coste de las horas no imputadas en el modo actual (sólo significativo en modo dinámico) */
-        costNotAttributed: number;
-        payrollNotAttributed: number;
-        overheadNotAttributed: number;
-        /**
-         * Modo operativo: nómina no explicada por horas del mes × tarifa estándar (capacidad teórica > horas trabajadas).
-         * Cierra: nómina filas + no imputada + esto = nómina mensual (± céntimos).
-         */
-        payrollStandardIdle: number;
-        /** Nómina total cargada al coste del empleado (filas + no imputada + hueco operativo). */
-        payrollAllocatedTotal: number;
-        cost: number;
-        payrollCost: number;
-        overheadCost: number;
-        attributedRevenue: number;
-        margin: number;
-        marginPercent: number;
-        byProject: {
-            projectId: string;
-            projectName: string;
-            hours: number;
-            hoursDisplay: number;
-            payrollCost: number;
-            overheadCost: number;
-            cost: number;
-            attributedRevenue: number;
-            margin: number;
-            /** Fee mensual / horas totales del proyecto (mismo modo horas). Solo facturables; 0 si interno. */
-            projectEhr: number;
-        }[];
-    };
-
-    const projectIdsWithActivity = useMemo(
-        () => new Set(projectMetricsBillableWithActivity.map(p => p.projectId)),
-        [projectMetricsBillableWithActivity]
-    );
-
-    const employeeProfitabilityList = useMemo((): EmployeeProfitability[] => {
-        const rows = employeeMetricsForView.map(em => {
-            const emp = employees.find(e => e.id === em.employeeId);
-            const totalHEmployeeInMode = hoursMode === 'computed' ? em.totalComputed : em.totalActual;
-            const totalHGlobal = employeeHoursGlobalById.get(em.employeeId) ?? totalHEmployeeInMode;
-            let attributedRevenue = 0;
-            let costFromVisibleProjects = 0;
-            let payrollFromVisibleProjects = 0;
-            let overheadFromVisibleProjects = 0;
-            const byProject: EmployeeProfitability['byProject'] = [];
-            em.projectBreakdown.forEach(pb => {
-                const isBillableWithActivity = projectIdsWithActivity.has(pb.projectId);
-                const hours = pb.hours;
-                const actualHours = pb.actual ?? 0;
-                const projectActual = projectByIdForAttr.get(pb.projectId)?.actual ?? 0;
-                const totalHours = projectTotalHoursFromBreakdown.get(pb.projectId) ?? 0;
-                const hoursDisplay = hoursMode === 'computed' ? hours : actualHours;
-                const monthlyFee = projectByIdForAttr.get(pb.projectId)?.monthlyFee ?? 0;
-                const isInternal = (monthlyFee ?? 0) === 0;
-                const hasHours = hoursDisplay > 0;
-                /** Coste de nómina + overhead para cualquier imputación con horas (evita huecos vs total mensual del empleado). */
-                const includeCostRow = hasHours && (isInternal || (monthlyFee ?? 0) > 0);
-                if (!includeCostRow) return;
-
-                const payrollRow = getRowCost(emp, hoursDisplay, totalHEmployeeInMode, effectiveCostMode);
-                const overheadRow = overheadShareForRow(em.employeeId, hoursDisplay, totalHGlobal, overheadByEmployee);
-                const rowCost = payrollRow + overheadRow;
-                const totalHoursInMode = hoursMode === 'computed' ? totalHours : projectActual;
-                const attr = totalHoursInMode > 0 ? (hoursDisplay / totalHoursInMode) * (monthlyFee ?? 0) : 0;
-                const projectEhr =
-                    (monthlyFee ?? 0) > 0 && totalHoursInMode > 0 ? (monthlyFee ?? 0) / totalHoursInMode : 0;
-                const countRevenue = isBillableWithActivity;
-                if (countRevenue) {
-                    attributedRevenue += attr;
-                }
-                costFromVisibleProjects += rowCost;
-                payrollFromVisibleProjects += payrollRow;
-                overheadFromVisibleProjects += overheadRow;
-                const attributed = countRevenue ? attr : 0;
-                byProject.push({
-                    projectId: pb.projectId,
-                    projectName: pb.projectName,
-                    hours,
-                    hoursDisplay,
-                    payrollCost: payrollRow,
-                    overheadCost: overheadRow,
-                    cost: rowCost,
-                    attributedRevenue: attributed,
-                    margin: attributed - rowCost,
-                    projectEhr
-                });
-            });
-            const totalHoursDisplay = byProject.reduce((s, b) => s + b.hoursDisplay, 0);
-            const payrollMonthly = emp?.monthlyCost ?? emp?.hourlyRate ?? 0;
-            const overheadTotalEmployee = overheadByEmployee.get(em.employeeId) ?? 0;
-            /** Evita fila/total «No imputado» por ruido numérico: total mensual vs suma por proyecto suele diferir en centésimas de hora. */
-            const UNATTRIBUTED_HOURS_EPS = 0.02;
-            const hoursNotAttributedRaw = Math.max(0, totalHEmployeeInMode - totalHoursDisplay);
-            const hoursNotAttributed =
-                hoursNotAttributedRaw < UNATTRIBUTED_HOURS_EPS ? 0 : hoursNotAttributedRaw;
-            // Coste de horas no imputadas:
-            // - Modo dinámico: nómina × (hNA / hTotal) — así la suma cuadra con la nómina exacta.
-            // - Modo estándar: hNA × coste/h estándar (informativo, puede no cuadrar con nómina por capacidad teórica).
-            const payrollNotAttributed = effectiveCostMode === 'dynamic'
-                ? (totalHEmployeeInMode > 0 ? payrollMonthly * (hoursNotAttributed / totalHEmployeeInMode) : 0)
-                : hoursNotAttributed * getStandardHourlyCost(emp);
-            const overheadNotAttributed = overheadShareForRow(
-                em.employeeId,
-                hoursNotAttributed,
-                totalHGlobal,
-                overheadByEmployee
-            );
-            const costNotAttributed = payrollNotAttributed + overheadNotAttributed;
-            const payrollStandardIdle =
-                effectiveCostMode === 'standard' && emp && payrollMonthly > 0
-                    ? Math.max(
-                          0,
-                          Math.round((payrollMonthly - getStandardHourlyCost(emp) * totalHEmployeeInMode) * 100) / 100
-                      )
-                    : 0;
-            const payrollAllocatedTotal =
-                payrollFromVisibleProjects + payrollNotAttributed + payrollStandardIdle;
-            const costTotal =
-                costFromVisibleProjects + costNotAttributed + payrollStandardIdle;
-            const margin = attributedRevenue - costTotal;
-            const marginPercent = attributedRevenue > 0 ? (margin / attributedRevenue) * 100 : 0;
-            return {
-                employeeId: em.employeeId,
-                employeeName: em.employeeName,
-                totalActual: em.totalActual,
-                totalComputed: em.totalComputed,
-                totalHoursDisplay,
-                totalHoursGlobal: totalHEmployeeInMode,
-                hoursNotAttributed,
-                payrollMonthly,
-                overheadTotalEmployee,
-                costNotAttributed,
-                payrollNotAttributed,
-                overheadNotAttributed,
-                payrollStandardIdle,
-                payrollAllocatedTotal,
-                cost: costTotal,
-                payrollCost: payrollFromVisibleProjects,
-                overheadCost: overheadFromVisibleProjects,
-                attributedRevenue,
-                margin,
-                marginPercent,
-                byProject
-            };
-        });
-        return filterEmployeeProfitabilityRowsForDisplay(rows, employees ?? [], hoursMode);
-    }, [employeeMetricsForView, employees, projectTotalHoursFromBreakdown, projectByIdForAttr, hoursMode, effectiveCostMode, projectIdsWithActivity, employeeHoursGlobalById, overheadByEmployee]);
-
-    const agencyTotalOverheadApplied = commonExpensesAlloc.ok ? commonExpensesAlloc.totalOverheadApplied : 0;
-    const commonExpensesAllocError: AllocateCommonExpensesFailure | null =
-        'code' in commonExpensesAlloc ? commonExpensesAlloc : null;
-    const commonExpensesBreakdown = useMemo(() => {
-        const recurring = currentAgency?.settings?.commonExpensesRecurring ?? [];
-        const recurringInMonth = recurring.filter(e => {
-            if (!e.recurringFromMonth) return false;
-            if (e.recurringFromMonth > commonExpensesMonthKey) return false;
-            if (e.recurringUntilMonth && e.recurringUntilMonth < commonExpensesMonthKey) return false;
-            return true;
-        });
-        const monthly = currentAgency?.settings?.commonExpensesByMonth?.[commonExpensesMonthKey] ?? [];
-        const totalRecurring = recurringInMonth.reduce((s, e) => s + (e.amount || 0), 0);
-        const totalMonthly = monthly.reduce((s, e) => s + (e.amount || 0), 0);
-        return {
-            total: totalRecurring + totalMonthly,
-            totalRecurring,
-            totalMonthly,
-            countRecurring: recurringInMonth.length,
-            countMonthly: monthly.length,
-        };
-    }, [currentAgency?.settings?.commonExpensesRecurring, currentAgency?.settings?.commonExpensesByMonth, commonExpensesMonthKey]);
-    const commonExpensesZeroHourWarningNames = useMemo(() => {
-        if (!commonExpensesAlloc.ok || commonExpensesAlloc.employeeIdsZeroHoursWithPeersWorking.length === 0) {
-            return [] as string[];
-        }
-        return commonExpensesAlloc.employeeIdsZeroHoursWithPeersWorking
-            .map(id => employees.find(e => e.id === id)?.name)
-            .filter((n): n is string => Boolean(n));
-    }, [commonExpensesAlloc, employees]);
-
-    const overheadVisibleFromRows = useMemo(() => {
-        let sum = 0;
-        employeeMetricsForView.forEach(em => {
-            const totalHEmployeeInMode = hoursMode === 'computed' ? em.totalComputed : em.totalActual;
-            const totalHGlobal = employeeHoursGlobalById.get(em.employeeId) ?? totalHEmployeeInMode;
-            em.projectBreakdown.forEach(pb => {
-                const hours = pb.hours;
-                const actualHours = pb.actual ?? 0;
-                const monthlyFee = projectByIdForAttr.get(pb.projectId)?.monthlyFee ?? 0;
-                const isInternal = (monthlyFee ?? 0) === 0;
-                const hoursDisplay = hoursMode === 'computed' ? hours : actualHours;
-                const hasHours = hoursDisplay > 0;
-                if (hasHours && (isInternal || (monthlyFee ?? 0) > 0)) {
-                    sum += overheadShareForRow(em.employeeId, hoursDisplay, totalHGlobal, overheadByEmployee);
-                }
-            });
-        });
-        return Math.round(sum * 100) / 100;
-    }, [employeeMetricsForView, hoursMode, projectByIdForAttr, employeeHoursGlobalById, overheadByEmployee]);
-
-    const employeeProfitabilityFilteredBySearch = useMemo(() => {
-        if (!searchQuery.trim()) return employeeProfitabilityList;
-        const q = searchQuery.trim().toLowerCase();
-        return employeeProfitabilityList.filter(ep => {
-            if (ep.employeeName.toLowerCase().includes(q)) return true;
-            return ep.byProject.some(bp => bp.projectName.toLowerCase().includes(q));
-        });
-    }, [employeeProfitabilityList, searchQuery]);
-
-    /** Con búsqueda activa: totales por empleado solo de proyectos que coinciden con el filtro (para fila y pie). */
-    const employeeDisplayTotalsWhenSearch = useMemo(() => {
-        if (!searchQuery.trim()) return null;
-        const q = searchQuery.trim().toLowerCase();
-        const map = new Map<
-            string,
-            { hours: number; attr: number; cost: number; margin: number; payroll: number; overhead: number }
-        >();
-        employeeProfitabilityFilteredBySearch.forEach(ep => {
-            const filtered = ep.byProject.filter(bp => bp.projectName.toLowerCase().includes(q));
-            const hours = filtered.reduce((s, b) => s + b.hoursDisplay, 0);
-            const attr = filtered.reduce((s, b) => s + b.attributedRevenue, 0);
-            const cost = filtered.reduce((s, b) => s + b.cost, 0);
-            const margin = filtered.reduce((s, b) => s + b.margin, 0);
-            const payroll = filtered.reduce((s, b) => s + b.payrollCost, 0);
-            const overhead = filtered.reduce((s, b) => s + b.overheadCost, 0);
-            map.set(ep.employeeId, { hours, attr, cost, margin, payroll, overhead });
-        });
-        return map;
-    }, [employeeProfitabilityFilteredBySearch, searchQuery]);
-
-    const departmentNameForView = useMemo(() => {
-        if (!selectedDepartmentId) return null;
-        const d = departments.find(x => x.id === selectedDepartmentId || x.name === selectedDepartmentId);
-        return d?.name ?? null;
-    }, [selectedDepartmentId, departments]);
-
-    const internalWithActivity = useMemo(
-        () => projectMetricsInternal.filter(p => (hoursMode === 'computed' ? p.computed : p.actual) > 0),
-        [projectMetricsInternal, hoursMode]
-    );
+        effectiveCostMode,
+        projectByIdForAttr,
+        projectTotalHoursFromBreakdown,
+        employeeHoursGlobalById,
+        overheadByEmployee,
+        projectMetricsBillableWithActivity,
+        searchQuery,
+    });
 
     const hoursHeaderLabel = hoursMode === 'computed'
         ? t('financialHealth.columns.hoursComputedHeader')
@@ -1411,65 +681,12 @@ export default function FinancialHealthPage() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={profitSettingsOpen} onOpenChange={setProfitSettingsOpen}>
-                <DialogContent className="max-w-3xl w-[calc(100vw-2rem)] max-h-[min(90vh,880px)] overflow-y-auto rounded-2xl border-slate-200">
-                    <DialogHeader>
-                        <DialogTitle>
-                            {t('financialHealth.settings.dialogTitle', 'Objetivo EHR y gastos comunes')}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {t(
-                                'financialHealth.settings.dialogDescription',
-                                'Define el precio hora objetivo y los gastos que se prorratean en esta página (fijos por mes o puntuales).'
-                            )}
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-2">
-                        <div className="max-w-xs space-y-2">
-                            <Label htmlFor="fh-ehr-target">
-                                {t('agency.general.ehrTarget', currencyLabels)}
-                            </Label>
-                            <Input
-                                id="fh-ehr-target"
-                                type="text"
-                                inputMode="decimal"
-                                autoComplete="off"
-                                value={ehrTargetInput}
-                                onChange={e => setEhrTargetInput(sanitizePositiveDecimalInput(e.target.value))}
-                                onBlur={() => {
-                                    const v = parsePositiveDecimalInput(ehrTargetInput, 75, 1);
-                                    setEhrTargetInput(numberToPositiveDecimalInputString(v, 75));
-                                }}
-                            />
-                            <p className="text-xs text-slate-500">
-                                {t('financialHealth.settings.ehrNote', currencyLabels)}
-                            </p>
-                        </div>
-                        <CommonExpensesSettingsCard
-                            departments={departments}
-                            value={commonExpensesDraft}
-                            onChange={setCommonExpensesDraft}
-                            recurringValue={commonExpensesRecurringDraft}
-                            onRecurringChange={setCommonExpensesRecurringDraft}
-                        />
-                    </div>
-                    <DialogFooter className="gap-2 sm:gap-0">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setProfitSettingsOpen(false)}
-                            disabled={profitSettingsSaving}
-                        >
-                            {t('financialHealth.settings.cancel', 'Cancelar')}
-                        </Button>
-                        <Button type="button" onClick={handleSaveProfitSettings} disabled={profitSettingsSaving}>
-                            {profitSettingsSaving
-                                ? t('financialHealth.settings.saving', 'Guardando…')
-                                : t('financialHealth.settings.save', 'Guardar')}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <FinancialHealthProfitSettingsDialog
+                open={profitSettingsOpen}
+                onOpenChange={setProfitSettingsOpen}
+                departments={departments}
+                currencyLabels={currencyLabels}
+            />
 
             <TooltipProvider delayDuration={300}>
                 <Tabs defaultValue="resumen" className="space-y-3 sm:space-y-6 min-w-0">
@@ -1506,197 +723,22 @@ export default function FinancialHealthPage() {
                     </div>
 
                     <TabsContent value="resumen" className="flex flex-col gap-3 sm:gap-6 md:gap-8 mt-0">
-                        {/* KPIs: tira compacta en móvil; cards completas desde md */}
-                        <section className="order-1 min-w-0" aria-label={t('financialHealth.kpis.sectionAria')}>
-                            <div className="md:hidden grid grid-cols-3 gap-1.5">
-                                <div className="rounded-xl border border-emerald-200 bg-white px-1.5 py-2 border-l-4 border-l-emerald-500 min-w-0">
-                                    <p className="text-[10px] font-medium text-slate-500">{t('financialHealth.kpis.ehr.titleShort', 'EHR')}</p>
-                                    <p className={cn(
-                                        'text-sm font-bold tabular-nums leading-snug mt-0.5 break-words',
-                                        totalHoursForView === 0 ? 'text-slate-400' : ehrIsHealthy ? 'text-emerald-700' : 'text-red-600'
-                                    )}>
-                                        {totalHoursForView > 0 ? formatPerHour(effectiveHourlyRate, 0) : '–'}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500 tabular-nums mt-0.5">
-                                        {t('financialHealth.kpis.ehr.targetShort', 'Obj.')} {formatEhrTargetForDisplay(ehrTarget)}
-                                    </p>
-                                </div>
-                                <div className={cn(
-                                    'rounded-xl border bg-white px-1.5 py-2 border-l-4 min-w-0',
-                                    marginIsPositive ? 'border-emerald-200 border-l-emerald-500' : 'border-red-200 border-l-red-500'
-                                )}>
-                                    <p className="text-[10px] font-medium text-slate-500">{t('financialHealth.kpis.netMargin.titleShort', 'Margen')}</p>
-                                    <p className={cn(
-                                        'text-sm font-bold tabular-nums leading-snug mt-0.5 break-words',
-                                        marginIsPositive ? 'text-emerald-700' : 'text-red-600'
-                                    )}>
-                                        {formatMoney(Math.round(netMargin))}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500 tabular-nums mt-0.5">
-                                        {marginPercent != null ? `${marginPercent.toFixed(0)}%` : '–'}
-                                    </p>
-                                </div>
-                                <div className="rounded-xl border border-indigo-200 bg-white px-1.5 py-2 border-l-4 border-l-indigo-500 min-w-0">
-                                    <p className="text-[10px] font-medium text-slate-500">{t('financialHealth.kpis.monthlyOverheadKpi.titleShort', 'Gastos')}</p>
-                                    <p className="text-sm font-bold tabular-nums leading-snug mt-0.5 text-slate-800 break-words">
-                                        {formatMoney(Math.round(commonExpensesBreakdown.total))}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="hidden md:grid gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-3 min-w-0">
-                            <Card className="border-l-4 border-emerald-500 shadow-sm bg-white overflow-hidden min-w-0">
-                                <CardHeader className="pb-2 min-w-0">
-                                    <CardTitle className="text-base font-semibold text-slate-800 flex items-center gap-2 min-w-0">
-                                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
-                                            <DollarSign className="h-4 w-4" />
-                                        </span>
-                                        {t('financialHealth.kpis.ehr.title')}
-                                    </CardTitle>
-                                    <CardDescription className="text-xs text-slate-500 mt-1">
-                                        {t('financialHealth.kpis.ehr.description', {
-                                            hoursMode: hoursMode === 'computed'
-                                                ? t('financialHealth.kpis.ehr.hoursModeComputed')
-                                                : t('financialHealth.kpis.ehr.hoursModeActual'),
-                                        })}
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="flex items-baseline gap-2">
-                                        <span
-                                            className={cn(
-                                                "text-3xl md:text-4xl font-bold tabular-nums",
-                                                totalHoursForView === 0 ? "text-slate-400" : ehrIsHealthy ? "text-emerald-700" : "text-red-600"
-                                            )}
-                                        >
-                                            {totalHoursForView > 0
-                                                ? `${formatPerHour(effectiveHourlyRate, 0)}`
-                                                : '–'}
-                                        </span>
-                                        {totalHoursForView > 0 && !ehrIsHealthy && (
-                                            <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden="true" />
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-slate-600 mt-1">
-                                        {t('financialHealth.kpis.ehr.agencyTarget')}{' '}
-                                        <span className="font-semibold tabular-nums">
-                                          {formatEhrTargetForDisplay(ehrTarget)} {perHourSuffix}
-                                        </span>
-                                    </p>
-                                    {totalHoursForView > 0 && (
-                                        <p className="text-[11px] mt-1 text-slate-500">
-                                            {ehrIsHealthy
-                                                ? t('financialHealth.kpis.ehr.aboveTarget')
-                                                : t('financialHealth.kpis.ehr.belowTarget')}
-                                        </p>
-                                    )}
-                                    {usesLoadedCostForTarget && (
-                                        <p className="text-[11px] mt-1 text-slate-500">
-                                            {t('financialHealth.ehrTargetLoadedNote')}
-                                        </p>
-                                    )}
-                                </CardContent>
-                            </Card>
-
-                            <Card className={cn("border-l-4 shadow-sm bg-white overflow-hidden min-w-0", marginIsPositive ? "border-emerald-500" : "border-red-500")}>
-                                <CardHeader className="pb-2 min-w-0">
-                                    <CardTitle className="text-base font-semibold text-slate-800 flex items-center gap-2 min-w-0">
-                                        <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", marginIsPositive ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-600")}>
-                                            {marginIsPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                                        </span>
-                                        {t('financialHealth.kpis.netMargin.title')}
-                                    </CardTitle>
-                                    <CardDescription className="text-xs text-slate-500 mt-1">
-                                        {t('financialHealth.kpis.netMargin.description')}
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="flex items-baseline gap-2">
-                                        <span
-                                            className={cn(
-                                                "text-3xl md:text-4xl font-bold tabular-nums",
-                                                marginIsPositive ? "text-emerald-700" : "text-red-600"
-                                            )}
-                                        >
-                                            {formatMoney(netMargin)}
-                                        </span>
-                                        {marginIsPositive ? (
-                                            <TrendingUp className="h-5 w-5 text-emerald-500" aria-hidden="true" />
-                                        ) : (
-                                            <TrendingDown className="h-5 w-5 text-red-500" aria-hidden="true" />
-                                        )}
-                                    </div>
-                                    <div className="mt-2 flex items-center gap-2">
-                                        <Badge
-                                            variant={marginIsPositive ? 'outline' : 'destructive'}
-                                            className={cn(
-                                                "text-[11px] font-semibold tabular-nums",
-                                                marginIsPositive
-                                                    ? "border-emerald-300 text-emerald-700 bg-emerald-50"
-                                                    : "border-red-300 bg-red-600/90 text-white"
-                                            )}
-                                        >
-                                            {marginPercent != null
-                                                ? t('financialHealth.kpis.netMargin.marginPct', { pct: marginPercent.toFixed(1) })
-                                                : totalRevenue <= 0 && netMargin !== 0
-                                                  ? t('financialHealth.kpis.netMargin.naNoRevenue')
-                                                  : t('financialHealth.kpis.netMargin.noBilling')}
-                                        </Badge>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            <Card className="border-l-4 border-indigo-500 shadow-sm bg-white overflow-hidden min-w-0">
-                                <CardHeader className="pb-2 min-w-0">
-                                    <CardTitle className="text-base font-semibold text-slate-800 flex items-center gap-2 min-w-0">
-                                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
-                                            <Landmark className="h-4 w-4" />
-                                        </span>
-                                        {t('financialHealth.kpis.monthlyOverheadKpi.title')}
-                                    </CardTitle>
-                                    <CardDescription className="text-xs text-slate-500 mt-1">
-                                        {t('financialHealth.kpis.monthlyOverheadKpi.description')}
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="flex items-baseline gap-2">
-                                        <span className="text-3xl md:text-4xl font-bold tabular-nums text-slate-800">
-                                            {formatMoney(commonExpensesBreakdown.total)}
-                                        </span>
-                                    </div>
-                                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
-                                        <span>
-                                            {t('financialHealth.kpis.monthlyOverheadKpi.fixed')}{' '}
-                                            <span className="font-semibold tabular-nums">
-                                                {formatMoney(commonExpensesBreakdown.totalRecurring)}
-                                            </span>
-                                            {' '}({t('financialHealth.kpis.monthlyOverheadKpi.lines', { count: commonExpensesBreakdown.countRecurring })})
-                                        </span>
-                                        <span className="text-slate-400">·</span>
-                                        <span>
-                                            {t('financialHealth.kpis.monthlyOverheadKpi.oneOff')}{' '}
-                                            <span className="font-semibold tabular-nums">
-                                                {formatMoney(commonExpensesBreakdown.totalMonthly)}
-                                            </span>
-                                            {' '}({t('financialHealth.kpis.monthlyOverheadKpi.lines', { count: commonExpensesBreakdown.countMonthly })})
-                                        </span>
-                                    </div>
-                                    {commonExpensesBreakdown.total > 0 && totalRevenue > 0 && (
-                                        <p className="text-[11px] mt-1 text-slate-500">
-                                            {t('financialHealth.kpis.monthlyOverheadKpi.pctOfRevenue', {
-                                                pct: ((commonExpensesBreakdown.total / totalRevenue) * 100).toFixed(1),
-                                            })}
-                                        </p>
-                                    )}
-                                    {commonExpensesBreakdown.total === 0 && (
-                                        <p className="text-[11px] mt-1 text-slate-500">
-                                            {t('financialHealth.kpis.monthlyOverheadKpi.empty')}
-                                        </p>
-                                    )}
-                                </CardContent>
-                            </Card>
-                            </div>
-                        </section>
+                        <FinancialHealthKpiStrip
+                            totalHoursForView={totalHoursForView}
+                            ehrIsHealthy={ehrIsHealthy}
+                            effectiveHourlyRate={effectiveHourlyRate}
+                            ehrTarget={ehrTarget}
+                            usesLoadedCostForTarget={usesLoadedCostForTarget}
+                            hoursMode={hoursMode}
+                            marginIsPositive={marginIsPositive}
+                            netMargin={netMargin}
+                            marginPercent={marginPercent}
+                            totalRevenue={totalRevenue}
+                            commonExpensesBreakdown={commonExpensesBreakdown}
+                            formatMoney={formatMoney}
+                            formatPerHour={formatPerHour}
+                            perHourSuffix={perHourSuffix}
+                        />
 
                         {(commonExpensesAllocError ||
                             agencyTotalOverheadApplied > 0 ||
